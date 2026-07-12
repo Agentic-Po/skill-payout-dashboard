@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Refresh the Minds bank-wallet payout dashboard.
+"""Refresh the skill payout dashboard.
 
-Fetches new outgoing token transfers from Blockscout (Base) for the Minds
-bank wallet, merges them into transfers.json, recomputes the dashboard
+Fetches new outgoing token transfers from Blockscout (Base) for the tracked wallet, merges them into transfers.json, recomputes the dashboard
 dataset, and renders dashboard.html from template.html.
 """
 import json, os, time, urllib.request

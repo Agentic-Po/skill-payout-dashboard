@@ -1,6 +1,6 @@
-# Minds Bank Wallet — Creator Payout Dashboard
+# Skill Payout Dashboard
 
-Auto-updating dashboard of creator MOCA payouts from the Minds bank wallet
+Auto-updating dashboard of MOCA skill payouts from a tracked wallet
 (`0xBD956171F5B50936f0Ad1C4db80c022bd2442519` on Base).
 
 - **Live dashboard:** GitHub Pages serves `index.html` from `main`.
