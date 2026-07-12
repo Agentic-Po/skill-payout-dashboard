@@ -1,0 +1,143 @@
+<meta charset="utf-8">
+<title>Minds Bank Wallet — Creator Payouts</title>
+<style>
+:root{
+  --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#8a8984;
+  --line:#e6e5e0; --acc:#2a78d6;
+  --c-invoke:#2a78d6; --c-equip:#eda100; --c-large:#008300; --c-micro:#4a3aa7;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#8a8984;
+  --line:#2e2e2b; --acc:#3987e5;
+  --c-invoke:#3987e5; --c-equip:#c98500; --c-large:#008300; --c-micro:#9085e9;
+}}
+:root[data-theme="dark"]{
+  --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#8a8984;
+  --line:#2e2e2b; --acc:#3987e5;
+  --c-invoke:#3987e5; --c-equip:#c98500; --c-large:#008300; --c-micro:#9085e9;
+}
+:root[data-theme="light"]{
+  --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#8a8984;
+  --line:#e6e5e0; --acc:#2a78d6;
+  --c-invoke:#2a78d6; --c-equip:#eda100; --c-large:#008300; --c-micro:#4a3aa7;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,"SF Pro Text",Segoe UI,sans-serif;margin:0;padding:28px 20px 60px}
+.wrap{max-width:1060px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1{font-size:21px;margin:0;letter-spacing:-.01em}
+.sub{color:var(--ink2);font-size:13px;margin-top:4px}
+.sub a{color:var(--acc);text-decoration:none}
+.mono{font-family:ui-monospace,SF Mono,Menlo,monospace;font-variant-numeric:tabular-nums}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.tile .k{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3)}
+.tile .v{font-size:26px;font-weight:650;margin-top:4px;font-variant-numeric:tabular-nums}
+.tile .d{font-size:12px;color:var(--ink2);margin-top:2px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
+.card h2{font-size:14px;margin:0 0 2px}
+.card .note{font-size:12px;color:var(--ink2);margin:0 0 12px}
+.sect{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink3);font-weight:650;margin:8px 0 -8px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--ink2);margin-bottom:10px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:10px;height:10px;border-radius:3px;display:inline-block}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:var(--ink3);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:7px 8px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+td.r,th.r{text-align:right}
+tr:last-child td{border-bottom:none}
+td a{color:var(--acc);text-decoration:none}
+.scroll{overflow-x:auto}
+.tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--bg);font-size:12px;padding:6px 9px;border-radius:6px;opacity:0;transition:opacity .1s;z-index:9;white-space:pre-line;font-variant-numeric:tabular-nums}
+.pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);color:var(--ink2)}
+.caveat{font-size:12.5px;color:var(--ink2);border-left:3px solid var(--c-equip);padding:2px 0 2px 12px}
+.milestone{font-size:13px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 16px;color:var(--ink2)}
+.milestone strong{color:var(--ink)}
+</style>
+<div class="wrap">
+  <header>
+    <h1>Minds Bank Wallet — Creator MOCA Payouts</h1>
+    <div class="sub mono"><a href="https://basescan.org/address/0xBD956171F5B50936f0Ad1C4db80c022bd2442519" target="_blank">0xBD95…2519</a> on Base · updated <span id="gen"></span> UTC · MOCA rate used $0.008912</div>
+  </header>
+
+  <div class="milestone">🏁 <strong>First invoke payout ($0.10):</strong> <span class="mono">2026-07-11 17:17:59 UTC</span> · first MOCA transfer ever from this wallet (a ~$0.06 test-size amount) at <span class="mono">2026-07-11 15:41 UTC</span>. Everything below covers the full MOCA-payout era.</div>
+
+  <p class="sect">Creator economy — invokes &amp; equips</p>
+  <div class="tiles" id="tiles"></div>
+
+  <div class="card">
+    <h2>Daily breakdown</h2>
+    <p class="note">Creator-economy payouts per day since launch. Invoke ≈ 11.25 MOCA ($0.10) · Equip ≈ 112.5 MOCA ($1). Today is partial.</p>
+    <div class="scroll"><table id="dailyT"></table></div>
+  </div>
+
+  <div class="card">
+    <h2>Payouts per hour, by type — full era</h2>
+    <p class="note">Count of outgoing MOCA transfers per hour since first payout.</p>
+    <div class="legend" id="leg1"></div>
+    <svg id="hourly" width="100%" height="240" viewBox="0 0 1020 240" preserveAspectRatio="none"></svg>
+  </div>
+
+  <div class="card">
+    <h2>Top creators by earnings (invokes + equips only)</h2>
+    <p class="note">Recipient wallets ranked by creator-economy MOCA received since launch.</p>
+    <div class="scroll"><table id="creators"></table></div>
+  </div>
+
+  <p class="sect">Other payouts — kept separate, not yet classified</p>
+  <div class="card">
+    <h2>Large &amp; micro transfers <span class="pill" id="othN"></span></h2>
+    <p class="note">Large (~$3 / $5 / $25) transfers don't match the $1 / $0.10 schedule — under investigation. Micro (~4.4 MOCA ≈ $0.04) transfers were the first ever sent and are presumed testing.</p>
+    <div class="scroll"><table id="otherT"></table></div>
+  </div>
+
+  <p class="caveat"><strong>Caveat:</strong> classification is inferred from transfer size. MOCA amounts map to live USD value at payout time, so per-tx MOCA drifts (invokes ≈ 11.0–11.3 MOCA). A per-tx memo/event from the payout contract would make this exact.</p>
+</div>
+<div class="tip" id="tip"></div>
+<script>
+const DATA = /*__DATA__*/;
+const S=DATA.S, cats=["invoke","equip","large","micro"];
+const CN={invoke:"Invoke ($0.10)",equip:"Equip ($1)",large:"Large (~$3–25)",micro:"Micro (test)"};
+const CC={invoke:"var(--c-invoke)",equip:"var(--c-equip)",large:"var(--c-large)",micro:"var(--c-micro)"};
+const fmt=n=>n.toLocaleString("en-US",{maximumFractionDigits:1});
+document.getElementById("gen").textContent=S.generated;
+const ceMoca=S.tot.invoke.moca+S.tot.equip.moca;
+const tiles=[
+ ["Invokes — all time", S.tot.invoke.n, fmt(S.tot.invoke.moca)+" MOCA ≈ $"+(S.tot.invoke.moca*S.rate).toFixed(2)],
+ ["Equips — all time", S.tot.equip.n, fmt(S.tot.equip.moca)+" MOCA ≈ $"+(S.tot.equip.moca*S.rate).toFixed(2)],
+ ["Invokes — last 24h", S.inv24, S.eq24+" equips in same window"],
+ ["Creators earning", S.creators_n, "wallets paid invoke/equip fees"],
+];
+document.getElementById("tiles").innerHTML=tiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
+// daily table
+const dmax=Math.max(...DATA.daily.map(d=>d.invoke),1);
+document.getElementById("dailyT").innerHTML=`<thead><tr><th>Day (UTC)</th><th class="r">Invokes</th><th></th><th class="r">Equips</th><th class="r">Creator MOCA</th><th class="r">≈ USD</th><th class="r">Other MOCA</th></tr></thead><tbody>`+
+ DATA.daily.map(d=>`<tr><td class="mono">${d.d}</td><td class="r">${d.invoke}</td><td style="width:34%"><div style="height:9px;border-radius:3px;background:${CC.invoke};width:${d.invoke/dmax*100}%"></div></td><td class="r">${d.equip}</td><td class="r mono">${fmt(d.moca_ce)}</td><td class="r mono">$${(d.moca_ce*S.rate).toFixed(2)}</td><td class="r mono" style="color:var(--ink3)">${fmt(d.moca_other)}</td></tr>`).join("")+`</tbody>`;
+// legend + hourly
+document.getElementById("leg1").innerHTML=cats.map(c=>`<span><span class="sw" style="background:${CC[c]}"></span>${CN[c]}</span>`).join("");
+const H=DATA.hourly, svg=document.getElementById("hourly"), tip=document.getElementById("tip");
+const W=1020,Ht=240,padL=30,padB=22,padT=8;
+const maxC=Math.max(...H.map(h=>h.invoke+h.equip+h.large+h.micro),1);
+const bw=(W-padL-8)/H.length;
+let s="";
+for(let g=0;g<=maxC;g+=5){const y=Ht-padB-(Ht-padB-padT)*g/maxC;
+ s+=`<line x1="${padL}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="1"/><text x="${padL-6}" y="${y+4}" font-size="10" fill="var(--ink3)" text-anchor="end">${g}</text>`;}
+H.forEach((h,i)=>{
+ let y=Ht-padB; const x=padL+i*bw+1, w=Math.max(bw-2,2);
+ cats.forEach(c=>{ if(!h[c])return; const hh=(Ht-padB-padT)*h[c]/maxC;
+  y-=hh; s+=`<rect x="${x}" y="${y+1}" width="${w}" height="${Math.max(hh-2,1)}" rx="2" fill="${CC[c]}" data-i="${i}"/>`;});
+ if(h.h.slice(11)==="00") s+=`<text x="${x}" y="${Ht-6}" font-size="10" fill="var(--ink3)">${h.h.slice(5,10)}</text>`;
+});
+svg.innerHTML=s;
+svg.addEventListener("mousemove",e=>{const t=e.target.dataset.i; if(t===undefined){tip.style.opacity=0;return;}
+ const h=H[t]; tip.textContent=`${h.h.replace("T"," ")}:00 UTC\ninvoke ${h.invoke} · equip ${h.equip} · large ${h.large} · micro ${h.micro}\n${fmt(h.moca)} MOCA`;
+ tip.style.left=(e.clientX+14)+"px"; tip.style.top=(e.clientY-10)+"px"; tip.style.opacity=1;});
+svg.addEventListener("mouseleave",()=>tip.style.opacity=0);
+// creators
+document.getElementById("creators").innerHTML=`<thead><tr><th>#</th><th>Creator wallet</th><th class="r">Invokes</th><th class="r">Equips</th><th class="r">MOCA</th><th class="r">≈ USD</th><th class="r">Share</th></tr></thead><tbody>`+
+ DATA.creators.slice(0,15).map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a></td><td class="r">${c.invoke}</td><td class="r">${c.equip}</td><td class="r mono">${fmt(c.moca)}</td><td class="r mono">$${(c.moca*S.rate).toFixed(2)}</td><td class="r mono">${(c.moca/ceMoca*100).toFixed(1)}%</td></tr>`).join("")+`</tbody>`;
+// other payouts
+const oth=DATA.other;
+document.getElementById("othN").textContent=oth.length+" tx · "+fmt(oth.reduce((a,b)=>a+b.val,0))+" MOCA";
+document.getElementById("otherT").innerHTML=`<thead><tr><th>Time (UTC)</th><th>Type</th><th>Recipient</th><th class="r">MOCA</th><th class="r">≈ USD</th><th>Tx</th></tr></thead><tbody>`+
+ oth.map(o=>`<tr><td class="mono">${o.ts.replace("T"," ")}</td><td><span class="sw" style="background:${CC[o.cat]};margin-right:6px"></span>${o.cat}</td><td class="mono"><a href="https://basescan.org/address/${o.to}" target="_blank">${o.to.slice(0,8)}…${o.to.slice(-4)}</a></td><td class="r mono">${o.val.toFixed(2)}</td><td class="r mono">$${(o.val*S.rate).toFixed(2)}</td><td class="mono"><a href="https://basescan.org/tx/${o.tx}" target="_blank">${o.tx.slice(0,10)}…</a></td></tr>`).join("")+`</tbody>`;
+</script>
