@@ -1,0 +1,46 @@
+name: Weekly heartbeat & health check
+on:
+  schedule:
+    - cron: "0 1 * * 1"   # Monday 01:00 UTC = 09:00 HKT
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Health check on last refresh
+        id: health
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LAST_RUN=$(gh run list --workflow refresh.yml --limit 1 --json conclusion,updatedAt -R ${{ github.repository }})
+          CONCLUSION=$(echo "$LAST_RUN" | jq -r '.[0].conclusion')
+          LAST_COMMIT_TS=$(git log -1 --format=%ct -- index.html)
+          AGE_H=$(( ( $(date +%s) - LAST_COMMIT_TS ) / 3600 ))
+          STATS=$(grep -oE '"generated": "[^"]+"' index.html | head -1)
+          INVOKES=$(grep -oE '"invoke": \{"n": [0-9]+' index.html | head -1 | grep -oE '[0-9]+$')
+          echo "conclusion=$CONCLUSION" >> $GITHUB_OUTPUT
+          echo "age_h=$AGE_H" >> $GITHUB_OUTPUT
+          echo "invokes=$INVOKES" >> $GITHUB_OUTPUT
+          if [ "$CONCLUSION" = "success" ] && [ "$AGE_H" -lt 48 ]; then
+            echo "status=healthy" >> $GITHUB_OUTPUT
+          else
+            echo "status=UNHEALTHY" >> $GITHUB_OUTPUT
+          fi
+      - name: Commit heartbeat (keeps Actions cron alive)
+        run: |
+          date -u +"last heartbeat: %Y-%m-%d %H:%M UTC" > HEARTBEAT.md
+          git config user.name "dashboard-bot"
+          git config user.email "actions@github.com"
+          git add HEARTBEAT.md && git commit -m "weekly heartbeat" && git push
+      - name: Weekly Telegram status (dead-man's switch — silence means broken)
+        run: |
+          if [ "${{ steps.health.outputs.status }}" = "healthy" ]; then ICON="🟢"; else ICON="🔴"; fi
+          curl -s -o /dev/null "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode text="$ICON Skill Payout Dashboard weekly check: ${{ steps.health.outputs.status }}. Last refresh run: ${{ steps.health.outputs.conclusion }}, page age: ${{ steps.health.outputs.age_h }}h, total invokes: ${{ steps.health.outputs.invokes }}. https://agentic-po.github.io/skill-payout-dashboard/"

@@ -25,3 +25,9 @@ jobs:
           git add transfers.json index.html
           git diff --cached --quiet || git commit -m "refresh $(date -u +'%Y-%m-%d %H:%M') UTC"
           git push
+      - name: Alert Telegram on failure
+        if: failure()
+        run: |
+          curl -s -o /dev/null "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode text="🔴 Skill Payout Dashboard: hourly refresh FAILED. Check https://github.com/${{ github.repository }}/actions"
