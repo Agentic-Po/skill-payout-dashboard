@@ -55,14 +55,25 @@ for i in full:
     rows.append({"ts": i["timestamp"][:19], "val": round(v, 4), "to": i["to"]["hash"], "tx": i["transaction_hash"]})
 rows.sort(key=lambda r: r["ts"], reverse=True)
 
-def cat(v):
-    if v < 8: return "micro"
-    if v < 20: return "invoke"
-    if v < 200: return "equip"
-    return "large"
+def classify(v):
+    """Return (coarse, fine) type from approximate USD value at live rate.
+
+    Wide bands tolerate MOCA price drift between payout time and now.
+    Fine labels per CryptoSlam: new-user credits ($3), referral ($5),
+    Stripe top-ups ($10/$25/$50)."""
+    usd = v * RATE
+    if usd < 0.06: return ("micro", "test")
+    if usd < 0.4: return ("invoke", "invoke")
+    if usd < 2: return ("equip", "equip")
+    if usd < 4: return ("growth", "new-user $3")
+    if usd < 7: return ("growth", "referral $5")
+    if usd < 16: return ("growth", "stripe $10")
+    if usd < 36: return ("growth", "stripe $25")
+    if usd < 70: return ("growth", "stripe $50")
+    return ("growth", "top-up other")
 
 for r in rows:
-    r["cat"] = cat(r["val"])
+    r["cat"], r["fine"] = classify(r["val"])
 now = datetime.now(timezone.utc)
 
 h0 = datetime.fromisoformat(rows[-1]["ts"]).replace(minute=0, second=0, tzinfo=timezone.utc)
@@ -75,7 +86,7 @@ hourly, h = [], h0
 while h <= h1:
     k = h.strftime("%Y-%m-%dT%H")
     c = byh[k]
-    hourly.append({"h": k, "invoke": c["invoke"], "equip": c["equip"], "large": c["large"], "micro": c["micro"], "moca": round(mh[k], 1)})
+    hourly.append({"h": k, "invoke": c["invoke"], "equip": c["equip"], "growth": c["growth"], "micro": c["micro"], "moca": round(mh[k], 1)})
     h += timedelta(hours=1)
 
 days = sorted(set(r["ts"][:10] for r in rows))
@@ -84,9 +95,9 @@ daily = []
 for d in days + ([] if today in days else [today]):
     rs = [r for r in rows if r["ts"][:10] == d]
     c = Counter(r["cat"] for r in rs)
-    daily.append({"d": d, "invoke": c["invoke"], "equip": c["equip"], "large": c["large"], "micro": c["micro"],
+    daily.append({"d": d, "invoke": c["invoke"], "equip": c["equip"], "growth": c["growth"], "micro": c["micro"],
                   "moca_ce": round(sum(r["val"] for r in rs if r["cat"] in ("invoke", "equip")), 1),
-                  "moca_other": round(sum(r["val"] for r in rs if r["cat"] in ("large", "micro")), 1)})
+                  "moca_other": round(sum(r["val"] for r in rs if r["cat"] in ("growth", "micro")), 1)})
 
 cr = defaultdict(lambda: {"invoke": 0, "equip": 0, "moca": 0.0})
 for r in rows:
@@ -94,14 +105,14 @@ for r in rows:
         cr[r["to"]][r["cat"]] += 1
         cr[r["to"]]["moca"] += r["val"]
 creators = sorted(({"addr": a, "invoke": d["invoke"], "equip": d["equip"], "moca": round(d["moca"], 1)} for a, d in cr.items()), key=lambda x: -x["moca"])
-other = [{"ts": r["ts"], "val": round(r["val"], 2), "to": r["to"], "tx": r["tx"], "cat": r["cat"]} for r in rows if r["cat"] in ("large", "micro")]
+other = [{"ts": r["ts"], "val": round(r["val"], 2), "to": r["to"], "tx": r["tx"], "cat": r["fine"]} for r in rows if r["cat"] in ("growth", "micro")]
 
 cut24 = now - timedelta(hours=24)
 S = {
     "rate": RATE, "generated": now.strftime("%Y-%m-%d %H:%M"),
     "first_invoke": "2026-07-11 17:17:59", "first_moca": "2026-07-11 15:41:07",
     "last_tx": rows[0]["ts"],
-    "tot": {c: {"n": sum(1 for r in rows if r["cat"] == c), "moca": round(sum(r["val"] for r in rows if r["cat"] == c), 1)} for c in ["invoke", "equip", "large", "micro"]},
+    "tot": {c: {"n": sum(1 for r in rows if r["cat"] == c), "moca": round(sum(r["val"] for r in rows if r["cat"] == c), 1)} for c in ["invoke", "equip", "growth", "micro"]},
     "inv24": sum(1 for r in rows if r["cat"] == "invoke" and datetime.fromisoformat(r["ts"]).replace(tzinfo=timezone.utc) > cut24),
     "eq24": sum(1 for r in rows if r["cat"] == "equip" and datetime.fromisoformat(r["ts"]).replace(tzinfo=timezone.utc) > cut24),
     "creators_n": len(creators),

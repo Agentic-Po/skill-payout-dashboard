@@ -4,22 +4,22 @@
 :root{
   --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#8a8984;
   --line:#e6e5e0; --acc:#2a78d6;
-  --c-invoke:#2a78d6; --c-equip:#eda100; --c-large:#008300; --c-micro:#4a3aa7;
+  --c-invoke:#2a78d6; --c-equip:#eda100; --c-growth:#008300; --c-micro:#4a3aa7;
 }
 @media (prefers-color-scheme: dark){:root{
   --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#8a8984;
   --line:#2e2e2b; --acc:#3987e5;
-  --c-invoke:#3987e5; --c-equip:#c98500; --c-large:#008300; --c-micro:#9085e9;
+  --c-invoke:#3987e5; --c-equip:#c98500; --c-growth:#008300; --c-micro:#9085e9;
 }}
 :root[data-theme="dark"]{
   --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#8a8984;
   --line:#2e2e2b; --acc:#3987e5;
-  --c-invoke:#3987e5; --c-equip:#c98500; --c-large:#008300; --c-micro:#9085e9;
+  --c-invoke:#3987e5; --c-equip:#c98500; --c-growth:#008300; --c-micro:#9085e9;
 }
 :root[data-theme="light"]{
   --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#8a8984;
   --line:#e6e5e0; --acc:#2a78d6;
-  --c-invoke:#2a78d6; --c-equip:#eda100; --c-large:#008300; --c-micro:#4a3aa7;
+  --c-invoke:#2a78d6; --c-equip:#eda100; --c-growth:#008300; --c-micro:#4a3aa7;
 }
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,"SF Pro Text",Segoe UI,sans-serif;margin:0;padding:28px 20px 60px}
@@ -83,10 +83,10 @@ td a{color:var(--acc);text-decoration:none}
     <div class="scroll"><table id="creators"></table></div>
   </div>
 
-  <p class="sect">Other payouts — kept separate, not yet classified</p>
+  <p class="sect">User growth &amp; top-ups — separate from creator earnings</p>
   <div class="card">
-    <h2>Large &amp; micro transfers <span class="pill" id="othN"></span></h2>
-    <p class="note">Large (~$3 / $5 / $25) transfers don't match the $1 / $0.10 schedule — under investigation. Micro (~4.4 MOCA ≈ $0.04) transfers were the first ever sent and are presumed testing.</p>
+    <h2>Credits, referrals &amp; Stripe top-ups <span class="pill" id="othN"></span></h2>
+    <p class="note">Per CryptoSlam: the wallet also funds user-side balances — new-user free credits (~$3), referral rewards ($5 each side), and Stripe top-ups ($10 / $25 / $50). Type inferred from USD value at payout. Micro (~$0.04) transfers were the first ever sent and are presumed testing.</p>
     <div class="scroll"><table id="otherT"></table></div>
   </div>
 
@@ -95,9 +95,9 @@ td a{color:var(--acc);text-decoration:none}
 <div class="tip" id="tip"></div>
 <script>
 const DATA = /*__DATA__*/;
-const S=DATA.S, cats=["invoke","equip","large","micro"];
-const CN={invoke:"Invoke ($0.10)",equip:"Equip ($1)",large:"Large (~$3–25)",micro:"Micro (test)"};
-const CC={invoke:"var(--c-invoke)",equip:"var(--c-equip)",large:"var(--c-large)",micro:"var(--c-micro)"};
+const S=DATA.S, cats=["invoke","equip","growth","micro"];
+const CN={invoke:"Invoke ($0.10)",equip:"Equip ($1)",growth:"User growth (credits/referral/top-up)",micro:"Micro (test)"};
+const CC={invoke:"var(--c-invoke)",equip:"var(--c-equip)",growth:"var(--c-growth)",micro:"var(--c-micro)"};
 const fmt=n=>n.toLocaleString("en-US",{maximumFractionDigits:1});
 document.getElementById("gen").textContent=S.generated;
 const ceMoca=S.tot.invoke.moca+S.tot.equip.moca;
@@ -116,7 +116,7 @@ document.getElementById("dailyT").innerHTML=`<thead><tr><th>Day (UTC)</th><th cl
 document.getElementById("leg1").innerHTML=cats.map(c=>`<span><span class="sw" style="background:${CC[c]}"></span>${CN[c]}</span>`).join("");
 const H=DATA.hourly, svg=document.getElementById("hourly"), tip=document.getElementById("tip");
 const W=1020,Ht=240,padL=30,padB=22,padT=8;
-const maxC=Math.max(...H.map(h=>h.invoke+h.equip+h.large+h.micro),1);
+const maxC=Math.max(...H.map(h=>h.invoke+h.equip+h.growth+h.micro),1);
 const bw=(W-padL-8)/H.length;
 let s="";
 for(let g=0;g<=maxC;g+=5){const y=Ht-padB-(Ht-padB-padT)*g/maxC;
@@ -129,7 +129,7 @@ H.forEach((h,i)=>{
 });
 svg.innerHTML=s;
 svg.addEventListener("mousemove",e=>{const t=e.target.dataset.i; if(t===undefined){tip.style.opacity=0;return;}
- const h=H[t]; tip.textContent=`${h.h.replace("T"," ")}:00 UTC\ninvoke ${h.invoke} · equip ${h.equip} · large ${h.large} · micro ${h.micro}\n${fmt(h.moca)} MOCA`;
+ const h=H[t]; tip.textContent=`${h.h.replace("T"," ")}:00 UTC\ninvoke ${h.invoke} · equip ${h.equip} · growth ${h.growth} · micro ${h.micro}\n${fmt(h.moca)} MOCA`;
  tip.style.left=(e.clientX+14)+"px"; tip.style.top=(e.clientY-10)+"px"; tip.style.opacity=1;});
 svg.addEventListener("mouseleave",()=>tip.style.opacity=0);
 // creators
@@ -139,5 +139,5 @@ document.getElementById("creators").innerHTML=`<thead><tr><th>#</th><th>Creator 
 const oth=DATA.other;
 document.getElementById("othN").textContent=oth.length+" tx · "+fmt(oth.reduce((a,b)=>a+b.val,0))+" MOCA";
 document.getElementById("otherT").innerHTML=`<thead><tr><th>Time (UTC)</th><th>Type</th><th>Recipient</th><th class="r">MOCA</th><th class="r">≈ USD</th><th>Tx</th></tr></thead><tbody>`+
- oth.map(o=>`<tr><td class="mono">${o.ts.replace("T"," ")}</td><td><span class="sw" style="background:${CC[o.cat]};margin-right:6px"></span>${o.cat}</td><td class="mono"><a href="https://basescan.org/address/${o.to}" target="_blank">${o.to.slice(0,8)}…${o.to.slice(-4)}</a></td><td class="r mono">${o.val.toFixed(2)}</td><td class="r mono">$${(o.val*S.rate).toFixed(2)}</td><td class="mono"><a href="https://basescan.org/tx/${o.tx}" target="_blank">${o.tx.slice(0,10)}…</a></td></tr>`).join("")+`</tbody>`;
+ oth.map(o=>`<tr><td class="mono">${o.ts.replace("T"," ")}</td><td><span class="sw" style="background:${CC[o.cat]||(o.cat==='test'?CC.micro:CC.growth)};margin-right:6px"></span>${o.cat}</td><td class="mono"><a href="https://basescan.org/address/${o.to}" target="_blank">${o.to.slice(0,8)}…${o.to.slice(-4)}</a></td><td class="r mono">${o.val.toFixed(2)}</td><td class="r mono">$${(o.val*S.rate).toFixed(2)}</td><td class="mono"><a href="https://basescan.org/tx/${o.tx}" target="_blank">${o.tx.slice(0,10)}…</a></td></tr>`).join("")+`</tbody>`;
 </script>
