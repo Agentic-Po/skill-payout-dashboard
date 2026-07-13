@@ -66,7 +66,7 @@ td a{color:var(--acc);text-decoration:none}
 
   <div class="card">
     <h2>Daily breakdown</h2>
-    <p class="note">Creator-economy payouts per day since launch. Invoke ≈ 11.25 MOCA ($0.10) · Equip ≈ 112.5 MOCA ($1). Today is partial.</p>
+    <p class="note">Creator-economy payouts per day since launch. Invoke ≈ $0.10 · Equip ≈ $1 in MOCA at live rate. Today is partial — the projected row extrapolates linearly from the elapsed fraction of the day (UTC), so a low current-day bar isn't a drop, just an incomplete day.</p>
     <div class="scroll"><table id="dailyT"></table></div>
   </div>
 
@@ -109,9 +109,18 @@ const tiles=[
 ];
 document.getElementById("tiles").innerHTML=tiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
 // daily table
-const dmax=Math.max(...DATA.daily.map(d=>d.invoke),1);
+const genD=S.generated.slice(0,10), genHM=S.generated.slice(11).split(":");
+const dayFrac=Math.min(Math.max((+genHM[0]*60+ +genHM[1])/1440,0.02),1);
+const dmax=Math.max(...DATA.daily.map(d=>d.d===genD?Math.round(d.invoke/dayFrac):d.invoke),1);
 document.getElementById("dailyT").innerHTML=`<thead><tr><th>Day (UTC)</th><th class="r">Invokes</th><th></th><th class="r">Equips</th><th class="r">Creator MOCA</th><th class="r">≈ USD</th><th class="r">Other MOCA</th></tr></thead><tbody>`+
- DATA.daily.map(d=>`<tr><td class="mono">${d.d}</td><td class="r">${d.invoke}</td><td style="width:34%"><div style="height:9px;border-radius:3px;background:${CC.invoke};width:${d.invoke/dmax*100}%"></div></td><td class="r">${d.equip}</td><td class="r mono">${fmt(d.moca_ce)}</td><td class="r mono">$${(d.moca_ce*S.rate).toFixed(2)}</td><td class="r mono" style="color:var(--ink3)">${fmt(d.moca_other)}</td></tr>`).join("")+`</tbody>`;
+ DATA.daily.map(d=>{
+ const isToday=d.d===genD;
+ let r=`<tr><td class="mono">${d.d}${isToday?` <span class="pill">${Math.round(dayFrac*100)}% of day</span>`:""}</td><td class="r">${d.invoke}</td><td style="width:34%"><div style="height:9px;border-radius:3px;background:${CC.invoke};width:${d.invoke/dmax*100}%"></div></td><td class="r">${d.equip}</td><td class="r mono">${fmt(d.moca_ce)}</td><td class="r mono">$${(d.moca_ce*S.rate).toFixed(2)}</td><td class="r mono" style="color:var(--ink3)">${fmt(d.moca_other)}</td></tr>`;
+ if(isToday && dayFrac<0.98){
+  const pi=Math.round(d.invoke/dayFrac), pe=Math.round(d.equip/dayFrac), pm=d.moca_ce/dayFrac;
+  r+=`<tr style="opacity:.65;font-style:italic"><td class="mono">↳ projected full day</td><td class="r">~${pi}</td><td><div style="height:9px;border-radius:3px;border:1.5px dashed ${CC.invoke};width:${pi/dmax*100}%"></div></td><td class="r">~${pe}</td><td class="r mono">~${fmt(pm)}</td><td class="r mono">~$${(pm*S.rate).toFixed(2)}</td><td class="r mono" style="color:var(--ink3)">—</td></tr>`;
+ }
+ return r;}).join("")+`</tbody>`;
 // legend + hourly
 document.getElementById("leg1").innerHTML=cats.map(c=>`<span><span class="sw" style="background:${CC[c]}"></span>${CN[c]}</span>`).join("");
 const H=DATA.hourly, svg=document.getElementById("hourly"), tip=document.getElementById("tip");
