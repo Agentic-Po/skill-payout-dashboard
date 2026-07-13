@@ -74,11 +74,15 @@ if mode in ("daily", "weekly"):
     health.append("")
     health.append(f"<b>Organic payout share:</b> {G['organic_share']}% · <b>at risk:</b> ${G['at_risk_usd']} <i>(unconfirmed)</i>")
     if G.get("runway_days") is not None:
-        health.append(f"<b>Treasury runway:</b> ~{G['runway_days']} days ({G['balance']:,.0f} MOCA)")
+        health.append(f"<b>Payout float:</b> ~{G.get('runway_adj') or G['runway_days']} days projected ({G['balance']:,.0f} MOCA) — top-up cadence, not solvency")
+if mode == "weekly":
+    flagged = sum(1 for r in G["rows"] if r["status"] == "review")
+    health.append("")
+    health.append(f"<i>Paste-ready:</i> This week: {cur['invoke']:,} invokes across {cur['creators']} creators, ${cur['moca_ce']*RATE:,.2f} paid to creators — {G['organic_share']}% organic, {flagged} account(s) under review, ${cur['moca_topup']*RATE:,.2f} of flows revenue-backed.")
 if G.get("burn_prev", 0) > 0 and G.get("burn24", 0) / G["burn_prev"] > 2:
     health.append(f"⚠️ <b>Burn accelerating:</b> ${G['burn24']}/24h vs ${G['burn_prev']} prior")
-if G.get("runway_days") is not None and G["runway_days"] < 7:
-    health.append(f"🔴 <b>Low runway:</b> ~{G['runway_days']} days at current burn — top up the bank wallet")
+if G.get("runway_days") is not None and min(G.get("runway_adj") or 99, G["runway_days"]) < 7:
+    health.append(f"🔴 <b>Low float:</b> ~{G.get('runway_adj') or G['runway_days']} days at projected burn — schedule a wallet top-up")
 
 msg = "\n".join([
     f"{head} — <i>Skill Payout Dashboard</i>",

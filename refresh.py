@@ -135,7 +135,7 @@ S = {
 def gap_entropy(gaps):
     """Shannon entropy of inter-arrival gaps over log-spaced bins, normalized 0-1.
     Low = metronomic cadence; high = human-irregular."""
-    bins = [10, 30, 60, 120, 300, 600, 1800, 3600, 7200, 21600, 86400]
+    bins = [30, 120, 600, 3600, 21600]  # 6 coarse bins — stable at small n
     hist = Counter(next((i for i, e in enumerate(bins) if g < e), len(bins)) for g in gaps)
     n = len(gaps)
     H = -sum((c / n) * math.log(c / n) for c in hist.values())
@@ -152,11 +152,7 @@ def acf1(gaps):
 
 inc_recip = {r["to"] for r in rows if r["fine"] in ("new-user $3", "referral $5")}
 inv_counts = sorted(len([r for r in rows if r["to"] == c["addr"] and r["cat"] == "invoke"]) for c in creators)
-if len(inv_counts) >= 4:
-    q1 = inv_counts[len(inv_counts) // 4]; q3 = inv_counts[3 * len(inv_counts) // 4]
-    vol_hi = max(15, q3 + 3 * (q3 - q1))
-else:
-    vol_hi = 15
+vol_hi = max(15, inv_counts[int(len(inv_counts) * 0.95)] if len(inv_counts) >= 20 else 10**9)
 grows = []
 for c in creators:
     ts = sorted(datetime.fromisoformat(r["ts"]) for r in rows if r["to"] == c["addr"] and r["cat"] == "invoke")
@@ -170,9 +166,9 @@ for c in creators:
     span_h = (ts[-1] - ts[0]).total_seconds() / 3600
     flags = []
     if c["addr"] in inc_recip: flags.append("both-sides")
-    if n >= 20 and ent < 0.45: flags.append("uniform cadence")
-    if n >= 20 and ac > 0.6: flags.append("scripted pattern")
-    if n >= 15 and burst > 0.6: flags.append("burst cluster")
+    if n >= 30 and ent < 0.45: flags.append("uniform cadence")
+    if n >= 30 and abs(ac) > max(0.6, 2 / math.sqrt(n - 1)): flags.append("scripted pattern")
+    if n >= 15 and burst > 0.7 and span_h > 2: flags.append("burst cluster")
     tags = ["high volume"] if n > vol_hi else []
     grows.append({"addr": c["addr"], "n": n, "span_h": round(span_h, 1), "ent": round(ent, 2),
                   "acf": round(ac, 2), "burst": round(burst * 100), "moca": c["moca"],
@@ -186,10 +182,18 @@ burn24 = sum(r["val"] for r in rows
              and datetime.fromisoformat(r["ts"]).replace(tzinfo=timezone.utc) > cut24) * RATE
 burn_prev = sum(r["val"] for r in rows if (r["cat"] in ("invoke", "equip") or r["fine"] in ("new-user $3", "referral $5"))
                 and cut24 - timedelta(hours=24) < datetime.fromisoformat(r["ts"]).replace(tzinfo=timezone.utc) <= cut24) * RATE
+growth_factor = min(burn24 / burn_prev, 2) if burn_prev > 0 else 1
 runway = round(BALANCE * RATE / burn24, 1) if BALANCE and burn24 > 0 else None
+runway_adj = round(BALANCE * RATE / (burn24 * growth_factor), 1) if BALANCE and burn24 > 0 else None
+UNIT = {"invoke": 0.10, "equip": 1, "new-user $3": 3, "referral $5": 5,
+        "stripe $10": 10, "stripe $25": 25, "stripe $50": 50}
+promised = sum(UNIT.get(r["fine"], r["val"] * RATE) for r in rows)
+settled = sum(r["val"] for r in rows) * RATE
+fx_drift = round((settled - promised) / promised * 100, 1) if promised else 0
 guard = {"organic_share": organic_share, "at_risk_usd": round(at_risk * RATE, 2),
-         "runway_days": runway, "balance": round(BALANCE, 0) if BALANCE else None,
-         "burn24": round(burn24, 2), "burn_prev": round(burn_prev, 2), "rows": grows}
+         "runway_days": runway, "runway_adj": runway_adj, "balance": round(BALANCE, 0) if BALANCE else None,
+         "burn24": round(burn24, 2), "burn_prev": round(burn_prev, 2),
+         "promised_usd": round(promised, 2), "fx_drift_pct": fx_drift, "rows": grows}
 
 data = {"S": S, "hourly": hourly, "daily": daily, "creators": creators, "other": other, "guard": guard}
 

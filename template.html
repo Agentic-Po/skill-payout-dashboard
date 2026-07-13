@@ -59,6 +59,8 @@ td a{color:var(--acc);text-decoration:none}
     <div class="sub mono"><a href="https://basescan.org/address/0xBD956171F5B50936f0Ad1C4db80c022bd2442519" target="_blank">0xBD95…2519</a> on Base · updated <span id="gen"></span> UTC · MOCA rate used $0.008912</div>
   </header>
 
+  <div id="runwayBanner" style="display:none;border:1px solid var(--c-equip);background:color-mix(in srgb,var(--c-equip) 8%,var(--surface));border-radius:8px;padding:10px 16px;font-size:13.5px"></div>
+
   <div class="milestone">🏁 <strong>First invoke payout ($0.10):</strong> <span class="mono">2026-07-11 17:17:59 UTC</span> · first MOCA transfer ever from this wallet (a ~$0.06 test-size amount) at <span class="mono">2026-07-11 15:41 UTC</span>. Everything below covers the full MOCA-payout era.</div>
 
   <p class="sect">Creator economy — invokes &amp; equips</p>
@@ -87,8 +89,8 @@ td a{color:var(--acc);text-decoration:none}
   <div class="tiles" id="gtiles"></div>
   <div class="card">
     <h2>Payout pattern monitor <span class="pill" id="gN"></span></h2>
-    <p class="note">Behavioral fingerprints of creator payout streams (creators with ≥10 invokes). <b>Entropy</b>: cadence irregularity (low = metronomic). <b>ACF</b>: gap autocorrelation (high = scripted pattern). Heuristic signals, not determinations — automated invocation can be legitimate in an agentic economy; the automation policy is an open decision. True unique-users-per-skill requires off-chain invoker data (open ask to platform team).</p>
-    <div class="scroll"><table id="gT"></table></div>
+    <p class="note">Behavioral fingerprints of creator payout streams (creators with ≥10 invokes). How to read: <b>Rhythm variety</b> (0–1) — how varied the time gaps between payouts are; humans are irregular (high), cron-job bots are metronomic (low). <b>Repeating pattern</b> (−1–1) — whether the next gap is predictable from the last; near 0 = human, high = scripted rhythm even with random jitter added. <b>Rapid-fire</b> — share of payouts landing within 60s of the previous one; some bursting is normal in a session, extreme values on new wallets suggest farming. Heuristic signals, not determinations — automated invocation can be legitimate in an agentic economy; the automation policy is an open decision. True unique-users-per-skill requires off-chain invoker data (open ask to platform team).</p>
+    <details><summary style="cursor:pointer;font-size:13px;color:var(--ink2)">Advanced signals — per-creator fingerprints (ops view)</summary><div class="scroll"><table id="gT"></table></div></details>
   </div>
 
   <p class="sect">User growth &amp; top-ups — separate from creator earnings</p>
@@ -111,7 +113,7 @@ document.getElementById("gen").textContent=S.generated;
 const ceMoca=S.tot.invoke.moca+S.tot.equip.moca;
 const tiles=[
  ["Invokes — all time", S.tot.invoke.n, fmt(S.tot.invoke.moca)+" MOCA ≈ $"+(S.tot.invoke.moca*S.rate).toFixed(2)],
- ["Equips — all time", S.tot.equip.n, fmt(S.tot.equip.moca)+" MOCA ≈ $"+(S.tot.equip.moca*S.rate).toFixed(2)],
+ ["Equips ≈ adopters (proxy)", S.tot.equip.n, (S.tot.equip.n?Math.round(S.tot.invoke.n/S.tot.equip.n):0)+" invokes per equip · invoker data pending"],
  ["Invokes — last 24h", S.inv24, S.eq24+" equips in same window"],
  ["Creators earning", S.creators_n, "wallets paid invoke/equip fees"],
 ];
@@ -163,12 +165,17 @@ const G=DATA.guard;
 const gtiles=[
  ["Organic payout share", G.organic_share+"%", "of creator earnings show organic patterns"],
  ["Earnings at risk", "$"+G.at_risk_usd, "flagged wallets — unconfirmed, heuristic"],
- ["Treasury runway", G.runway_days?("~"+G.runway_days+" days"):"n/a", G.balance?(fmt(G.balance)+" MOCA left at 24h burn pace"):"balance unavailable"],
- ["Unbacked burn (24h)", "$"+G.burn24, "prev 24h: $"+G.burn_prev+(G.burn_prev>0&&G.burn24/G.burn_prev>2?" — accelerating ⚠":"")],
+ ["Payout float", G.runway_adj?("~"+G.runway_adj+" days"):"n/a", G.balance?(fmt(G.balance)+" MOCA · "+(G.runway_days||"?")+"d at current pace, adj. for burn growth"):"balance unavailable"],
+ ["Unbacked burn (24h)", "$"+G.burn24, "prev 24h: $"+G.burn_prev+(G.burn_prev>0&&G.burn24/G.burn_prev>2?" — accelerating ⚠":"")+" · FX drift "+(G.fx_drift_pct>0?"+":"")+G.fx_drift_pct+"%"],
 ];
+if(G.runway_days!==null&&Math.min(G.runway_adj??99,G.runway_days)<14){
+ const rb=document.getElementById("runwayBanner");
+ rb.style.display="block";
+ rb.innerHTML=`⛽ <strong>Payout float reminder:</strong> ~<strong>${G.runway_adj??G.runway_days} days</strong> at projected burn (${G.runway_days}d at current pace) — ${fmt(G.balance)} MOCA in the wallet vs $${G.burn24}/24h unbacked spend${G.burn_prev>0&&G.burn24/G.burn_prev>2?" <strong>(accelerating)</strong>":""}. Operational top-up cadence, not solvency — plan the next refill.`;
+}
 document.getElementById("gtiles").innerHTML=gtiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
 document.getElementById("gN").textContent=G.rows.length+" creators monitored";
-document.getElementById("gT").innerHTML=`<thead><tr><th>Creator</th><th class="r">Invokes</th><th class="r">Span</th><th class="r">Entropy</th><th class="r">ACF</th><th class="r">Burst</th><th class="r">MOCA</th><th>Status</th></tr></thead><tbody>`+
+document.getElementById("gT").innerHTML=`<thead><tr><th>Creator</th><th class="r">Invokes</th><th class="r">Span</th><th class="r">Rhythm variety</th><th class="r">Repeating pattern</th><th class="r">Rapid-fire</th><th class="r">MOCA</th><th>Status</th></tr></thead><tbody>`+
  G.rows.map(g=>{
   const pill=g.status==="review"
    ?`<span class="pill" style="border-color:var(--c-equip);color:var(--c-equip)">review suggested</span>`
