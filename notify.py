@@ -22,7 +22,8 @@ def classify(v):
     if usd < 0.06: return "micro"
     if usd < 0.4: return "invoke"
     if usd < 2: return "equip"
-    return "growth"
+    if usd < 7: return "incentive"   # new-user credits ($3) + referrals ($5) — real spend
+    return "topup"                   # Stripe top-ups — revenue-backed passthrough
 
 rows = []
 for i in json.load(open(os.path.join(HERE, "transfers.json"))):
@@ -37,9 +38,11 @@ def stats(cutoff):
     return {
         "invoke": sum(1 for r in rs if r[1] == "invoke"),
         "equip": sum(1 for r in rs if r[1] == "equip"),
-        "growth": sum(1 for r in rs if r[1] == "growth"),
+        "incentive": sum(1 for r in rs if r[1] == "incentive"),
         "creators": len({r[3] for r in rs if r[1] in ("invoke", "equip")}),
-        "moca": sum(r[2] for r in rs),
+        "moca_ce": sum(r[2] for r in rs if r[1] in ("invoke", "equip")),
+        "moca_incent": sum(r[2] for r in rs if r[1] in ("incentive", "micro")),
+        "moca_topup": sum(r[2] for r in rs if r[1] == "topup"),
     }
 
 cur = stats(now)
@@ -59,7 +62,9 @@ def line(label, key):
 head = {"hourly": "🟢 <b>Hourly refresh OK</b>",
         "daily": "📊 <b>Daily summary</b>",
         "weekly": "🗓 <b>Weekly summary</b>"}[mode]
-usd = cur["moca"] * RATE
+def usd_line(label, key, note=""):
+    u = cur[key] * RATE
+    return f"<b>{label}:</b> {cur[key]:,.0f} MOCA ≈ <b>${u:,.2f}</b>{note}"
 
 msg = "\n".join([
     f"{head} — <i>Skill Payout Dashboard</i>",
@@ -67,8 +72,11 @@ msg = "\n".join([
     line("Skill invokes", "invoke"),
     line("Skill equips", "equip"),
     line("Creators earning", "creators"),
-    line("Growth payouts", "growth"),
-    f"<b>Total MOCA out:</b> {cur['moca']:,.0f} ≈ <b>${usd:,.2f}</b>",
+    line("Growth incentives", "incentive"),
+    "",
+    usd_line("Creator earnings", "moca_ce"),
+    usd_line("Incentive spend", "moca_incent", " <i>(credits + referrals)</i>"),
+    usd_line("Top-ups delivered", "moca_topup", " <i>(revenue-backed, Stripe)</i>"),
 ])
 
 body = urllib.parse.urlencode({
