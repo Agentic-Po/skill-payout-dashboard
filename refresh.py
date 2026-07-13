@@ -60,6 +60,30 @@ try:
 except Exception as e:
     print("balance fetch failed:", e)
 
+# --- inbound transfers (treasury top-ups) ---
+in_path = os.path.join(HERE, "transfers_in.json")
+old_in = json.load(open(in_path)) if os.path.exists(in_path) else []
+try:
+    seen_in = {i["transaction_hash"] + str(i["log_index"]) for i in old_in}
+    newest_in = old_in[0]["timestamp"] if old_in else "2026-06-30"
+    got, params = [], ""
+    for _ in range(20):
+        d = get(BASE.replace("filter=from", "filter=to") + params)
+        b = d.get("items", [])
+        if not b:
+            break
+        got += b
+        if b[-1]["timestamp"] < newest_in or not d.get("next_page_params"):
+            break
+        params = "&" + "&".join(f"{k}={v}" for k, v in d["next_page_params"].items())
+        time.sleep(0.1)
+    old_in = [i for i in got if i["transaction_hash"] + str(i["log_index"]) not in seen_in] + old_in
+    json.dump(old_in, open(in_path, "w"))
+except Exception as e:
+    print("inbound fetch failed (using cache):", e)
+inflows = [{"ts": i["timestamp"][:19], "val": int(i["total"]["value"]) / 1e18, "from": i["from"]["hash"]}
+           for i in old_in if i["token"]["symbol"] == "MOCA"]
+
 # --- build dataset (MOCA only) ---
 rows = []
 for i in full:
@@ -190,7 +214,12 @@ UNIT = {"invoke": 0.10, "equip": 1, "new-user $3": 3, "referral $5": 5,
 promised = sum(UNIT.get(r["fine"], r["val"] * RATE) for r in rows)
 settled = sum(r["val"] for r in rows) * RATE
 fx_drift = round((settled - promised) / promised * 100, 1) if promised else 0
+out24 = sum(r["val"] for r in rows if datetime.fromisoformat(r["ts"]).replace(tzinfo=timezone.utc) > cut24)
+in24 = sum(f["val"] for f in inflows if datetime.fromisoformat(f["ts"]).replace(tzinfo=timezone.utc) > cut24)
+bal_delta24 = in24 - out24
+topup24 = round(in24, 0)
 guard = {"organic_share": organic_share, "at_risk_usd": round(at_risk * RATE, 2),
+         "bal_delta24": round(bal_delta24, 0), "topup24": topup24,
          "runway_days": runway, "runway_adj": runway_adj, "balance": round(BALANCE, 0) if BALANCE else None,
          "burn24": round(burn24, 2), "burn_prev": round(burn_prev, 2),
          "promised_usd": round(promised, 2), "fx_drift_pct": fx_drift, "rows": grows}

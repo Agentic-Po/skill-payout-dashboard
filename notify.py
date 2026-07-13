@@ -70,8 +70,14 @@ def usd_line(label, key, note=""):
 import re
 G = json.loads(re.search(r'const DATA = (\{.*?\})\s*;', open(os.path.join(HERE, "index.html")).read(), re.S).group(1))["guard"]
 health = []
-if mode in ("daily", "weekly"):
+if G.get("balance") is not None:
+    bd = G.get("bal_delta24") or 0
+    sign = "+" if bd >= 0 else ""
     health.append("")
+    health.append(f"<b>Wallet balance:</b> {G['balance']:,.0f} MOCA ≈ <b>${G['balance']*RATE:,.2f}</b> <i>({sign}{bd:,.0f} MOCA 24h)</i>")
+if G.get("topup24"):
+    health.append(f"⬆️ <b>Top-up received:</b> +{G['topup24']:,.0f} MOCA in the last 24h")
+if mode in ("daily", "weekly"):
     health.append(f"<b>Organic payout share:</b> {G['organic_share']}% · <b>at risk:</b> ${G['at_risk_usd']} <i>(unconfirmed)</i>")
     if G.get("runway_days") is not None:
         health.append(f"<b>Payout float:</b> ~{G.get('runway_adj') or G['runway_days']} days projected ({G['balance']:,.0f} MOCA) — top-up cadence, not solvency")
