@@ -39,8 +39,13 @@ jobs:
           git config user.email "actions@github.com"
           git add HEARTBEAT.md && git commit -m "weekly heartbeat" && git push
       - name: Weekly Telegram status (dead-man's switch — silence means broken)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          if [ "${{ steps.health.outputs.status }}" = "healthy" ]; then ICON="🟢"; else ICON="🔴"; fi
-          curl -s -o /dev/null "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode text="$ICON Skill Payout Dashboard weekly check: ${{ steps.health.outputs.status }}. Last refresh run: ${{ steps.health.outputs.conclusion }}, page age: ${{ steps.health.outputs.age_h }}h, total invokes: ${{ steps.health.outputs.invokes }}. https://agentic-po.github.io/skill-payout-dashboard/"
+          python3 notify.py weekly
+          if [ "${{ steps.health.outputs.status }}" != "healthy" ]; then
+            curl -s -o /dev/null "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+              -d chat_id="$TELEGRAM_CHAT_ID" \
+              --data-urlencode text="🔴 Health check: last refresh run=${{ steps.health.outputs.conclusion }}, page age ${{ steps.health.outputs.age_h }}h — needs a look."
+          fi

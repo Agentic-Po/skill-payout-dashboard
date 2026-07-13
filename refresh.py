@@ -119,6 +119,19 @@ S = {
 }
 data = {"S": S, "hourly": hourly, "daily": daily, "creators": creators, "other": other}
 
+# --- append snapshot for delta-notifications (notify.py) ---
+hist_path = os.path.join(HERE, "stats_history.json")
+hist = json.load(open(hist_path)) if os.path.exists(hist_path) else []
+hist.append({
+    "ts": now.strftime("%Y-%m-%dT%H:%M"),
+    "invoke": S["tot"]["invoke"]["n"], "equip": S["tot"]["equip"]["n"],
+    "growth": S["tot"]["growth"]["n"],
+    "moca": round(sum(S["tot"][c]["moca"] for c in S["tot"]), 1),
+    "creators": S["creators_n"], "rate": RATE,
+})
+cut = (now - timedelta(days=60)).strftime("%Y-%m-%dT%H:%M")
+json.dump([h for h in hist if h["ts"] >= cut], open(hist_path, "w"))
+
 tpl = open(os.path.join(HERE, "template.html")).read()
 tpl = tpl.replace("MOCA rate used $0.008912", f"MOCA rate used ${RATE:.6f}")
 out = os.path.join(HERE, "index.html")
