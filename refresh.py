@@ -82,12 +82,12 @@ try:
 except Exception as e:
     print("inbound fetch failed (using cache):", e)
 inflows = [{"ts": i["timestamp"][:19], "val": int(i["total"]["value"]) / 1e18, "from": i["from"]["hash"]}
-           for i in old_in if i["token"]["symbol"] == "MOCA"]
+           for i in old_in if i["token"]["address_hash"].lower() == "0x2b11834ed1feaed4b4b3a86a6f571315e25a884d"]
 
 # --- build dataset (MOCA only) ---
 rows = []
 for i in full:
-    if i["token"]["symbol"] != "MOCA":
+    if i["token"]["address_hash"].lower() != "0x2b11834ed1feaed4b4b3a86a6f571315e25a884d":
         continue
     v = int(i["total"]["value"]) / 1e18
     rows.append({"ts": i["timestamp"][:19], "val": round(v, 4), "to": i["to"]["hash"], "tx": i["transaction_hash"]})
@@ -216,10 +216,25 @@ settled = sum(r["val"] for r in rows) * RATE
 fx_drift = round((settled - promised) / promised * 100, 1) if promised else 0
 out24 = sum(r["val"] for r in rows if datetime.fromisoformat(r["ts"]).replace(tzinfo=timezone.utc) > cut24)
 in24 = sum(f["val"] for f in inflows if datetime.fromisoformat(f["ts"]).replace(tzinfo=timezone.utc) > cut24)
+in24_real = sum(f["val"] for f in inflows if f["val"] >= 100 and datetime.fromisoformat(f["ts"]).replace(tzinfo=timezone.utc) > cut24)
 bal_delta24 = in24 - out24
-topup24 = round(in24, 0)
+topup24 = round(in24_real, 0)
+recon_drift = None
+try:
+    prev_hist = json.load(open(os.path.join(HERE, "stats_history.json")))
+    target = (now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M")
+    older = [h for h in prev_hist if h["ts"] <= target and h.get("balance")]
+    if older and BALANCE:
+        expected = older[-1]["balance"] + in24 - out24
+        drift = BALANCE - expected
+        if abs(drift) > 1:
+            recon_drift = round(drift, 1)
+except Exception:
+    pass
+topup_needed = round(max(0, 7 * burn24 - BALANCE * RATE) / RATE, 0) if BALANCE and burn24 else None
 guard = {"organic_share": organic_share, "at_risk_usd": round(at_risk * RATE, 2),
          "bal_delta24": round(bal_delta24, 0), "topup24": topup24,
+         "recon_drift": recon_drift, "topup_needed": topup_needed,
          "runway_days": runway, "runway_adj": runway_adj, "balance": round(BALANCE, 0) if BALANCE else None,
          "burn24": round(burn24, 2), "burn_prev": round(burn_prev, 2),
          "promised_usd": round(promised, 2), "fx_drift_pct": fx_drift, "rows": grows}
@@ -235,6 +250,7 @@ hist.append({
     "growth": S["tot"]["growth"]["n"],
     "moca": round(sum(S["tot"][c]["moca"] for c in S["tot"]), 1),
     "creators": S["creators_n"], "rate": RATE,
+    "balance": round(BALANCE, 1) if BALANCE else None, "runway_adj": runway_adj,
 })
 cut = (now - timedelta(days=60)).strftime("%Y-%m-%dT%H:%M")
 json.dump([h for h in hist if h["ts"] >= cut], open(hist_path, "w"))

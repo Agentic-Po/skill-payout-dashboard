@@ -27,7 +27,7 @@ def classify(v):
 
 rows = []
 for i in json.load(open(os.path.join(HERE, "transfers.json"))):
-    if i["token"]["symbol"] != "MOCA":
+    if i["token"]["address_hash"].lower() != "0x2b11834ed1feaed4b4b3a86a6f571315e25a884d":
         continue
     v = int(i["total"]["value"]) / 1e18
     rows.append((datetime.fromisoformat(i["timestamp"][:19]), classify(v), v, i["to"]["hash"]))
@@ -74,7 +74,7 @@ if G.get("balance") is not None:
     bd = G.get("bal_delta24") or 0
     sign = "+" if bd >= 0 else ""
     health.append("")
-    health.append(f"<b>Wallet balance:</b> {G['balance']:,.0f} MOCA ≈ <b>${G['balance']*RATE:,.2f}</b> <i>({sign}{bd:,.0f} MOCA 24h)</i>")
+    health.append(f"<b>Wallet:</b> <b>${G['balance']*RATE:,.2f}</b> ({G['balance']:,.0f} MOCA · {sign}{bd:,.0f} MOCA/24h)")
 if G.get("topup24"):
     health.append(f"⬆️ <b>Top-up received:</b> +{G['topup24']:,.0f} MOCA in the last 24h")
 if mode in ("daily", "weekly"):
@@ -85,10 +85,18 @@ if mode == "weekly":
     flagged = sum(1 for r in G["rows"] if r["status"] == "review")
     health.append("")
     health.append(f"<i>Paste-ready:</i> This week: {cur['invoke']:,} invokes across {cur['creators']} creators, ${cur['moca_ce']*RATE:,.2f} paid to creators — {G['organic_share']}% organic, {flagged} account(s) under review, ${cur['moca_topup']*RATE:,.2f} of flows revenue-backed.")
-if G.get("burn_prev", 0) > 0 and G.get("burn24", 0) / G["burn_prev"] > 2:
+if G.get("recon_drift"):
+    health.append(f"⚠️ <b>Reconciliation drift:</b> {G['recon_drift']:,.1f} MOCA unexplained vs transfer logs")
+if G.get("burn_prev", 0) > 0 and G.get("burn24", 0) / G["burn_prev"] > 2 and mode != "hourly":
     health.append(f"⚠️ <b>Burn accelerating:</b> ${G['burn24']}/24h vs ${G['burn_prev']} prior")
-if G.get("runway_days") is not None and min(G.get("runway_adj") or 99, G["runway_days"]) < 7:
-    health.append(f"🔴 <b>Low float:</b> ~{G.get('runway_adj') or G['runway_days']} days at projected burn — schedule a wallet top-up")
+rw = min(G.get("runway_adj") or 99, G.get("runway_days") or 99)
+if rw < 7:
+    # throttle for hourly: alert on threshold crossing/escalation or every 6h; daily/weekly always
+    prev_rw = hist[-2].get("runway_adj") if len(hist) >= 2 else None
+    crossed = prev_rw is None or prev_rw >= 7 or (rw < 1 <= prev_rw) or (rw < 0.5 <= prev_rw)
+    if mode != "hourly" or crossed or now.hour % 6 == 0:
+        need = f" — top up ≥{G['topup_needed']:,.0f} MOCA for 7d float" if G.get("topup_needed") else ""
+        health.append(f"🔴 <b>Low float:</b> ${G['burn24']}/24h burn → ~{rw}d left{need}")
 
 msg = "\n".join([
     f"{head} — <i>Skill Payout Dashboard</i>",
