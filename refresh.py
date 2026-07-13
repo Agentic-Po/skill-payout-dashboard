@@ -4,7 +4,7 @@
 Fetches new outgoing token transfers from Blockscout (Base) for the tracked wallet, merges them into transfers.json, recomputes the dashboard
 dataset, and renders dashboard.html from template.html.
 """
-import json, os, time, urllib.request
+import json, math, os, statistics, time, urllib.request
 from datetime import datetime, timezone, timedelta
 from collections import Counter, defaultdict
 
@@ -45,6 +45,20 @@ try:
     RATE = float(tok.get("exchange_rate") or RATE)
 except Exception as e:
     print("rate fetch failed, using fallback:", e)
+
+# --- treasury balance (live) ---
+BALANCE = None
+try:
+    # Blockscout token-balances omits MOCA for this address; query balanceOf directly
+    payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [
+        {"to": "0x2B11834Ed1FeAEd4b4b3a86A6F571315E25A884D",
+         "data": "0x70a08231" + "0" * 24 + WALLET[2:].lower()}, "latest"]}).encode()
+    req = urllib.request.Request("https://base.blockscout.com/api/eth-rpc", data=payload,
+        headers={"Content-Type": "application/json", "User-Agent": "curl/8.4.0"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        BALANCE = int(json.load(r)["result"], 16) / 1e18
+except Exception as e:
+    print("balance fetch failed:", e)
 
 # --- build dataset (MOCA only) ---
 rows = []
@@ -117,7 +131,67 @@ S = {
     "eq24": sum(1 for r in rows if r["cat"] == "equip" and datetime.fromisoformat(r["ts"]).replace(tzinfo=timezone.utc) > cut24),
     "creators_n": len(creators),
 }
-data = {"S": S, "hourly": hourly, "daily": daily, "creators": creators, "other": other}
+# --- pattern monitor (guardrail) ---
+def gap_entropy(gaps):
+    """Shannon entropy of inter-arrival gaps over log-spaced bins, normalized 0-1.
+    Low = metronomic cadence; high = human-irregular."""
+    bins = [10, 30, 60, 120, 300, 600, 1800, 3600, 7200, 21600, 86400]
+    hist = Counter(next((i for i, e in enumerate(bins) if g < e), len(bins)) for g in gaps)
+    n = len(gaps)
+    H = -sum((c / n) * math.log(c / n) for c in hist.values())
+    return max(H / math.log(len(bins) + 1), 0.0)
+
+def acf1(gaps):
+    """Lag-1 autocorrelation of gaps; high = scripted pattern even with jitter."""
+    if len(gaps) < 3: return 0.0
+    a, b = gaps[:-1], gaps[1:]
+    ma, mb = statistics.mean(a), statistics.mean(b)
+    num = sum((x - ma) * (y - mb) for x, y in zip(a, b))
+    den = math.sqrt(sum((x - ma) ** 2 for x in a) * sum((y - mb) ** 2 for y in b))
+    return num / den if den else 0.0
+
+inc_recip = {r["to"] for r in rows if r["fine"] in ("new-user $3", "referral $5")}
+inv_counts = sorted(len([r for r in rows if r["to"] == c["addr"] and r["cat"] == "invoke"]) for c in creators)
+if len(inv_counts) >= 4:
+    q1 = inv_counts[len(inv_counts) // 4]; q3 = inv_counts[3 * len(inv_counts) // 4]
+    vol_hi = max(15, q3 + 3 * (q3 - q1))
+else:
+    vol_hi = 15
+grows = []
+for c in creators:
+    ts = sorted(datetime.fromisoformat(r["ts"]) for r in rows if r["to"] == c["addr"] and r["cat"] == "invoke")
+    n = len(ts)
+    if n < 10:
+        continue
+    gaps = [(b - a).total_seconds() for a, b in zip(ts, ts[1:])]
+    ent = gap_entropy(gaps)
+    ac = acf1(gaps)
+    burst = max(sum(1 for t2 in ts if 0 <= (t2 - t1).total_seconds() <= 600) for t1 in ts) / n
+    span_h = (ts[-1] - ts[0]).total_seconds() / 3600
+    flags = []
+    if c["addr"] in inc_recip: flags.append("both-sides")
+    if n >= 20 and ent < 0.45: flags.append("uniform cadence")
+    if n >= 20 and ac > 0.6: flags.append("scripted pattern")
+    if n >= 15 and burst > 0.6: flags.append("burst cluster")
+    tags = ["high volume"] if n > vol_hi else []
+    grows.append({"addr": c["addr"], "n": n, "span_h": round(span_h, 1), "ent": round(ent, 2),
+                  "acf": round(ac, 2), "burst": round(burst * 100), "moca": c["moca"],
+                  "flags": flags, "tags": tags, "status": "review" if flags else "organic"})
+ce_total = sum(c["moca"] for c in creators) or 1
+at_risk = sum(g["moca"] for g in grows if g["status"] == "review")
+small_moca = sum(c["moca"] for c in creators if c["addr"] not in {g["addr"] for g in grows})
+organic_share = round((ce_total - at_risk) / ce_total * 100, 1)
+burn24 = sum(r["val"] for r in rows
+             if (r["cat"] in ("invoke", "equip") or r["fine"] in ("new-user $3", "referral $5"))
+             and datetime.fromisoformat(r["ts"]).replace(tzinfo=timezone.utc) > cut24) * RATE
+burn_prev = sum(r["val"] for r in rows if (r["cat"] in ("invoke", "equip") or r["fine"] in ("new-user $3", "referral $5"))
+                and cut24 - timedelta(hours=24) < datetime.fromisoformat(r["ts"]).replace(tzinfo=timezone.utc) <= cut24) * RATE
+runway = round(BALANCE * RATE / burn24, 1) if BALANCE and burn24 > 0 else None
+guard = {"organic_share": organic_share, "at_risk_usd": round(at_risk * RATE, 2),
+         "runway_days": runway, "balance": round(BALANCE, 0) if BALANCE else None,
+         "burn24": round(burn24, 2), "burn_prev": round(burn_prev, 2), "rows": grows}
+
+data = {"S": S, "hourly": hourly, "daily": daily, "creators": creators, "other": other, "guard": guard}
 
 # --- append snapshot for delta-notifications (notify.py) ---
 hist_path = os.path.join(HERE, "stats_history.json")

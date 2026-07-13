@@ -66,6 +66,20 @@ def usd_line(label, key, note=""):
     u = cur[key] * RATE
     return f"<b>{label}:</b> {cur[key]:,.0f} MOCA ≈ <b>${u:,.2f}</b>{note}"
 
+# guard summary from the freshly built page
+import re
+G = json.loads(re.search(r'const DATA = (\{.*?\})\s*;', open(os.path.join(HERE, "index.html")).read(), re.S).group(1))["guard"]
+health = []
+if mode in ("daily", "weekly"):
+    health.append("")
+    health.append(f"<b>Organic payout share:</b> {G['organic_share']}% · <b>at risk:</b> ${G['at_risk_usd']} <i>(unconfirmed)</i>")
+    if G.get("runway_days") is not None:
+        health.append(f"<b>Treasury runway:</b> ~{G['runway_days']} days ({G['balance']:,.0f} MOCA)")
+if G.get("burn_prev", 0) > 0 and G.get("burn24", 0) / G["burn_prev"] > 2:
+    health.append(f"⚠️ <b>Burn accelerating:</b> ${G['burn24']}/24h vs ${G['burn_prev']} prior")
+if G.get("runway_days") is not None and G["runway_days"] < 7:
+    health.append(f"🔴 <b>Low runway:</b> ~{G['runway_days']} days at current burn — top up the bank wallet")
+
 msg = "\n".join([
     f"{head} — <i>Skill Payout Dashboard</i>",
     "",
@@ -77,7 +91,7 @@ msg = "\n".join([
     usd_line("Creator earnings", "moca_ce"),
     usd_line("Incentive spend", "moca_incent", " <i>(credits + referrals)</i>"),
     usd_line("Top-ups delivered", "moca_topup", " <i>(revenue-backed, Stripe)</i>"),
-])
+] + health)
 
 body = urllib.parse.urlencode({
     "chat_id": os.environ["TELEGRAM_CHAT_ID"],

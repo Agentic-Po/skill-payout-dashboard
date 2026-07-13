@@ -83,6 +83,14 @@ td a{color:var(--acc);text-decoration:none}
     <div class="scroll"><table id="creators"></table></div>
   </div>
 
+  <p class="sect">Ecosystem health — pattern monitor &amp; treasury</p>
+  <div class="tiles" id="gtiles"></div>
+  <div class="card">
+    <h2>Payout pattern monitor <span class="pill" id="gN"></span></h2>
+    <p class="note">Behavioral fingerprints of creator payout streams (creators with ≥10 invokes). <b>Entropy</b>: cadence irregularity (low = metronomic). <b>ACF</b>: gap autocorrelation (high = scripted pattern). Heuristic signals, not determinations — automated invocation can be legitimate in an agentic economy; the automation policy is an open decision. True unique-users-per-skill requires off-chain invoker data (open ask to platform team).</p>
+    <div class="scroll"><table id="gT"></table></div>
+  </div>
+
   <p class="sect">User growth &amp; top-ups — separate from creator earnings</p>
   <div class="card">
     <h2>Credits, referrals &amp; Stripe top-ups <span class="pill" id="othN"></span></h2>
@@ -149,4 +157,23 @@ const oth=DATA.other;
 document.getElementById("othN").textContent=oth.length+" tx · "+fmt(oth.reduce((a,b)=>a+b.val,0))+" MOCA";
 document.getElementById("otherT").innerHTML=`<thead><tr><th>Time (UTC)</th><th>Type</th><th>Recipient</th><th class="r">MOCA</th><th class="r">≈ USD</th><th>Tx</th></tr></thead><tbody>`+
  oth.map(o=>`<tr><td class="mono">${o.ts.replace("T"," ")}</td><td><span class="sw" style="background:${CC[o.cat]||(o.cat==='test'?CC.micro:CC.growth)};margin-right:6px"></span>${o.cat}</td><td class="mono"><a href="https://basescan.org/address/${o.to}" target="_blank">${o.to.slice(0,8)}…${o.to.slice(-4)}</a></td><td class="r mono">${o.val.toFixed(2)}</td><td class="r mono">$${(o.val*S.rate).toFixed(2)}</td><td class="mono"><a href="https://basescan.org/tx/${o.tx}" target="_blank">${o.tx.slice(0,10)}…</a></td></tr>`).join("")+`</tbody>`;
+
+// ecosystem health / pattern monitor
+const G=DATA.guard;
+const gtiles=[
+ ["Organic payout share", G.organic_share+"%", "of creator earnings show organic patterns"],
+ ["Earnings at risk", "$"+G.at_risk_usd, "flagged wallets — unconfirmed, heuristic"],
+ ["Treasury runway", G.runway_days?("~"+G.runway_days+" days"):"n/a", G.balance?(fmt(G.balance)+" MOCA left at 24h burn pace"):"balance unavailable"],
+ ["Unbacked burn (24h)", "$"+G.burn24, "prev 24h: $"+G.burn_prev+(G.burn_prev>0&&G.burn24/G.burn_prev>2?" — accelerating ⚠":"")],
+];
+document.getElementById("gtiles").innerHTML=gtiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
+document.getElementById("gN").textContent=G.rows.length+" creators monitored";
+document.getElementById("gT").innerHTML=`<thead><tr><th>Creator</th><th class="r">Invokes</th><th class="r">Span</th><th class="r">Entropy</th><th class="r">ACF</th><th class="r">Burst</th><th class="r">MOCA</th><th>Status</th></tr></thead><tbody>`+
+ G.rows.map(g=>{
+  const pill=g.status==="review"
+   ?`<span class="pill" style="border-color:var(--c-equip);color:var(--c-equip)">review suggested</span>`
+   :`<span class="pill" style="border-color:var(--c-growth);color:var(--c-growth)">organic</span>`;
+  const extra=[...g.flags,...g.tags].map(f=>`<span class="pill">${f}</span>`).join(" ");
+  return `<tr><td class="mono"><a href="https://basescan.org/address/${g.addr}" target="_blank">${g.addr.slice(0,8)}…${g.addr.slice(-4)}</a></td><td class="r">${g.n}</td><td class="r mono">${g.span_h}h</td><td class="r mono">${g.ent.toFixed(2)}</td><td class="r mono">${g.acf.toFixed(2)}</td><td class="r mono">${g.burst}%</td><td class="r mono">${fmt(g.moca)}</td><td>${pill} ${extra}</td></tr>`;
+ }).join("")+`</tbody>`;
 </script>
