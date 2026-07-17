@@ -93,25 +93,37 @@ for i in full:
     rows.append({"ts": i["timestamp"][:19], "val": round(v, 4), "to": i["to"]["hash"], "tx": i["transaction_hash"]})
 rows.sort(key=lambda r: r["ts"], reverse=True)
 
-def classify(v):
-    """Return (coarse, fine) type from approximate USD value at live rate.
+# --- day-anchored rate oracle: the $0.10 invoke cluster reveals each day's
+# true MOCA/USD payout rate, so old transfers aren't mispriced at today's rate.
+_seed = defaultdict(list)
+for r in rows:
+    if 0.05 < r["val"] * RATE < 0.4:          # coarse invoke band at live rate
+        _seed[r["ts"][:10]].append(r["val"])
+DAY_RATE = {d: 0.10 / statistics.median(v) for d, v in _seed.items() if len(v) >= 5}
 
-    Wide bands tolerate MOCA price drift between payout time and now.
-    Fine labels per CryptoSlam: new-user credits ($3), referral ($5),
-    Stripe top-ups ($10/$25/$50)."""
-    usd = v * RATE
+def day_rate(ts):
+    d = ts[:10]
+    if d in DAY_RATE: return DAY_RATE[d]
+    prior = [k for k in sorted(DAY_RATE) if k <= d]
+    return DAY_RATE[prior[-1]] if prior else RATE
+
+GRID = [(0.10, "invoke", "invoke"), (1, "equip", "equip"),
+        (3, "growth", "new-user $3"), (5, "growth", "referral $5"),
+        (10, "growth", "stripe $10"), (25, "growth", "stripe $25"),
+        (50, "growth", "stripe $50")]
+
+def classify(v, ts):
+    """Snap to the price grid at the payout-day implied rate (±8%)."""
+    usd = v * day_rate(ts)
     if usd < 0.06: return ("micro", "test")
-    if usd < 0.4: return ("invoke", "invoke")
-    if usd < 2: return ("equip", "equip")
-    if usd < 4: return ("growth", "new-user $3")
-    if usd < 7: return ("growth", "referral $5")
-    if usd < 16: return ("growth", "stripe $10")
-    if usd < 36: return ("growth", "stripe $25")
-    if usd < 70: return ("growth", "stripe $50")
-    return ("growth", "top-up other")
+    for unit, coarse, fine in GRID:
+        if abs(usd - unit) / unit <= 0.08:
+            return (coarse, fine)
+    if usd > 7: return ("growth", "top-up other")
+    return ("invoke", "nonstandard") if usd < 0.5 else ("growth", "nonstandard")
 
 for r in rows:
-    r["cat"], r["fine"] = classify(r["val"])
+    r["cat"], r["fine"] = classify(r["val"], r["ts"])
 now = datetime.now(timezone.utc)
 
 h0 = datetime.fromisoformat(rows[-1]["ts"]).replace(minute=0, second=0, tzinfo=timezone.utc)
