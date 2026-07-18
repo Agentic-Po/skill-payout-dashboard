@@ -93,11 +93,20 @@ td a{color:var(--acc);text-decoration:none}
     <details><summary style="cursor:pointer;font-size:13px;color:var(--ink2)">Advanced signals — per-creator fingerprints (ops view)</summary><div class="scroll"><table id="gT"></table></div></details>
   </div>
 
+  <p class="sect">Treasury — whole-wallet flows &amp; daily burn</p>
+  <div class="tiles" id="ttiles"></div>
+  <div class="card">
+    <h2>Daily wallet burn — past 3 months</h2>
+    <p class="note">All outgoing MOCA from the wallet per day (creator payouts, credits, referrals, top-up deliveries — everything), valued in USD at each day's implied payout rate where known (live rate otherwise). Inflows are treasury top-ups received.</p>
+    <div class="scroll"><table id="treasT"></table></div>
+  </div>
+
   <p class="sect">User growth &amp; top-ups — separate from creator earnings</p>
   <div class="card">
     <h2>Credits, referrals &amp; Stripe top-ups <span class="pill" id="othN"></span></h2>
-    <p class="note">Per CryptoSlam: the wallet also funds user-side balances — new-user free credits (~$3), referral rewards ($5 each side), and Stripe top-ups ($10 / $25 / $50). Note: top-ups are revenue-backed (user paid fiat via card; the MOCA out is delivery, not spend), while credits &amp; referrals are true incentive spend. Type inferred from USD value at payout. Micro (~$0.04) transfers were the first ever sent and are presumed testing.</p>
-    <div class="scroll"><table id="otherT"></table></div>
+    <p class="note">The wallet also funds user-side balances — $3 credits, referral rewards ($5 each side), and Stripe top-ups ($10 / $25 / $50). The ~$3 payouts are a mixed bucket (internal top-up system and new-user free credits — first 3 minds; 1 Cognition Credit = 1 $MENTE ≈ $0.014) and are not split further here. Stripe top-ups are revenue-backed (user paid fiat; the MOCA out is delivery, not spend). Type inferred from USD value at payout.</p>
+    <div class="scroll"><table id="othSum"></table></div>
+    <details style="margin-top:10px"><summary style="cursor:pointer;font-size:13px;color:var(--ink2)">Full transaction list (latest 40)</summary><div class="scroll"><table id="otherT"></table></div></details>
   </div>
 
   <p class="caveat"><strong>Caveat:</strong> classification is inferred from transfer size. MOCA amounts map to live USD value at payout time, so per-tx MOCA drifts (invokes ≈ 11.0–11.3 MOCA). A per-tx memo/event from the payout contract would make this exact.</p>
@@ -154,11 +163,30 @@ svg.addEventListener("mouseleave",()=>tip.style.opacity=0);
 // creators
 document.getElementById("creators").innerHTML=`<thead><tr><th>#</th><th>Creator wallet</th><th class="r">Invokes</th><th class="r">Equips</th><th class="r">MOCA</th><th class="r">≈ USD</th><th class="r">Share</th></tr></thead><tbody>`+
  DATA.creators.slice(0,15).map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a></td><td class="r">${c.invoke}</td><td class="r">${c.equip}</td><td class="r mono">${fmt(c.moca)}</td><td class="r mono">$${(c.moca*S.rate).toFixed(2)}</td><td class="r mono">${(c.moca/ceMoca*100).toFixed(1)}%</td></tr>`).join("")+`</tbody>`;
-// other payouts
+// treasury — whole-wallet flows
+const T=DATA.treasury;
+if(T){
+ const ttiles=[
+  ["Wallet balance", T.balance!==null?fmt(T.balance)+" MOCA":"n/a", T.balance_usd!==null?("≈ $"+fmt(T.balance_usd)):""],
+  ["Total outflow — 24h", "$"+T.out24_usd, fmt(T.out24_moca)+" MOCA · all categories"],
+  ["Avg daily burn — 7d", "$"+T.burn7_usd, "whole wallet, USD at day's implied rate"],
+  ["Inflow — 24h", fmt(T.in24_moca)+" MOCA", "treasury top-ups received"],
+ ];
+ document.getElementById("ttiles").innerHTML=ttiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
+ const tmax=Math.max(...T.daily.map(d=>d.out_usd),1);
+ document.getElementById("treasT").innerHTML=`<thead><tr><th>Day (UTC)</th><th class="r">Burn ≈ USD</th><th></th><th class="r">Out MOCA</th><th class="r">In MOCA</th><th class="r">Net MOCA</th></tr></thead><tbody>`+
+  T.daily.slice().reverse().map(d=>`<tr><td class="mono">${d.d}</td><td class="r mono">$${d.out_usd.toFixed(2)}</td><td style="width:30%"><div style="height:9px;border-radius:3px;background:var(--c-equip);width:${d.out_usd/tmax*100}%"></div></td><td class="r mono">${fmt(d.out)}</td><td class="r mono" style="color:var(--c-growth)">${d.inn?fmt(d.inn):"—"}</td><td class="r mono" style="color:${d.net<0?"var(--ink3)":"var(--c-growth)"}">${fmt(d.net)}</td></tr>`).join("")+`</tbody>`;
+}
+// other payouts — summary by type + collapsed full list
 const oth=DATA.other;
 document.getElementById("othN").textContent=oth.length+" tx · "+fmt(oth.reduce((a,b)=>a+b.val,0))+" MOCA";
+const agg={};
+oth.forEach(o=>{(agg[o.cat]??={n:0,moca:0}).n++;agg[o.cat].moca+=o.val;});
+const aggMoca=Object.values(agg).reduce((a,b)=>a+b.moca,0)||1;
+document.getElementById("othSum").innerHTML=`<thead><tr><th>Type</th><th class="r">Count</th><th class="r">MOCA</th><th class="r">≈ USD</th><th class="r">Share</th></tr></thead><tbody>`+
+ Object.entries(agg).sort((a,b)=>b[1].moca-a[1].moca).map(([k,v])=>`<tr><td><span class="sw" style="background:${CC[k]||(k==='test'?CC.micro:CC.growth)};margin-right:6px"></span>${k}</td><td class="r">${v.n}</td><td class="r mono">${fmt(v.moca)}</td><td class="r mono">$${(v.moca*S.rate).toFixed(2)}</td><td class="r mono">${(v.moca/aggMoca*100).toFixed(1)}%</td></tr>`).join("")+`</tbody>`;
 document.getElementById("otherT").innerHTML=`<thead><tr><th>Time (UTC)</th><th>Type</th><th>Recipient</th><th class="r">MOCA</th><th class="r">≈ USD</th><th>Tx</th></tr></thead><tbody>`+
- oth.map(o=>`<tr><td class="mono">${o.ts.replace("T"," ")}</td><td><span class="sw" style="background:${CC[o.cat]||(o.cat==='test'?CC.micro:CC.growth)};margin-right:6px"></span>${o.cat}</td><td class="mono"><a href="https://basescan.org/address/${o.to}" target="_blank">${o.to.slice(0,8)}…${o.to.slice(-4)}</a></td><td class="r mono">${o.val.toFixed(2)}</td><td class="r mono">$${(o.val*S.rate).toFixed(2)}</td><td class="mono"><a href="https://basescan.org/tx/${o.tx}" target="_blank">${o.tx.slice(0,10)}…</a></td></tr>`).join("")+`</tbody>`;
+ oth.slice(0,40).map(o=>`<tr><td class="mono">${o.ts.replace("T"," ")}</td><td><span class="sw" style="background:${CC[o.cat]||(o.cat==='test'?CC.micro:CC.growth)};margin-right:6px"></span>${o.cat}</td><td class="mono"><a href="https://basescan.org/address/${o.to}" target="_blank">${o.to.slice(0,8)}…${o.to.slice(-4)}</a></td><td class="r mono">${o.val.toFixed(2)}</td><td class="r mono">$${(o.val*S.rate).toFixed(2)}</td><td class="mono"><a href="https://basescan.org/tx/${o.tx}" target="_blank">${o.tx.slice(0,10)}…</a></td></tr>`).join("")+`</tbody>`;
 
 // ecosystem health / pattern monitor
 const G=DATA.guard;

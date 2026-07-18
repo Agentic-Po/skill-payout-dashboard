@@ -12,10 +12,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WALLET = "0xBD956171F5B50936f0Ad1C4db80c022bd2442519"
 BASE = f"https://base.blockscout.com/api/v2/addresses/{WALLET}/token-transfers?filter=from"
 
-def get(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "curl/8.4.0", "Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.load(r)
+def get(url, tries=4):
+    for a in range(tries):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "curl/8.4.0", "Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return json.load(r)
+        except Exception:
+            if a == tries - 1:
+                raise
+            time.sleep(2 * (a + 1))
 
 # --- incremental fetch: pull newest pages until we overlap the cache ---
 cache_path = os.path.join(HERE, "transfers.json")
@@ -35,6 +41,37 @@ for _ in range(100):
     time.sleep(0.1)
 add = [i for i in items if i["transaction_hash"] + str(i["log_index"]) not in seen]
 full = add + old
+
+# --- one-time backfill: extend the cache back 3 months for the treasury view ---
+CUTOFF = (datetime.now(timezone.utc) - timedelta(days=92)).strftime("%Y-%m-%dT%H:%M:%S")
+
+def backfill(base_url, cache):
+    """Paginate from the top until the cutoff, keeping only unseen items.
+    Runs once per direction (marker file) — the wallet's pre-MOCA history is
+    high-volume noise that can exceed the page cap before reaching the cutoff."""
+    mark = os.path.join(HERE, ".backfilled_" + ("in" if "filter=to" in base_url else "out"))
+    if os.path.exists(mark) or (cache and min(i["timestamp"] for i in cache)[:19] <= CUTOFF):
+        open(mark, "w").write("done")
+        return cache
+    have = {i["transaction_hash"] + str(i["log_index"]) for i in cache}
+    got, params = [], ""
+    for _ in range(300):
+        d = get(base_url + params)
+        b = d.get("items", [])
+        if not b:
+            break
+        got += [i for i in b if i["transaction_hash"] + str(i["log_index"]) not in have]
+        if b[-1]["timestamp"][:19] < CUTOFF or not d.get("next_page_params"):
+            break
+        params = "&" + "&".join(f"{k}={v}" for k, v in d["next_page_params"].items())
+        time.sleep(0.1)
+    open(mark, "w").write("done")
+    return sorted(cache + got, key=lambda i: i["timestamp"], reverse=True)
+
+try:
+    full = backfill(BASE, full)
+except Exception as e:
+    print("outbound backfill failed (continuing with cache):", e)
 json.dump(full, open(cache_path, "w"))
 print(f"fetched {len(add)} new transfers, cache now {len(full)}")
 
@@ -78,6 +115,7 @@ try:
         params = "&" + "&".join(f"{k}={v}" for k, v in d["next_page_params"].items())
         time.sleep(0.1)
     old_in = [i for i in got if i["transaction_hash"] + str(i["log_index"]) not in seen_in] + old_in
+    old_in = backfill(BASE.replace("filter=from", "filter=to"), old_in)
     json.dump(old_in, open(in_path, "w"))
 except Exception as e:
     print("inbound fetch failed (using cache):", e)
@@ -108,7 +146,7 @@ def day_rate(ts):
     return DAY_RATE[prior[-1]] if prior else RATE
 
 GRID = [(0.10, "invoke", "invoke"), (1, "equip", "equip"),
-        (3, "growth", "new-user $3"), (5, "growth", "referral $5"),
+        (3, "growth", "$3 credit"), (5, "growth", "referral $5"),
         (10, "growth", "stripe $10"), (25, "growth", "stripe $25"),
         (50, "growth", "stripe $50")]
 
@@ -186,7 +224,7 @@ def acf1(gaps):
     den = math.sqrt(sum((x - ma) ** 2 for x in a) * sum((y - mb) ** 2 for y in b))
     return num / den if den else 0.0
 
-inc_recip = {r["to"] for r in rows if r["fine"] in ("new-user $3", "referral $5")}
+inc_recip = {r["to"] for r in rows if r["fine"] in ("$3 credit", "referral $5")}
 inv_counts = sorted(len([r for r in rows if r["to"] == c["addr"] and r["cat"] == "invoke"]) for c in creators)
 vol_hi = max(15, inv_counts[int(len(inv_counts) * 0.95)] if len(inv_counts) >= 20 else 10**9)
 grows = []
@@ -214,14 +252,14 @@ at_risk = sum(g["moca"] for g in grows if g["status"] == "review")
 small_moca = sum(c["moca"] for c in creators if c["addr"] not in {g["addr"] for g in grows})
 organic_share = round((ce_total - at_risk) / ce_total * 100, 1)
 burn24 = sum(r["val"] for r in rows
-             if (r["cat"] in ("invoke", "equip") or r["fine"] in ("new-user $3", "referral $5"))
+             if (r["cat"] in ("invoke", "equip") or r["fine"] in ("$3 credit", "referral $5"))
              and datetime.fromisoformat(r["ts"]).replace(tzinfo=timezone.utc) > cut24) * RATE
-burn_prev = sum(r["val"] for r in rows if (r["cat"] in ("invoke", "equip") or r["fine"] in ("new-user $3", "referral $5"))
+burn_prev = sum(r["val"] for r in rows if (r["cat"] in ("invoke", "equip") or r["fine"] in ("$3 credit", "referral $5"))
                 and cut24 - timedelta(hours=24) < datetime.fromisoformat(r["ts"]).replace(tzinfo=timezone.utc) <= cut24) * RATE
 growth_factor = min(burn24 / burn_prev, 2) if burn_prev > 0 else 1
 runway = round(BALANCE * RATE / burn24, 1) if BALANCE and burn24 > 0 else None
 runway_adj = round(BALANCE * RATE / (burn24 * growth_factor), 1) if BALANCE and burn24 > 0 else None
-UNIT = {"invoke": 0.10, "equip": 1, "new-user $3": 3, "referral $5": 5,
+UNIT = {"invoke": 0.10, "equip": 1, "$3 credit": 3, "referral $5": 5,
         "stripe $10": 10, "stripe $25": 25, "stripe $50": 50}
 promised = sum(UNIT.get(r["fine"], r["val"] * RATE) for r in rows)
 settled = sum(r["val"] for r in rows) * RATE
@@ -251,7 +289,24 @@ guard = {"organic_share": organic_share, "at_risk_usd": round(at_risk * RATE, 2)
          "burn24": round(burn24, 2), "burn_prev": round(burn_prev, 2),
          "promised_usd": round(promised, 2), "fx_drift_pct": fx_drift, "rows": grows}
 
-data = {"S": S, "hourly": hourly, "daily": daily, "creators": creators, "other": other, "guard": guard}
+# --- treasury view: whole-wallet daily flows (past 3 months), MOCA + USD ---
+out_d, out_usd_d, in_d = defaultdict(float), defaultdict(float), defaultdict(float)
+for r in rows:
+    out_d[r["ts"][:10]] += r["val"]
+    out_usd_d[r["ts"][:10]] += r["val"] * day_rate(r["ts"])
+for f in inflows:
+    in_d[f["ts"][:10]] += f["val"]
+t_days = sorted(d for d in set(out_d) | set(in_d) if d >= CUTOFF[:10])
+t_daily = [{"d": d, "out": round(out_d[d], 1), "out_usd": round(out_usd_d[d], 2),
+            "inn": round(in_d[d], 1), "net": round(in_d[d] - out_d[d], 1)} for d in t_days]
+full_days = [d for d in t_days if d < today]
+burn7 = round(sum(out_usd_d[d] for d in full_days[-7:]) / max(len(full_days[-7:]), 1), 2)
+treasury = {"balance": round(BALANCE, 0) if BALANCE else None,
+            "balance_usd": round(BALANCE * RATE, 0) if BALANCE else None,
+            "out24_moca": round(out24, 0), "out24_usd": round(out24 * RATE, 2),
+            "in24_moca": round(in24, 0), "burn7_usd": burn7, "daily": t_daily}
+
+data = {"S": S, "hourly": hourly, "daily": daily, "creators": creators, "other": other, "guard": guard, "treasury": treasury}
 
 # --- append snapshot for delta-notifications (notify.py) ---
 hist_path = os.path.join(HERE, "stats_history.json")
