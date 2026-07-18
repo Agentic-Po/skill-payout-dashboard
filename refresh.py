@@ -27,7 +27,7 @@ ADDR2SYM = {v["addr"]: k for k, v in TOKENS.items()}
 # counterparty labels confirmed off-chain (platform wallet-mind map / treasury ops)
 KNOWN = {"0x9a95d76c41aa34093a0db5f26f97309fe734a07f": "The Gamemaster (mind)",
          "0xd85096faec1ac03075667b4c1a1661f5623bf111": "internal ops wallet (also a treasury funding source)",
-         "0xf605dbb562fb47f13077bff379eeaba33fd4a0a2": "primary treasury funding source"}
+         "0xf605dbb5626dfc1448cee33e2e1221103021468f": "primary treasury funding source"}
 # Optional wallet↔mind map (drop wallet_mind_map.csv beside this script — gitignored,
 # from the platform's wallet-mind-map export). ONLY the display name is surfaced on
 # the public page; emails/IDs stay local and feed the private CSV export labels.
@@ -454,6 +454,8 @@ credit_recip = {r["to"] for r in rows if r["fine"] == "$3 credit"}
 earner_addrs = {c["addr"] for c in creators}
 loop_wallets = credit_recip & earner_addrs
 loop_usd = round(sum(c["usd"] for c in creators if c["addr"] in loop_wallets), 2)
+loop_gt10 = sum(1 for c in creators if c["addr"] in loop_wallets and c["usd"] > 10)
+loop_gt50 = sum(1 for c in creators if c["addr"] in loop_wallets and c["usd"] > 50)
 grows.sort(key=lambda g: (g["status"] != "review", -g["usd"]))
 flagged = [g for g in grows if g["status"] == "review"]
 at_risk = round(sum(g["usd"] for g in flagged), 2)
@@ -483,6 +485,7 @@ runway_total = round(bal_usd / out7avg, 1) if out7avg > 0 else None
 
 guard = {"flagged_n": len(flagged), "monitored_n": len(grows), "at_risk_usd": at_risk,
          "loop_n": len(loop_wallets), "loop_usd": loop_usd,
+         "loop_gt10": loop_gt10, "loop_gt50": loop_gt50,
          "credit_recip_n": len(credit_recip),
          "ce_total_usd": ce_total,
          "runway24": runway24, "runway7": runway7, "runway_total": runway_total, "bal_usd": round(bal_usd, 0),
@@ -513,13 +516,24 @@ if _ph and _ph.get("daily"):
     unbacked_7d = round(sum(r["usd"] for r in rows if r["ts"][:10] in _closed
                             and r["cat"] in ("invoke", "equip", "growth") and r["fine"] not in STRIPE_FINE), 2)
     subsidy_ratio = round(unbacked_7d / ph_topup_usd, 1) if ph_topup_usd else None
+    # weekly ratio trend over all settled platform days (the slope is the thesis test)
+    _settled_all = sorted(d for d in _ph["daily"] if _ph["daily"][d].get("settled"))
+    ratio_weeks = []
+    for i in range(0, len(_settled_all) - 6, 7):
+        wk = _settled_all[len(_settled_all) - 7 - i:len(_settled_all) - i]
+        if len(wk) < 7: break
+        t = sum(_ph["daily"][d]["topup_usd"] for d in wk)
+        u = round(sum(r["usd"] for r in rows if r["ts"][:10] in wk
+                      and r["cat"] in ("invoke", "equip", "growth") and r["fine"] not in STRIPE_FINE), 2)
+        ratio_weeks.append({"end": wk[-1], "ratio": round(u / t, 1) if t else None, "topup": round(t, 2), "unbacked": u})
+    ratio_weeks.reverse()
     server = {"days": [_closed[0], _closed[-1]] if _closed else None,
               "topup_usd": ph_topup_usd, "topups": ph_topups,
               "stripe_out_usd": stripe_out,
               "diverge_usd": round(stripe_out - ph_topup_usd, 2),
               "diverge_meta": {"owner": "Po", "opened": "2026-07-18",
                                "status": "open — not yet reconcilable: client-side events are lossy; blocked on the hm_events Stripe-webhook export to PostHog (asked of the data team)"},
-              "unbacked_7d": unbacked_7d, "subsidy_ratio": subsidy_ratio,
+              "unbacked_7d": unbacked_7d, "subsidy_ratio": subsidy_ratio, "ratio_weeks": ratio_weeks,
               "awakens7": ph_awakens, "wau": wau, "mau": _ph.get("mau"),
               "cost_per_wau": cost_wau,
               "fetched": _ph.get("fetched"), "complete": _ph.get("complete", False),

@@ -281,8 +281,8 @@ if(SV){
   ["Top-ups — last 7 settled days","$"+SV.topup_usd.toLocaleString(), SV.topups+" client-confirmed purchases"],
   ["Minds awakened — 7d settled", SV.awakens7.toLocaleString(), "backend-confirmed mind_awaken events"],
   ["Weekly active users", SV.wau?SV.wau.toLocaleString():"n/a", (SV.mau?SV.mau.toLocaleString()+" MAU":"")+" · any-event basis incl. logins — directional"],
-  ["Distribution per $1 revenue", SV.subsidy_ratio!==null?("$"+SV.subsidy_ratio):"n/a", "7d unbacked distribution $"+(SV.unbacked_7d||0).toLocaleString()+" ÷ platform top-ups — the network-formation subsidy ratio"],
-  ["Cross-system divergence", (dv>=0?"+":"−")+"$"+Math.abs(dv).toLocaleString(), dvBad?"⚠ not yet reconcilable — see note":"within expected event loss"],
+  ["Distribution per $1 revenue", SV.subsidy_ratio!==null?("$"+SV.subsidy_ratio):"n/a", ((SV.ratio_weeks&&SV.ratio_weeks.length>1)?("trend: "+SV.ratio_weeks.map(w=>w.ratio===null?"∞":"$"+w.ratio).join(" → ")+" weekly · "):"")+"7d unbacked distribution $"+(SV.unbacked_7d||0).toLocaleString()+" ÷ client-confirmed top-ups (revenue likely understated → ratio overstated)"],
+  ["Cross-system divergence", `<span style="${dvBad?"color:var(--warn)":""}">`+(dv>=0?"+":"−")+"$"+Math.abs(dv).toLocaleString()+"</span>", dvBad?"⚠ not yet reconcilable — see note":"within expected event loss"],
  ];
  document.getElementById("stiles").innerHTML=stiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
  // sparkline: settled daily awakens (bars) + topup_usd (line), last 21 settled days
@@ -292,20 +292,24 @@ if(SV){
   const aMax=Math.max(...sd.map(d=>SV.daily[d].awakens),1), tMax=Math.max(...sd.map(d=>SV.daily[d].topup_usd),1);
   const bw=1060/sd.length; let sv="";
   sd.forEach((d,i)=>{const a=SV.daily[d].awakens/aMax*54;
-   sv+=`<rect x="${i*bw+2}" y="${62-a}" width="${bw-4}" height="${Math.max(a,1)}" fill="var(--c-in)" opacity=".45"><title>${d}: ${SV.daily[d].awakens} awakens · $${SV.daily[d].topup_usd} top-ups</title></rect>`;});
+   sv+=`<rect x="${i*bw+2}" y="${62-a}" width="${bw-4}" height="${Math.max(a,1)}" fill="var(--c-in)" opacity=".45" data-i="${i}"/><rect x="${i*bw+2}" y="8" width="${bw-4}" height="54" fill="transparent" data-i="${i}"/>`;});
   sv+=`<polyline fill="none" stroke="var(--c-moca)" stroke-width="2" points="${sd.map((d,i)=>(i*bw+bw/2)+","+(62-SV.daily[d].topup_usd/tMax*54)).join(" ")}"/>`;
   sv+=`<text x="4" y="12" font-size="10" fill="var(--ink3)">bars: minds awakened/day · line: top-up USD/day (settled, ${sd[0]} → ${sd[sd.length-1]})</text>`;
   sp.innerHTML=sv;
+  function sparkTip(e){const t=e.target.dataset.i;if(t===undefined)return null;const d=sd[t];return `${d}\n${SV.daily[d].awakens} minds awakened · $${SV.daily[d].topup_usd} top-ups · ${SV.daily[d].logins} logins`;}
+  sp.addEventListener("mousemove",e=>{if(pinned)return;const t=sparkTip(e);if(!t){tip.style.opacity=0;return;}showTip(e,t);});
+  sp.addEventListener("mouseleave",()=>{if(!pinned)tip.style.opacity=0;});
+  sp.addEventListener("click",e=>{const t=sparkTip(e);if(!t){pinned=null;tip.style.opacity=0;return;}pinned=sp;showTip(e,t);});
  }
  const m=SV.diverge_meta||{};
  document.getElementById("sdiverge").innerHTML=`<b>Cross-system check (${SV.days[0]} → ${SV.days[1]}, settled):</b> Stripe-sized on-chain outflow $${SV.stripe_out_usd.toLocaleString()} vs platform-recorded top-ups $${SV.topup_usd.toLocaleString()} — divergence ${dv>=0?"+":""}$${Math.abs(dv).toLocaleString()}. ${dvBad?'<b style="color:var(--warn)">⚠ '+(m.status||"investigate")+'</b>':"(within expected event loss)"} · control owner: ${m.owner||"—"} · opened ${m.opened||"—"}. Note: coupon-delivered top-ups appear on-chain but not in Stripe events. Updated ${SV.fetched} UTC${SV.complete?"":" · <b>⚠ serving cached (last fetch failed)</b>"}.`;
 }
 // ---- AI zone ----
 const gtiles=[
- ["Distribution float", G.runway_total?(`<span style="${G.runway_total<14?"color:var(--warn)":""}">~`+G.runway_total+" days</span>"):"n/a", "balance ÷ 7-day avg total distribution — projection. Replenished by treasury top-ups on approval (see inflow sources); standing-budget request pending"],
+ ["Distribution float", G.runway_total?(`<span style="${G.runway_total<14?"color:var(--warn)":""}">~`+G.runway_total+" days</span>"):"n/a", "balance ÷ 7-day avg total distribution — projection, not a countdown: treasury refills on approval (see inflow sources). Proposed policy: standing replenishment reviewed against the subsidy-ratio and loop-closure trend"],
  ["Unbacked distribution — 24h", "$"+G.burn24.toLocaleString(), "invokes+equips+credits+referrals (Stripe-sized deliveries excluded — revenue-backed) at day-implied rates · prev 24h: $"+G.burn_prev.toLocaleString()],
  ["Wallets flagged for review", G.flagged_n+" of "+G.monitored_n, "$"+G.at_risk_usd.toLocaleString()+" of $"+G.ce_total_usd.toLocaleString()+" creator earnings — timing heuristics only, unconfirmed"],
- ["Loop closure — earn + receive", G.loop_n!==undefined?G.loop_n:"n/a", "credited wallets that later earned creator fees ($"+(G.loop_usd||0).toLocaleString()+") of "+I.S.creators_n+" creators — user→creator flywheel"],
+ ["Loop closure — earn + receive", G.loop_n!==undefined?G.loop_n:"n/a", "credited wallets that later earned creator fees ($"+(G.loop_usd||0).toLocaleString()+" total · "+(G.loop_gt10||0)+" earned >$10, "+(G.loop_gt50||0)+" >$50) — user→creator flywheel, early-stage"],
 ];
 document.getElementById("gtiles").innerHTML=gtiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
 const S=I.S;

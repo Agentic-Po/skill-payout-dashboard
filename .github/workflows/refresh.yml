@@ -28,7 +28,7 @@ jobs:
           git config user.email "actions@github.com"
           git add transfers.json transfers_in.json index.html legacy.html stats_history.json day_rates.json posthog_cache.json transfers_export.csv
           git diff --cached --quiet || git commit -m "refresh $(date -u +'%Y-%m-%d %H:%M') UTC"
-          git pull --rebase -X theirs origin main
+          git pull --rebase origin main
           git push
       - name: Hourly Telegram update
         env:
