@@ -1,3 +1,4 @@
 .backfilled_*
 .env
 __pycache__/
+wallet_mind_map.csv

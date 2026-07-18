@@ -25,7 +25,29 @@ TOKENS = {
 }
 ADDR2SYM = {v["addr"]: k for k, v in TOKENS.items()}
 # counterparty labels confirmed off-chain (platform wallet-mind map / treasury ops)
-KNOWN = {"0x9a95d76c41aa34093a0db5f26f97309fe734a07f": "The Gamemaster (mind)"}
+KNOWN = {"0x9a95d76c41aa34093a0db5f26f97309fe734a07f": "The Gamemaster (mind)",
+         "0xd85096faec1ac03075667b4c1a1661f5623bf111": "internal ops wallet (also a treasury funding source)",
+         "0xf605dbb562fb47f13077bff379eeaba33fd4a0a2": "primary treasury funding source"}
+# Optional wallet↔mind map (drop wallet_mind_map.csv beside this script — gitignored,
+# from the platform's wallet-mind-map export). ONLY the display name is surfaced on
+# the public page; emails/IDs stay local and feed the private CSV export labels.
+_map_path = os.path.join(HERE, "wallet_mind_map.csv")
+if os.path.exists(_map_path):
+    import csv as _csv
+    with open(_map_path, newline="") as _fh:
+        _rd = _csv.DictReader(_fh)
+        _cols = {c.lower().strip(): c for c in (_rd.fieldnames or [])}
+        _wcol = next((_cols[k] for k in ("wallet", "wallet_address", "address") if k in _cols), None)
+        _ncol = next((_cols[k] for k in ("mind_name", "name", "mind") if k in _cols), None)
+        n_loaded = 0
+        if _wcol:
+            for _row in _rd:
+                _w = (_row.get(_wcol) or "").strip().lower()
+                _nm = (_row.get(_ncol) or "").strip() if _ncol else ""
+                if _w.startswith("0x") and _nm and _w not in KNOWN:
+                    KNOWN[_w] = _nm + " (mind)"
+                    n_loaded += 1
+        print(f"wallet_mind_map.csv: {n_loaded} mind labels loaded")
 
 RATES_PATH = os.path.join(HERE, "day_rates.json")
 STATE = json.load(open(RATES_PATH)) if os.path.exists(RATES_PATH) else {}
@@ -103,6 +125,22 @@ for sym, t in TOKENS.items():
             STATE.setdefault("pending_rate", {}).pop(sym, None)
     except Exception as e:
         print(sym, "rate fetch failed, using", RATE_SRC[sym], ":", e)
+    if RATE_SRC[sym] not in ("blockscout",):
+        # secondary source: DexScreener pair price (same source the internal dashboard uses)
+        try:
+            dx = get(f"https://api.dexscreener.com/latest/dex/tokens/{t['addr']}")
+            # only pairs where OUR token is the base and the price is sane — DexScreener
+            # can list fake/mispriced pools with higher liquidity than the real one
+            pairs = [p for p in (dx.get("pairs") or [])
+                     if p.get("priceUsd")
+                     and (p.get("baseToken", {}).get("address", "").lower() == t["addr"])
+                     and anchor / 5 < float(p["priceUsd"]) < anchor * 5]
+            if pairs:
+                r2 = float(sorted(pairs, key=lambda p: -float(p.get("liquidity", {}).get("usd", 0)))[0]["priceUsd"])
+                RATE[sym], RATE_SRC[sym] = r2, "dexscreener"
+                STATE["last_accepted_rate"][sym] = r2
+        except Exception as e:
+            print(sym, "dexscreener fallback failed:", e)
 BALANCE = {}
 def balance_at(addr, sym, block="latest"):
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [
@@ -320,7 +358,7 @@ for sym in TOKENS:
         STATE["recon"][sym] = delta
     recon[sym] = {"net_cached": round(net, 1), "balance": round(BALANCE_RECON[sym], 1),
                   "delta": delta, "drift": drift, "degraded": sym in RECON_DEGRADED,
-                  "warn": bool(drift is not None and abs(drift) > 1)}
+                  "warn": bool(drift is not None and abs(drift) > 30)}
 
 facts = {"windows": windows, "prev24": prev24, "monthly": monthly, "daily": daily, "hourly": hourly,
          "top_recipients": top_recip, "in_sources": in_sources,
@@ -403,15 +441,19 @@ for c in creators:
     burst = max(sum(1 for t2 in ts if 0 <= (t2 - t1).total_seconds() <= 600) for t1 in ts) / n
     span_h = (ts[-1] - ts[0]).total_seconds() / 3600
     flags = []
-    if c["addr"] in inc_recip: flags.append("both-sides")
     if n >= 30 and ent < 0.45: flags.append("uniform cadence")
     if n >= 30 and abs(ac) > max(0.6, 2 / math.sqrt(n - 1)): flags.append("scripted pattern")
     if n >= 15 and burst > 0.7 and span_h > 2: flags.append("burst cluster")
     tags = ["high volume"] if n > vol_hi else []
+    if c["addr"] in inc_recip: tags.append("earn+receive")
     grows.append({"addr": c["addr"], "label": KNOWN.get(c["addr"].lower()), "n": n,
                   "span_h": round(span_h, 1), "ent": round(ent, 2), "acf": round(ac, 2),
                   "burst": round(burst * 100), "usd": c["usd"],
                   "flags": flags, "tags": tags, "status": "review" if flags else "organic"})
+credit_recip = {r["to"] for r in rows if r["fine"] == "$3 credit"}
+earner_addrs = {c["addr"] for c in creators}
+loop_wallets = credit_recip & earner_addrs
+loop_usd = round(sum(c["usd"] for c in creators if c["addr"] in loop_wallets), 2)
 grows.sort(key=lambda g: (g["status"] != "review", -g["usd"]))
 flagged = [g for g in grows if g["status"] == "review"]
 at_risk = round(sum(g["usd"] for g in flagged), 2)
@@ -440,6 +482,8 @@ runway7 = round(bal_usd / burn7avg, 1) if burn7avg > 0 else None
 runway_total = round(bal_usd / out7avg, 1) if out7avg > 0 else None
 
 guard = {"flagged_n": len(flagged), "monitored_n": len(grows), "at_risk_usd": at_risk,
+         "loop_n": len(loop_wallets), "loop_usd": loop_usd,
+         "credit_recip_n": len(credit_recip),
          "ce_total_usd": ce_total,
          "runway24": runway24, "runway7": runway7, "runway_total": runway_total, "bal_usd": round(bal_usd, 0),
          "burn24": round(burn24, 2), "burn_prev": round(burn_prev, 2),
@@ -457,7 +501,7 @@ except Exception as _e:
     print("posthog tier unavailable:", _e)
     _ph = None
 if _ph and _ph.get("daily"):
-    _closed = sorted(d for d in _ph["daily"] if not _ph["daily"][d].get("partial"))[-7:]
+    _closed = sorted(d for d in _ph["daily"] if _ph["daily"][d].get("settled"))[-7:]
     _pd = [_ph["daily"][d] for d in _closed]
     ph_topup_usd = round(sum(x["topup_usd"] for x in _pd), 2)
     ph_topups = sum(x["topups"] for x in _pd)
@@ -466,10 +510,16 @@ if _ph and _ph.get("daily"):
     stripe_out = round(sum(r["usd"] for r in rows if r["ts"][:10] in _closed and r["fine"] in STRIPE_FINE), 2)
     wau = _ph.get("wau")
     cost_wau = round(burn7avg * 7 / wau, 2) if wau else None
+    unbacked_7d = round(sum(r["usd"] for r in rows if r["ts"][:10] in _closed
+                            and r["cat"] in ("invoke", "equip", "growth") and r["fine"] not in STRIPE_FINE), 2)
+    subsidy_ratio = round(unbacked_7d / ph_topup_usd, 1) if ph_topup_usd else None
     server = {"days": [_closed[0], _closed[-1]] if _closed else None,
               "topup_usd": ph_topup_usd, "topups": ph_topups,
               "stripe_out_usd": stripe_out,
               "diverge_usd": round(stripe_out - ph_topup_usd, 2),
+              "diverge_meta": {"owner": "Po", "opened": "2026-07-18",
+                               "status": "open — not yet reconcilable: client-side events are lossy; blocked on the hm_events Stripe-webhook export to PostHog (asked of the data team)"},
+              "unbacked_7d": unbacked_7d, "subsidy_ratio": subsidy_ratio,
               "awakens7": ph_awakens, "wau": wau, "mau": _ph.get("mau"),
               "cost_per_wau": cost_wau,
               "fetched": _ph.get("fetched"), "complete": _ph.get("complete", False),

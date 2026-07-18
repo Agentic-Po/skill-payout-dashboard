@@ -52,7 +52,9 @@ td{padding:7px 8px;border-bottom:1px solid var(--line);font-variant-numeric:tabu
 td.r,th.r{text-align:right}
 tr:last-child td{border-bottom:none}
 td a{color:var(--acc);text-decoration:none}
-.scroll{overflow-x:auto}
+.scroll{overflow-x:auto;max-height:70vh;overflow-y:auto}
+.scroll thead th{position:sticky;top:0;background:var(--surface);z-index:2}
+.mrow td{background:color-mix(in srgb,var(--ink) 5%,var(--surface));font-weight:650;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2)}
 .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);color:var(--ink2)}
 .tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--bg);font-size:12px;padding:6px 9px;border-radius:6px;opacity:0;transition:opacity .1s;z-index:9;white-space:pre-line;font-variant-numeric:tabular-nums}
 .aizone{border:1.5px solid var(--warn);border-left:6px solid var(--warn);border-radius:10px;padding:14px 16px;background:var(--warnbg);display:flex;flex-direction:column;gap:14px}
@@ -78,7 +80,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
 <div class="wrap">
   <header>
     <h1>Minds Treasury Wallet — On-chain Flows (MENTE + MOCA)</h1>
-    <div class="sub mono"><a href="https://basescan.org/address/0xBD956171F5B50936f0Ad1C4db80c022bd2442519" target="_blank">0xBD95…2519</a> on Base · updated <span id="gen"></span> UTC · <a href="transfers_export.csv">per-transaction CSV export</a> · <a href="legacy.html">legacy view</a></div>
+    <div class="sub mono"><a href="https://basescan.org/address/0xBD956171F5B50936f0Ad1C4db80c022bd2442519" target="_blank">0xBD95…2519</a> on Base · updated <span id="gen"></span> UTC · <a href="transfers_export.csv">per-transaction CSV export</a> · <a href="legacy.html" title="Original MOCA-only layout, old method — kept for continuity, sunsets after adoption">legacy view (MOCA-only, old method)</a></div>
   </header>
 
   <div class="scopebox" id="scope"></div>
@@ -120,11 +122,13 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <div class="scroll"><table id="srcT"></table></div>
   </div>
 
+  <p class="sect" id="serverSect" style="display:none">Server-recorded — platform events (PostHog · T+2 settled)</p>
   <div class="card" id="serverCard" style="display:none;border:1.5px solid var(--c-in);border-left:6px solid var(--c-in)">
     <h2 style="color:var(--c-in);text-transform:uppercase;letter-spacing:.06em;font-size:13px">Server-recorded — PostHog (platform events)</h2>
-    <p class="note">Independent of the on-chain data above: events recorded by the Minds platform (PostHog project 459477). Top-ups here are client-confirmed and lossy — the server-side Stripe webhook event is not yet exported to PostHog (open ask to the data team). Closed UTC days only; each closed day is banked once and never re-queried.</p>
+    <p class="note">Independent of the on-chain data above: events recorded by the Minds platform (PostHog project 459477). <b>T+2 settled basis</b> — a day is frozen only once it is 2 full days old (telemetry arrives late; the same convention as traditional-finance settlement), younger days are provisional and excluded from the figures below. Top-ups here are client-confirmed and lossy — the server-side Stripe webhook event is not yet exported to PostHog (open ask to the data team).</p>
     <div class="tiles" id="stiles"></div>
-    <p class="note" id="sdiverge" style="margin-top:10px"></p>
+    <svg id="spark" width="100%" height="70" viewBox="0 0 1060 70" style="margin-top:10px"></svg>
+    <p class="note" id="sdiverge" style="margin-top:6px"></p>
   </div>
 
   <div class="aizone">
@@ -227,7 +231,10 @@ return list.map(d=>{
 const dHead=`<thead><tr><th>Day (UTC)</th><th class="r">Out USD</th><th>Size-band mix</th><th class="r">Tx</th><th class="r">Wallets</th><th class="r">In USD</th><th class="r">Net USD</th></tr></thead>`;
 const dailyT=document.getElementById("dailyT");
 const revDaily=F.daily.slice().reverse();
-function renderDaily(all){dailyT.innerHTML=dHead+`<tbody>`+buildRows(all?revDaily:revDaily.slice(0,21)).join("")+`</tbody>`;bindTips(dailyT);}
+function withMonthSeps(list,html){const out=[];let cur=null;
+ list.forEach((d,i)=>{const m=d.d.slice(0,7);if(cur!==null&&m!==cur)out.push(`<tr class="mrow"><td colspan="7">${m}</td></tr>`);else if(i===0)out.push(`<tr class="mrow"><td colspan="7">${m}</td></tr>`);cur=m;out.push(html[i]);});
+ return out.join("");}
+function renderDaily(all){const list=all?revDaily:revDaily.slice(0,21);dailyT.innerHTML=dHead+`<tbody>`+withMonthSeps(list,buildRows(list))+`</tbody>`;bindTips(dailyT);}
 renderDaily(false);
 let allDays=false;
 document.getElementById("moreDays").addEventListener("click",function(){allDays=!allDays;renderDaily(allDays);this.textContent=allDays?"Show latest 21 days ▴":"Show full history ▾";});
@@ -268,22 +275,37 @@ document.getElementById("srcT").innerHTML=`<thead><tr><th>Source wallet</th><th 
 const SV=DATA.server;
 if(SV){
  document.getElementById("serverCard").style.display="block";
+ document.getElementById("serverSect").style.display="block";
+ const dv=SV.diverge_usd, dvBad=Math.abs(dv)>Math.max(25,SV.topup_usd*0.25);
  const stiles=[
-  ["Top-ups — last 7 closed days","$"+SV.topup_usd.toLocaleString(), SV.topups+" client-confirmed purchases"],
-  ["Minds awakened — 7d", SV.awakens7.toLocaleString(), "backend-confirmed mind_awaken events"],
-  ["Weekly active users", SV.wau?SV.wau.toLocaleString():"n/a", (SV.mau?SV.mau.toLocaleString()+" MAU":"")],
-  ["Unbacked burn per WAU", SV.cost_per_wau!==null?("$"+SV.cost_per_wau):"n/a", "7d unbacked classified burn ÷ WAU"],
+  ["Top-ups — last 7 settled days","$"+SV.topup_usd.toLocaleString(), SV.topups+" client-confirmed purchases"],
+  ["Minds awakened — 7d settled", SV.awakens7.toLocaleString(), "backend-confirmed mind_awaken events"],
+  ["Weekly active users", SV.wau?SV.wau.toLocaleString():"n/a", (SV.mau?SV.mau.toLocaleString()+" MAU":"")+" · any-event basis incl. logins — directional"],
+  ["Distribution per $1 revenue", SV.subsidy_ratio!==null?("$"+SV.subsidy_ratio):"n/a", "7d unbacked distribution $"+(SV.unbacked_7d||0).toLocaleString()+" ÷ platform top-ups — the network-formation subsidy ratio"],
+  ["Cross-system divergence", (dv>=0?"+":"−")+"$"+Math.abs(dv).toLocaleString(), dvBad?"⚠ not yet reconcilable — see note":"within expected event loss"],
  ];
  document.getElementById("stiles").innerHTML=stiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
- const dv=SV.diverge_usd;
- document.getElementById("sdiverge").innerHTML=`<b>Cross-system check (${SV.days[0]} → ${SV.days[1]}):</b> Stripe-sized on-chain outflow $${SV.stripe_out_usd.toLocaleString()} vs platform-recorded top-ups $${SV.topup_usd.toLocaleString()} — divergence ${dv>=0?"+":""}$${Math.abs(dv).toLocaleString()} ${Math.abs(dv)>Math.max(25,SV.topup_usd*0.25)?'<b style="color:var(--warn)">⚠ investigate</b>':"(within expected event loss)"}. Updated ${SV.fetched} UTC${SV.complete?"":" · <b>⚠ serving cached (last fetch failed)</b>"}.`;
+ // sparkline: settled daily awakens (bars) + topup_usd (line), last 21 settled days
+ const sd=Object.keys(SV.daily).filter(d=>SV.daily[d].settled).sort().slice(-21);
+ if(sd.length>3){
+  const sp=document.getElementById("spark");
+  const aMax=Math.max(...sd.map(d=>SV.daily[d].awakens),1), tMax=Math.max(...sd.map(d=>SV.daily[d].topup_usd),1);
+  const bw=1060/sd.length; let sv="";
+  sd.forEach((d,i)=>{const a=SV.daily[d].awakens/aMax*54;
+   sv+=`<rect x="${i*bw+2}" y="${62-a}" width="${bw-4}" height="${Math.max(a,1)}" fill="var(--c-in)" opacity=".45"><title>${d}: ${SV.daily[d].awakens} awakens · $${SV.daily[d].topup_usd} top-ups</title></rect>`;});
+  sv+=`<polyline fill="none" stroke="var(--c-moca)" stroke-width="2" points="${sd.map((d,i)=>(i*bw+bw/2)+","+(62-SV.daily[d].topup_usd/tMax*54)).join(" ")}"/>`;
+  sv+=`<text x="4" y="12" font-size="10" fill="var(--ink3)">bars: minds awakened/day · line: top-up USD/day (settled, ${sd[0]} → ${sd[sd.length-1]})</text>`;
+  sp.innerHTML=sv;
+ }
+ const m=SV.diverge_meta||{};
+ document.getElementById("sdiverge").innerHTML=`<b>Cross-system check (${SV.days[0]} → ${SV.days[1]}, settled):</b> Stripe-sized on-chain outflow $${SV.stripe_out_usd.toLocaleString()} vs platform-recorded top-ups $${SV.topup_usd.toLocaleString()} — divergence ${dv>=0?"+":""}$${Math.abs(dv).toLocaleString()}. ${dvBad?'<b style="color:var(--warn)">⚠ '+(m.status||"investigate")+'</b>':"(within expected event loss)"} · control owner: ${m.owner||"—"} · opened ${m.opened||"—"}. Note: coupon-delivered top-ups appear on-chain but not in Stripe events. Updated ${SV.fetched} UTC${SV.complete?"":" · <b>⚠ serving cached (last fetch failed)</b>"}.`;
 }
 // ---- AI zone ----
 const gtiles=[
- ["Float projection", G.runway_total?(`<span style="${G.runway_total<14?"color:var(--warn)":""}">~`+G.runway_total+" days</span>"):"n/a", "balance (live rate) ÷ 7-day avg TOTAL outflow · ~"+(G.runway7||"?")+"d on unbacked burn only — projection, not a fact"],
- ["Unbacked classified burn — 24h", "$"+G.burn24.toLocaleString(), "invokes+equips+credits+referrals (Stripe-sized deliveries excluded — revenue-backed) at day-implied rates · prev 24h: $"+G.burn_prev.toLocaleString()],
- ["Wallets flagged for review", G.flagged_n+" of "+G.monitored_n, "$"+G.at_risk_usd.toLocaleString()+" of $"+G.ce_total_usd.toLocaleString()+" creator earnings — heuristic, unconfirmed"],
- ["Creators earning", I.S.creators_n, "wallets with classified invoke/equip income"],
+ ["Distribution float", G.runway_total?(`<span style="${G.runway_total<14?"color:var(--warn)":""}">~`+G.runway_total+" days</span>"):"n/a", "balance ÷ 7-day avg total distribution — projection. Replenished by treasury top-ups on approval (see inflow sources); standing-budget request pending"],
+ ["Unbacked distribution — 24h", "$"+G.burn24.toLocaleString(), "invokes+equips+credits+referrals (Stripe-sized deliveries excluded — revenue-backed) at day-implied rates · prev 24h: $"+G.burn_prev.toLocaleString()],
+ ["Wallets flagged for review", G.flagged_n+" of "+G.monitored_n, "$"+G.at_risk_usd.toLocaleString()+" of $"+G.ce_total_usd.toLocaleString()+" creator earnings — timing heuristics only, unconfirmed"],
+ ["Loop closure — earn + receive", G.loop_n!==undefined?G.loop_n:"n/a", "credited wallets that later earned creator fees ($"+(G.loop_usd||0).toLocaleString()+") of "+I.S.creators_n+" creators — user→creator flywheel"],
 ];
 document.getElementById("gtiles").innerHTML=gtiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
 const S=I.S;
@@ -299,12 +321,19 @@ document.getElementById("fineT").innerHTML=`<thead><tr><th>Inferred type</th><th
 document.getElementById("creatT").innerHTML=`<thead><tr><th>#</th><th>Creator wallet</th><th class="r">Invokes</th><th class="r">Equips</th><th class="r">USD</th><th class="r">Share</th></tr></thead><tbody>`+
  I.creators.slice(0,15).map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r">${c.invoke.toLocaleString()}</td><td class="r">${c.equip}</td><td class="r mono">$${c.usd.toLocaleString()}</td><td class="r mono">${(c.usd/I.ce_total*100).toFixed(1)}%</td></tr>`).join("")+`</tbody>`;
 document.getElementById("patSum").innerHTML=`<span class="aibadge">AI-inferred</span>Payout pattern monitor <span class="pill" style="${G.flagged_n?"border-color:var(--warn);color:var(--warn)":""}">${G.flagged_n?G.flagged_n+" flagged · $"+G.at_risk_usd.toLocaleString():"no flags"}</span><span class="pill">${G.monitored_n} monitored</span>`;
+const gShown=G.rows.filter(g=>g.status==="review").concat(G.rows.filter(g=>g.status!=="review").slice(0,25));
+let gAll=false;
+function renderMonitor(){
+const list=gAll?G.rows:gShown;
 document.getElementById("gT").innerHTML=`<thead><tr><th>Creator</th><th class="r">Invokes</th><th class="r">Span</th><th class="r">Rhythm variety</th><th class="r">Repeating pattern</th><th class="r">Rapid-fire</th><th class="r">USD</th><th>Status</th></tr></thead><tbody>`+
- G.rows.map(g=>{
+ list.map(g=>{
   const pill=g.status==="review"
    ?`<span class="pill" style="border-color:var(--warn);color:var(--warn)">review suggested</span>`
    :`<span class="pill" style="border-color:var(--c-in);color:var(--c-in)">no flags</span>`;
   const extra=[...g.flags,...g.tags].map(f=>`<span class="pill">${f}</span>`).join(" ");
   return `<tr><td class="mono"><a href="https://basescan.org/address/${g.addr}" target="_blank">${g.addr.slice(0,8)}…${g.addr.slice(-4)}</a>${g.label?` <span class="pill">${g.label}</span>`:""}</td><td class="r">${g.n.toLocaleString()}</td><td class="r mono">${g.span_h}h</td><td class="r mono">${g.ent.toFixed(2)}</td><td class="r mono">${g.acf.toFixed(2)}</td><td class="r mono">${g.burst}%</td><td class="r mono">$${g.usd.toLocaleString()}</td><td>${pill} ${extra}</td></tr>`;
- }).join("")+`</tbody>`;
+ }).join("")+(gAll||G.rows.length<=gShown.length?"":`<tr><td colspan="8"><button class="showmore" id="gMore">Show all ${G.rows.length} monitored wallets ▾</button></td></tr>`)+`</tbody>`;
+const b=document.getElementById("gMore"); if(b)b.addEventListener("click",()=>{gAll=true;renderMonitor();});
+}
+renderMonitor();
 </script>

@@ -46,8 +46,12 @@ def fetch():
 
     cache = json.load(open(CACHE)) if os.path.exists(CACHE) else {"daily": {}}
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    # closed days already banked are never re-queried; today is always refreshed
-    known = {d for d in cache["daily"] if d < today}
+    # T+2 settled basis: platform telemetry is eventually-consistent (late client
+    # events, ingestion lag), so a day is banked immutably only once it is at
+    # least 2 full days old — matching a tradfi T+2 settlement view. Younger
+    # days are re-queried every run and marked provisional.
+    settled_cut = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
+    known = {d for d in cache["daily"] if d <= settled_cut and cache["daily"][d].get("settled")}
     since = (datetime.now(timezone.utc) - timedelta(days=35)).strftime("%Y-%m-%d")
     try:
         rows = hogql(
@@ -65,7 +69,7 @@ def fetch():
                 continue
             cache["daily"][d] = {"topups": topups, "topup_usd": round(topup_usd or 0, 2),
                                  "topup_intents": intents, "awakens": awakens, "logins": logins,
-                                 "partial": d == today}
+                                 "settled": d <= settled_cut, "partial": d == today}
         wau = hogql("select count(distinct person_id) from events where timestamp > now() - interval 7 day")
         mau = hogql("select count(distinct person_id) from events where timestamp > now() - interval 30 day")
         cache["wau"] = wau[0][0] if wau else None
