@@ -17,12 +17,16 @@ jobs:
         with:
           python-version: "3.12"
       - name: Refresh data and rebuild page
+        env:
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
+          POSTHOG_PROJECT_ID: "459477"
+          POSTHOG_HOST: "https://us.posthog.com"
         run: python3 refresh.py
       - name: Commit and push
         run: |
           git config user.name "dashboard-bot"
           git config user.email "actions@github.com"
-          git add transfers.json index.html stats_history.json
+          git add transfers.json transfers_in.json index.html legacy.html stats_history.json day_rates.json posthog_cache.json transfers_export.csv
           git diff --cached --quiet || git commit -m "refresh $(date -u +'%Y-%m-%d %H:%M') UTC"
           git push
       - name: Hourly Telegram update

@@ -1,45 +1,51 @@
 <meta charset="utf-8">
-<title>Skill Payout Dashboard</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Minds Treasury Wallet — MENTE + MOCA</title>
 <style>
 :root{
   --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#8a8984;
   --line:#e6e5e0; --acc:#2a78d6;
-  --c-invoke:#2a78d6; --c-equip:#eda100; --c-growth:#008300; --c-micro:#4a3aa7;
+  --c-mente:#7c5cd6; --c-moca:#2a78d6; --c-in:#008300; --warn:#9a5800; --warnbg:#fdf6ec;
+  --band1:#dbe9f9; --band2:#a8cbf0; --band3:#6fa8e0; --band4:#3f7fc4; --band5:#2a5f9e; --band6:#1d4478; --band7:#122c52; --band8:#888; --band9:#b3b3ad;
 }
 @media (prefers-color-scheme: dark){:root{
   --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#8a8984;
   --line:#2e2e2b; --acc:#3987e5;
-  --c-invoke:#3987e5; --c-equip:#c98500; --c-growth:#008300; --c-micro:#9085e9;
+  --c-mente:#9b83e8; --c-moca:#3987e5; --c-in:#3fa93f; --warn:#e8a44a; --warnbg:#241c10;
+  --band1:#1c2c40; --band2:#27476b; --band3:#33608f; --band4:#437cb5; --band5:#5f97d3; --band6:#8ab5e5; --band7:#bcd6f2; --band8:#777; --band9:#444;
 }}
 :root[data-theme="dark"]{
   --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#8a8984;
   --line:#2e2e2b; --acc:#3987e5;
-  --c-invoke:#3987e5; --c-equip:#c98500; --c-growth:#008300; --c-micro:#9085e9;
+  --c-mente:#9b83e8; --c-moca:#3987e5; --c-in:#3fa93f; --warn:#e8a44a; --warnbg:#241c10;
+  --band1:#1c2c40; --band2:#27476b; --band3:#33608f; --band4:#437cb5; --band5:#5f97d3; --band6:#8ab5e5; --band7:#bcd6f2; --band8:#777; --band9:#444;
 }
 :root[data-theme="light"]{
   --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#8a8984;
   --line:#e6e5e0; --acc:#2a78d6;
-  --c-invoke:#2a78d6; --c-equip:#eda100; --c-growth:#008300; --c-micro:#4a3aa7;
+  --c-mente:#7c5cd6; --c-moca:#2a78d6; --c-in:#008300; --warn:#9a5800; --warnbg:#fdf6ec;
+  --band1:#dbe9f9; --band2:#a8cbf0; --band3:#6fa8e0; --band4:#3f7fc4; --band5:#2a5f9e; --band6:#1d4478; --band7:#122c52; --band8:#888; --band9:#b3b3ad;
 }
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,"SF Pro Text",Segoe UI,sans-serif;margin:0;padding:28px 20px 60px}
-.wrap{max-width:1060px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+.wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
 h1{font-size:21px;margin:0;letter-spacing:-.01em}
 .sub{color:var(--ink2);font-size:13px;margin-top:4px}
 .sub a{color:var(--acc);text-decoration:none}
 .mono{font-family:ui-monospace,SF Mono,Menlo,monospace;font-variant-numeric:tabular-nums}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
 .tile{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
 .tile .k{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3)}
-.tile .v{font-size:26px;font-weight:650;margin-top:4px;font-variant-numeric:tabular-nums}
+.tile .v{font-size:24px;font-weight:650;margin-top:4px;font-variant-numeric:tabular-nums}
 .tile .d{font-size:12px;color:var(--ink2);margin-top:2px}
+.delta-up{color:var(--warn)} .delta-dn{color:var(--c-in)}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
 .card h2{font-size:14px;margin:0 0 2px}
 .card .note{font-size:12px;color:var(--ink2);margin:0 0 12px}
 .sect{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink3);font-weight:650;margin:8px 0 -8px}
-.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--ink2);margin-bottom:10px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink2);margin-bottom:10px}
 .legend span{display:inline-flex;align-items:center;gap:6px}
-.sw{width:10px;height:10px;border-radius:3px;display:inline-block}
+.sw{width:10px;height:10px;border-radius:3px;display:inline-block;border:1px solid var(--line)}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;color:var(--ink3);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
 td{padding:7px 8px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
@@ -47,175 +53,258 @@ td.r,th.r{text-align:right}
 tr:last-child td{border-bottom:none}
 td a{color:var(--acc);text-decoration:none}
 .scroll{overflow-x:auto}
-.tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--bg);font-size:12px;padding:6px 9px;border-radius:6px;opacity:0;transition:opacity .1s;z-index:9;white-space:pre-line;font-variant-numeric:tabular-nums}
 .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);color:var(--ink2)}
-.caveat{font-size:12.5px;color:var(--ink2);border-left:3px solid var(--c-equip);padding:2px 0 2px 12px}
-.milestone{font-size:13px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 16px;color:var(--ink2)}
-.milestone strong{color:var(--ink)}
+.tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--bg);font-size:12px;padding:6px 9px;border-radius:6px;opacity:0;transition:opacity .1s;z-index:9;white-space:pre-line;font-variant-numeric:tabular-nums}
+.aizone{border:1.5px solid var(--warn);border-left:6px solid var(--warn);border-radius:10px;padding:14px 16px;background:var(--warnbg);display:flex;flex-direction:column;gap:14px}
+.aizone>.zhead{font-size:13px;font-weight:700;color:var(--warn);text-transform:uppercase;letter-spacing:.06em}
+.aizone>.zsub{font-size:12.5px;color:var(--ink2);margin-top:-10px}
+.aibadge{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--warn);border:1.5px solid var(--warn);border-radius:4px;padding:1px 7px;margin-right:8px}
+.method{font-size:12px;color:var(--ink2);border-left:3px solid var(--warn);padding:2px 0 2px 12px;margin:8px 0}
+details.aiwrap{background:var(--surface);border:1px solid var(--line);border-radius:8px}
+details.aiwrap>summary{cursor:pointer;font-size:14px;font-weight:650;padding:12px 16px;list-style:none;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+details.aiwrap>summary::-webkit-details-marker{display:none}
+details.aiwrap>summary:after{content:"▸";margin-left:auto;color:var(--ink3);transition:transform .15s}
+details.aiwrap[open]>summary:after{transform:rotate(90deg)}
+details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap:14px}
+.scopebox{font-size:12.5px;color:var(--ink2);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px 24px}
+.scopebox b{color:var(--ink)}
+.showmore{cursor:pointer;font-size:13px;color:var(--acc);background:none;border:none;padding:8px 0}
+@media (max-width:640px){
+ body{padding:16px 10px 40px}
+ .tile .v{font-size:20px}
+ th,td{padding:5px 5px}
+}
 </style>
 <div class="wrap">
   <header>
-    <h1>Skill Economy — MOCA Payout Tracker</h1>
-    <div class="sub mono"><a href="https://basescan.org/address/0xBD956171F5B50936f0Ad1C4db80c022bd2442519" target="_blank">0xBD95…2519</a> on Base · updated <span id="gen"></span> UTC · MOCA rate used $0.008912</div>
+    <h1>Minds Treasury Wallet — On-chain Flows (MENTE + MOCA)</h1>
+    <div class="sub mono"><a href="https://basescan.org/address/0xBD956171F5B50936f0Ad1C4db80c022bd2442519" target="_blank">0xBD95…2519</a> on Base · updated <span id="gen"></span> UTC · <a href="transfers_export.csv">per-transaction CSV export</a> · <a href="legacy.html">legacy view</a></div>
   </header>
 
-  <div id="runwayBanner" style="display:none;border:1px solid var(--c-equip);background:color-mix(in srgb,var(--c-equip) 8%,var(--surface));border-radius:8px;padding:10px 16px;font-size:13.5px"></div>
+  <div class="scopebox" id="scope"></div>
 
-  <div class="milestone">🏁 <strong>First invoke payout ($0.10):</strong> <span class="mono">2026-07-11 17:17:59 UTC</span> · first MOCA transfer ever from this wallet (a ~$0.06 test-size amount) at <span class="mono">2026-07-11 15:41 UTC</span>. Everything below covers the full MOCA-payout era.</div>
-
-  <p class="sect">Creator economy — invokes &amp; equips</p>
-  <div class="tiles" id="tiles"></div>
+  <p class="sect">Facts — observed on-chain</p>
+  <div class="tiles" id="ftiles"></div>
 
   <div class="card">
-    <h2>Daily breakdown</h2>
-    <p class="note">Creator-economy payouts per day since launch. Invoke ≈ $0.10 · Equip ≈ $1 in MOCA at live rate. Today is partial — the projected row extrapolates linearly from the elapsed fraction of the day (UTC), so a low current-day bar isn't a drop, just an incomplete day.</p>
+    <h2>Flow summary — rolling windows &amp; calendar months</h2>
+    <p class="note">USD values historical transfers at each day's implied payout rate (see scope); raw token amounts are exact. Net = inflow − outflow. Tap a row for the per-token split.</p>
+    <div class="scroll"><table id="winT"></table></div>
+    <details style="margin-top:8px"><summary class="showmore" style="display:block">Calendar months (UTC)</summary><div class="scroll"><table id="monT"></table></div></details>
+  </div>
+
+  <div class="card">
+    <h2>Daily flows</h2>
+    <p class="note">The mix bar splits each day's outflow by transfer size band (labels describe the amount only, not its purpose — hover for detail). The current UTC day is partial and marked. Showing the latest 21 days; expand for full history since <span id="d0"></span>.</p>
+    <div class="legend" id="bleg"></div>
     <div class="scroll"><table id="dailyT"></table></div>
+    <button class="showmore" id="moreDays">Show full history ▾</button>
   </div>
 
   <div class="card">
-    <h2>Payouts per hour, by type — full era</h2>
-    <p class="note">Count of outgoing MOCA transfers per hour since first payout.</p>
-    <div class="legend" id="leg1"></div>
-    <svg id="hourly" width="100%" height="240" viewBox="0 0 1020 240" preserveAspectRatio="none"></svg>
+    <h2>Transfers per hour — last 7 days</h2>
+    <p class="note">Count of outgoing transfers per hour, by token. Hover or tap for exact counts. The final bar is the in-progress hour (dimmed).</p>
+    <div class="legend"><span><span class="sw" style="background:var(--c-moca)"></span>MOCA</span><span><span class="sw" style="background:var(--c-mente)"></span>MENTE</span></div>
+    <svg id="hourly" width="100%" height="220" viewBox="0 0 1060 220"></svg>
   </div>
 
   <div class="card">
-    <h2>Top creators by earnings (invokes + equips only)</h2>
-    <p class="note">Recipient wallets ranked by creator-economy MOCA received since launch.</p>
-    <div class="scroll"><table id="creators"></table></div>
+    <h2>Top recipient wallets — all history</h2>
+    <p class="note">Ranked by total USD received from this wallet. Labels come from the platform's wallet↔mind map where confirmed; unlabeled wallets are unidentified. Active days = distinct UTC days receiving.</p>
+    <div class="scroll"><table id="recipT"></table></div>
   </div>
 
-  <p class="sect">Ecosystem health — pattern monitor &amp; treasury</p>
-  <div class="tiles" id="gtiles"></div>
   <div class="card">
-    <h2>Payout pattern monitor <span class="pill" id="gN"></span></h2>
-    <p class="note">Behavioral fingerprints of creator payout streams (creators with ≥10 invokes). How to read: <b>Rhythm variety</b> (0–1) — how varied the time gaps between payouts are; humans are irregular (high), cron-job bots are metronomic (low). <b>Repeating pattern</b> (−1–1) — whether the next gap is predictable from the last; near 0 = human, high = scripted rhythm even with random jitter added. <b>Rapid-fire</b> — share of payouts landing within 60s of the previous one; some bursting is normal in a session, extreme values on new wallets suggest farming. Heuristic signals, not determinations — automated invocation can be legitimate in an agentic economy; the automation policy is an open decision. True unique-users-per-skill requires off-chain invoker data (open ask to platform team).</p>
-    <details><summary style="cursor:pointer;font-size:13px;color:var(--ink2)">Advanced signals — per-creator fingerprints (ops view)</summary><div class="scroll"><table id="gT"></table></div></details>
+    <h2>Inflow sources — all history</h2>
+    <p class="note">Where this wallet's funding comes from. Labels from the treasury ops map where confirmed; unlabeled sources are unidentified.</p>
+    <div class="scroll"><table id="srcT"></table></div>
   </div>
 
-  <p class="sect">Treasury — whole-wallet flows &amp; daily burn</p>
-  <div class="tiles" id="ttiles"></div>
-  <div class="card">
-    <h2>Daily wallet burn — past 3 months</h2>
-    <p class="note">All outgoing MOCA from the wallet per day (creator payouts, credits, referrals, top-up deliveries — everything), valued in USD at each day's implied payout rate where known (live rate otherwise), broken down by payout size. Under each amount: unique recipient wallets that day — for the $3 column, that's how many minds/users received the $3 credit (same wallet on multiple days counts once per day). Inflows are treasury top-ups received.</p>
-    <div class="legend" id="tleg"></div>
-    <div class="scroll"><table id="treasT"></table></div>
+  <div class="card" id="serverCard" style="display:none;border:1.5px solid var(--c-in);border-left:6px solid var(--c-in)">
+    <h2 style="color:var(--c-in);text-transform:uppercase;letter-spacing:.06em;font-size:13px">Server-recorded — PostHog (platform events)</h2>
+    <p class="note">Independent of the on-chain data above: events recorded by the Minds platform (PostHog project 459477). Top-ups here are client-confirmed and lossy — the server-side Stripe webhook event is not yet exported to PostHog (open ask to the data team). Closed UTC days only; each closed day is banked once and never re-queried.</p>
+    <div class="tiles" id="stiles"></div>
+    <p class="note" id="sdiverge" style="margin-top:10px"></p>
   </div>
 
-  <p class="sect">User growth &amp; top-ups — separate from creator earnings</p>
-  <div class="card">
-    <h2>Credits, referrals &amp; Stripe top-ups <span class="pill" id="othN"></span></h2>
-    <p class="note">The wallet also funds user-side balances — $3 credits, referral rewards ($5 each side), and Stripe top-ups ($10 / $25 / $50). The ~$3 payouts are a mixed bucket (internal top-up system and new-user free credits — first 3 minds; 1 Cognition Credit = 1 $MENTE ≈ $0.014) and are not split further here. Stripe top-ups are revenue-backed (user paid fiat; the MOCA out is delivery, not spend). Type inferred from USD value at payout.</p>
-    <div class="scroll"><table id="othSum"></table></div>
-    <details style="margin-top:10px"><summary style="cursor:pointer;font-size:13px;color:var(--ink2)">Full transaction list (latest 40)</summary><div class="scroll"><table id="otherT"></table></div></details>
-  </div>
+  <div class="aizone">
+    <div class="zhead">AI-inferred interpretation</div>
+    <div class="zsub">Everything in this amber zone is inferred — from transfer sizes, timing heuristics, or projections — not read from a ledger. Each block states its method. Treat as triage, not truth.</div>
 
-  <p class="caveat"><strong>Caveat:</strong> classification is inferred from transfer size. MOCA amounts map to live USD value at payout time, so per-tx MOCA drifts (invokes ≈ 11.0–11.3 MOCA). A per-tx memo/event from the payout contract would make this exact.</p>
+    <div class="tiles" id="gtiles"></div>
+
+    <details class="aiwrap">
+      <summary><span class="aibadge">AI-inferred</span>Payout type classification — invokes, equips, credits, Stripe</summary>
+      <div class="inner">
+        <p class="method"><b>Method:</b> each transfer is snapped to the platform's known price points ($0.10 invoke, $1 equip, $3 credit, $5 referral, $10/25/50 Stripe) by its USD value at the payout-day implied rate, ±8% — the same tolerance as the factual size bands above, so band counts and type counts always agree. This is inference from size, not ground truth: a per-transfer memo from the payout contract (requested) would make it exact. The $3 bucket mixes new-user credits and internal top-ups — the internal top-ups sheet is the authoritative split. Stripe-sized transfers are deliveries of fiat purchases (revenue-backed); confirming them requires the Stripe ledger, which this page does not read yet.</p>
+        <div class="tiles" id="itiles"></div>
+        <div class="scroll"><table id="fineT"></table></div>
+      </div>
+    </details>
+
+    <details class="aiwrap">
+      <summary><span class="aibadge">AI-inferred</span>Creator earnings ranking (classified invokes + equips)</summary>
+      <div class="inner">
+        <p class="method"><b>Method:</b> recipients of transfers classified as invoke/equip, ranked by USD, share of ALL classified creator earnings. Inherits the size classification's uncertainty.</p>
+        <div class="scroll"><table id="creatT"></table></div>
+      </div>
+    </details>
+
+    <details class="aiwrap">
+      <summary id="patSum"><span class="aibadge">AI-inferred</span>Payout pattern monitor</summary>
+      <div class="inner">
+        <p class="method"><b>Method:</b> behavioral heuristics over invoke timing per recipient — rhythm variety (entropy of gaps), repeating pattern (lag-1 autocorrelation), rapid-fire share. Thresholds are hand-set and unvalidated; flags mean "review", never "confirmed abuse". Automated invocation can be legitimate — the automation policy is an open decision. Flagged rows sort first.</p>
+        <div class="scroll"><table id="gT"></table></div>
+      </div>
+    </details>
+  </div>
 </div>
 <div class="tip" id="tip"></div>
 <script>
 const DATA = /*__DATA__*/;
-const S=DATA.S, cats=["invoke","equip","growth","micro"];
-const CN={invoke:"Invoke ($0.10)",equip:"Equip ($1)",growth:"User growth (credits/referral/top-up)",micro:"Micro (test)"};
-const CC={invoke:"var(--c-invoke)",equip:"var(--c-equip)",growth:"var(--c-growth)",micro:"var(--c-micro)"};
+const F=DATA.facts, I=DATA.infer, SC=DATA.scope, G=I.guard;
 const fmt=n=>n.toLocaleString("en-US",{maximumFractionDigits:1});
-document.getElementById("gen").textContent=S.generated;
-const ceMoca=S.tot.invoke.moca+S.tot.equip.moca;
-const tiles=[
- ["Invokes — all time", S.tot.invoke.n, fmt(S.tot.invoke.moca)+" MOCA ≈ $"+(S.tot.invoke.moca*S.rate).toFixed(2)],
- ["Equips ≈ adopters (proxy)", S.tot.equip.n, (S.tot.equip.n?Math.round(S.tot.invoke.n/S.tot.equip.n):0)+" invokes per equip · invoker data pending"],
- ["Invokes — last 24h", S.inv24, S.eq24+" equips in same window"],
- ["Creators earning", S.creators_n, "wallets paid invoke/equip fees"],
+const fmt0=n=>n.toLocaleString("en-US",{maximumFractionDigits:0});
+const usd=n=>"$"+n.toLocaleString("en-US",{maximumFractionDigits:0});
+const tip=document.getElementById("tip");
+let pinned=null;
+function showTip(e,txt){tip.textContent=txt;tip.style.left=Math.min((e.clientX||60)+14,window.innerWidth-220)+"px";tip.style.top=((e.clientY||120)-10)+"px";tip.style.opacity=1;}
+function hideTip(){if(!pinned)tip.style.opacity=0;}
+function bindTips(root){root.querySelectorAll("[data-tip]").forEach(el=>{
+ el.setAttribute("tabindex","0");
+ el.addEventListener("mousemove",e=>{if(!pinned)showTip(e,el.dataset.tip)});
+ el.addEventListener("mouseleave",hideTip);
+ el.addEventListener("focus",e=>{const r=el.getBoundingClientRect();showTip({clientX:r.left+40,clientY:r.top+20},el.dataset.tip)});
+ el.addEventListener("blur",()=>{pinned=null;tip.style.opacity=0;});
+ el.addEventListener("click",e=>{if(pinned===el){pinned=null;tip.style.opacity=0;}else{pinned=el;showTip(e,el.dataset.tip);}});
+});}
+document.addEventListener("click",e=>{if(pinned&&!pinned.contains(e.target)){pinned=null;tip.style.opacity=0;}},true);
+document.getElementById("gen").textContent=SC.generated;
+// scope + reconciliation
+const rec=Object.entries(F.recon).map(([s,r])=>{if(!r)return`${s} n/a`;
+ const drift=r.drift!==null&&r.drift!==undefined?` · drift ${r.drift>0?"+":""}${fmt(r.drift)}`:"";
+ const t=`${s} Δ ${fmt(r.delta)}${drift} (live ${fmt0(r.balance)} vs cached net ${fmt0(r.net_cached)})`;
+ return r.warn?`<b style="color:var(--warn)">⚠ ${t} — delta moved since last run, possible missed transfers</b>`:t;}).join(" · ")+(SC.complete?"":" · <b style='color:var(--warn)'>⚠ computed from stale cache (incomplete fetch)</b>");
+document.getElementById("scope").innerHTML=
+ `<span><b>Scope:</b> one wallet · MENTE + MOCA only (${SC.excluded_in_tx} inbound transfers of other tokens excluded)</span>`+
+ `<span><b>Data range:</b> ${F.range.from} → ${F.range.to} UTC${SC.complete?"":" · <b style='color:var(--warn)'>⚠ fetch incomplete this run</b>"}</span>`+
+ `<span><b>Rates:</b> MENTE $${F.rate.MENTE.toFixed(6)} (${F.rate_src.MENTE}) · MOCA $${F.rate.MOCA.toFixed(6)} (${F.rate_src.MOCA})</span>`+
+ `<span><b>Balance reconciliation:</b> ${rec} — cache covers the wallet's full lifetime; balance valued at the newest cached block. The stable MENTE Δ (≈−88K, ~1.2% of MENTE-era flow) is outflows missing from Blockscout's transfer index (two full crawls, cross-checked vs the internal ledger's higher tx count) — raised with the data team; a moving Δ would flag in amber here</span>`+
+ `<span><b>Note:</b> ${SC.note}</span>`;
+// fact tiles with deltas vs prev 24h
+const w24=F.windows[0], wall=F.windows[3], p24=F.prev24;
+const balUsd=(F.balance_usd.MENTE||0)+(F.balance_usd.MOCA||0);
+function delta(cur,prev){if(!prev)return"";const d=(cur-prev)/prev*100;const cls=d>0?"delta-up":"delta-dn";return ` <span class="${cls}">${d>0?"+":""}${d.toFixed(0)}% vs prev 24h</span>`;}
+const ftiles=[
+ ["Wallet balance", usd(balUsd), fmt0(F.balance.MENTE||0)+" MENTE · "+fmt0(F.balance.MOCA||0)+" MOCA"],
+ ["Outflow — 24h", usd(w24.out_usd), w24.out_tx+" tx · "+w24.out_wallets+" wallets"+delta(w24.out_usd,p24.out_usd)],
+ ["Inflow — 24h", usd(w24.in_usd), w24.in_tx+" transfer"+(w24.in_tx===1?"":"s")+" · "+w24.in_sources+" source"+(w24.in_sources===1?"":"s")],
+ ["Net flow — 24h", (w24.net_usd>=0?"+":"")+usd(Math.abs(w24.net_usd)).replace("$",w24.net_usd>=0?"$":"-$"), "inflow minus outflow"],
+ ["Outflow — all history", usd(wall.out_usd), wall.out_tx.toLocaleString()+" tx since "+F.range.from],
+ ["Recipient wallets", fmt0(F.wallets_all), fmt0(F.wallets_repeat)+" received on 2+ days"],
 ];
-document.getElementById("tiles").innerHTML=tiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
-// daily table
-const genD=S.generated.slice(0,10), genHM=S.generated.slice(11).split(":");
-const dayFrac=Math.min(Math.max((+genHM[0]*60+ +genHM[1])/1440,0.02),1);
-const dmax=Math.max(...DATA.daily.map(d=>d.d===genD?Math.round(d.invoke/dayFrac):d.invoke),1);
-document.getElementById("dailyT").innerHTML=`<thead><tr><th>Day (UTC)</th><th class="r">Invokes</th><th></th><th class="r">Equips</th><th class="r">Creator MOCA</th><th class="r">≈ USD</th><th class="r">Other MOCA</th></tr></thead><tbody>`+
- DATA.daily.map(d=>{
- const isToday=d.d===genD;
- let r=`<tr><td class="mono">${d.d}${isToday?` <span class="pill">${Math.round(dayFrac*100)}% of day</span>`:""}</td><td class="r">${d.invoke}</td><td style="width:34%"><div style="height:9px;border-radius:3px;background:${CC.invoke};width:${d.invoke/dmax*100}%"></div></td><td class="r">${d.equip}</td><td class="r mono">${fmt(d.moca_ce)}</td><td class="r mono">$${(d.moca_ce*S.rate).toFixed(2)}</td><td class="r mono" style="color:var(--ink3)">${fmt(d.moca_other)}</td></tr>`;
- if(isToday && dayFrac<0.98){
-  const pi=Math.round(d.invoke/dayFrac), pe=Math.round(d.equip/dayFrac), pm=d.moca_ce/dayFrac;
-  r+=`<tr style="opacity:.65;font-style:italic"><td class="mono">↳ projected full day</td><td class="r">~${pi}</td><td><div style="height:9px;border-radius:3px;border:1.5px dashed ${CC.invoke};width:${pi/dmax*100}%"></div></td><td class="r">~${pe}</td><td class="r mono">~${fmt(pm)}</td><td class="r mono">~$${(pm*S.rate).toFixed(2)}</td><td class="r mono" style="color:var(--ink3)">—</td></tr>`;
- }
- return r;}).join("")+`</tbody>`;
-// legend + hourly
-document.getElementById("leg1").innerHTML=cats.map(c=>`<span><span class="sw" style="background:${CC[c]}"></span>${CN[c]}</span>`).join("");
-const H=DATA.hourly, svg=document.getElementById("hourly"), tip=document.getElementById("tip");
-const W=1020,Ht=240,padL=30,padB=22,padT=8;
-const maxC=Math.max(...H.map(h=>h.invoke+h.equip+h.growth+h.micro),1);
+const stale=SC.complete?"":`<div style="font-size:11px;color:var(--warn);margin-top:4px">⚠ as of last complete fetch</div>`;
+document.getElementById("ftiles").innerHTML=ftiles.map(t=>`<div class="tile" style="${SC.complete?"":"border-color:var(--warn)"}"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div>${stale}</div>`).join("");
+// window + month tables (compact: USD out/in/net; per-token split via tooltip)
+function flowRows(ws){return ws.map(w=>{
+ const split=`MENTE $${w.out_usd_tok.MENTE.toLocaleString()} / MOCA $${w.out_usd_tok.MOCA.toLocaleString()}\nraw out: ${fmt(w.out_raw.MENTE)} MENTE · ${fmt(w.out_raw.MOCA)} MOCA\nraw in: ${fmt(w.in_raw.MENTE)} MENTE · ${fmt(w.in_raw.MOCA)} MOCA`;
+ return `<tr data-tip="${split.replace(/"/g,"&quot;")}"><td>${w.label}</td><td class="r mono">$${w.out_usd.toLocaleString()}</td><td class="r mono">$${w.in_usd.toLocaleString()}</td><td class="r mono" style="color:${w.net_usd<0?"var(--ink2)":"var(--c-in)"}">${w.net_usd<0?"−":"+"}$${Math.abs(w.net_usd).toLocaleString()}</td><td class="r mono">${w.out_tx.toLocaleString()}</td><td class="r mono">${w.out_wallets.toLocaleString()}</td></tr>`;}).join("");}
+const flowHead=`<thead><tr><th>Period</th><th class="r">Out USD</th><th class="r">In USD</th><th class="r">Net USD</th><th class="r">Out tx</th><th class="r">Recipients</th></tr></thead>`;
+document.getElementById("winT").innerHTML=flowHead+`<tbody>`+flowRows(F.windows)+`</tbody>`;
+document.getElementById("monT").innerHTML=flowHead+`<tbody>`+flowRows(F.monthly)+`</tbody>`;
+bindTips(document.getElementById("winT"));bindTips(document.getElementById("monT"));
+// daily table — compact with band mix bar + tooltip
+const BK=F.band_keys;
+const BC={micro:"var(--band9)",b010:"var(--band1)",b1:"var(--band2)",b3:"var(--band3)",b5:"var(--band4)",b10:"var(--band5)",b25:"var(--band6)",b50:"var(--band7)",other:"var(--band8)"};
+document.getElementById("bleg").innerHTML=BK.map(k=>`<span><span class="sw" style="background:${BC[k]}"></span>${F.band_labels[k]}</span>`).join("");
+document.getElementById("d0").textContent=F.range.from;
+function buildRows(list){
+const dmax=Math.max(...list.map(d=>d.out_usd),1);
+return list.map(d=>{
+ const bar=BK.map(k=>{const v=(d.bands[k]||{}).usd||0;return v?`<div style="height:10px;background:${BC[k]};width:${v/dmax*100}%"></div>`:"";}).join("");
+ const tipTxt=BK.filter(k=>d.bands[k]).map(k=>`${F.band_labels[k]}: ${d.bands[k].n} tx · $${d.bands[k].usd.toFixed(0)} · ${d.bands[k].w} wallets`).join("\n")||"no outflow";
+ return `<tr data-tip="${tipTxt.replace(/"/g,"&quot;")}" style="${d.partial?"opacity:.75":""}"><td class="mono">${d.d}${d.partial?' <span class="pill">partial day</span>':""}</td><td class="r mono">$${d.out_usd.toFixed(2)}</td><td style="width:26%;min-width:130px"><div style="display:flex;border-radius:3px;overflow:hidden">${bar}</div></td><td class="r mono">${d.out_tx}</td><td class="r mono">${d.wallets}</td><td class="r mono" style="color:${d.in_usd?"var(--c-in)":"var(--ink3)"}">${d.in_usd?"$"+d.in_usd.toFixed(0):"—"}</td><td class="r mono" style="color:${d.net_usd<0?"var(--ink2)":"var(--c-in)"}">${d.net_usd<0?"−":"+"}$${Math.abs(d.net_usd).toFixed(0)}</td></tr>`;});}
+const dHead=`<thead><tr><th>Day (UTC)</th><th class="r">Out USD</th><th>Size-band mix</th><th class="r">Tx</th><th class="r">Wallets</th><th class="r">In USD</th><th class="r">Net USD</th></tr></thead>`;
+const dailyT=document.getElementById("dailyT");
+const revDaily=F.daily.slice().reverse();
+function renderDaily(all){dailyT.innerHTML=dHead+`<tbody>`+buildRows(all?revDaily:revDaily.slice(0,21)).join("")+`</tbody>`;bindTips(dailyT);}
+renderDaily(false);
+let allDays=false;
+document.getElementById("moreDays").addEventListener("click",function(){allDays=!allDays;renderDaily(allDays);this.textContent=allDays?"Show latest 21 days ▴":"Show full history ▾";});
+// hourly svg with tooltip
+let H=F.hourly;
+if(window.matchMedia&&window.matchMedia("(max-width:640px)").matches){
+ const agg=[];for(let i=0;i<F.hourly.length;i+=4){const c=F.hourly.slice(i,i+4);
+  agg.push({h:c[0].h,MOCA:c.reduce((a,b)=>a+b.MOCA,0),MENTE:c.reduce((a,b)=>a+b.MENTE,0)});}
+ H=agg;}
+const svg=document.getElementById("hourly");
+const W=1060,Ht=220,padL=34,padB=22,padT=8;
+const maxC=Math.max(...H.map(h=>h.MOCA+h.MENTE),1);
 const bw=(W-padL-8)/H.length;
 let s="";
-for(let g=0;g<=maxC;g+=5){const y=Ht-padB-(Ht-padB-padT)*g/maxC;
- s+=`<line x1="${padL}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="1"/><text x="${padL-6}" y="${y+4}" font-size="10" fill="var(--ink3)" text-anchor="end">${g}</text>`;}
+const step=Math.max(Math.ceil(maxC/5/10)*10,5);
+for(let g=0;g<=maxC;g+=step){const y=Ht-padB-(Ht-padB-padT)*g/maxC;
+ s+=`<line x1="${padL}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${padL-6}" y="${y+4}" font-size="10" fill="var(--ink3)" text-anchor="end">${g}</text>`;}
 H.forEach((h,i)=>{
- let y=Ht-padB; const x=padL+i*bw+1, w=Math.max(bw-2,2);
- cats.forEach(c=>{ if(!h[c])return; const hh=(Ht-padB-padT)*h[c]/maxC;
-  y-=hh; s+=`<rect x="${x}" y="${y+1}" width="${w}" height="${Math.max(hh-2,1)}" rx="2" fill="${CC[c]}" data-i="${i}"/>`;});
+ let y=Ht-padB; const x=padL+i*bw+.5, w=Math.max(bw-1,1.5);
+ const dim=i===H.length-1?' opacity=".45"':"";
+ [["MOCA","var(--c-moca)"],["MENTE","var(--c-mente)"]].forEach(([k,col])=>{
+  if(!h[k])return; const hh=(Ht-padB-padT)*h[k]/maxC;
+  y-=hh; s+=`<rect x="${x}" y="${y+.5}" width="${w}" height="${Math.max(hh-1,.5)}" fill="${col}"${dim} data-i="${i}"/>`;});
+ s+=`<rect x="${x}" y="${padT}" width="${w}" height="${Ht-padB-padT}" fill="transparent" data-i="${i}"/>`;
  if(h.h.slice(11)==="00") s+=`<text x="${x}" y="${Ht-6}" font-size="10" fill="var(--ink3)">${h.h.slice(5,10)}</text>`;
 });
 svg.innerHTML=s;
-svg.addEventListener("mousemove",e=>{const t=e.target.dataset.i; if(t===undefined){tip.style.opacity=0;return;}
- const h=H[t]; tip.textContent=`${h.h.replace("T"," ")}:00 UTC\ninvoke ${h.invoke} · equip ${h.equip} · growth ${h.growth} · micro ${h.micro}\n${fmt(h.moca)} MOCA`;
- tip.style.left=(e.clientX+14)+"px"; tip.style.top=(e.clientY-10)+"px"; tip.style.opacity=1;});
-svg.addEventListener("mouseleave",()=>tip.style.opacity=0);
-// creators
-document.getElementById("creators").innerHTML=`<thead><tr><th>#</th><th>Creator wallet</th><th class="r">Invokes</th><th class="r">Equips</th><th class="r">MOCA</th><th class="r">≈ USD</th><th class="r">Share</th></tr></thead><tbody>`+
- DATA.creators.slice(0,15).map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a></td><td class="r">${c.invoke}</td><td class="r">${c.equip}</td><td class="r mono">${fmt(c.moca)}</td><td class="r mono">$${(c.moca*S.rate).toFixed(2)}</td><td class="r mono">${(c.moca/ceMoca*100).toFixed(1)}%</td></tr>`).join("")+`</tbody>`;
-// treasury — whole-wallet flows
-const T=DATA.treasury;
-if(T){
- const ttiles=[
-  ["Wallet balance", T.balance!==null?fmt(T.balance)+" MOCA":"n/a", T.balance_usd!==null?("≈ $"+fmt(T.balance_usd)):""],
-  ["Total outflow — 24h", "$"+T.out24_usd, fmt(T.out24_moca)+" MOCA · all categories"],
-  ["Avg daily burn — 7d", "$"+T.burn7_usd, "whole wallet, USD at day's implied rate"],
-  ["Inflow — 24h", fmt(T.in24_moca)+" MOCA", "treasury top-ups received"],
+function hourTip(e){const t=e.target.dataset.i;if(t===undefined)return null;const h=H[t];return `${h.h.replace("T"," ")}:00 UTC\nMOCA ${h.MOCA} · MENTE ${h.MENTE}`;}
+svg.addEventListener("mousemove",e=>{if(pinned)return;const t=hourTip(e);if(!t){tip.style.opacity=0;return;}showTip(e,t);});
+svg.addEventListener("mouseleave",()=>{if(!pinned)tip.style.opacity=0;});
+svg.addEventListener("click",e=>{const t=hourTip(e);if(!t){pinned=null;tip.style.opacity=0;return;}pinned=svg;showTip(e,t);});
+// top recipients (factual)
+document.getElementById("recipT").innerHTML=`<thead><tr><th>#</th><th>Wallet</th><th class="r">Transfers</th><th class="r">Active days</th><th class="r">First → last</th><th class="r">USD</th><th class="r">Share of outflow</th></tr></thead><tbody>`+
+ F.top_recipients.map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${c.n.toLocaleString()}</td><td class="r mono">${c.days}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${c.usd.toLocaleString()}</td><td class="r mono">${c.share}%</td></tr>`).join("")+`</tbody>`;
+document.getElementById("srcT").innerHTML=`<thead><tr><th>Source wallet</th><th class="r">Transfers</th><th class="r">First → last</th><th class="r">USD</th></tr></thead><tbody>`+
+ F.in_sources.map(c=>`<tr><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${c.n.toLocaleString()}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${c.usd.toLocaleString()}</td></tr>`).join("")+`</tbody>`;
+// ---- server-recorded tier ----
+const SV=DATA.server;
+if(SV){
+ document.getElementById("serverCard").style.display="block";
+ const stiles=[
+  ["Top-ups — last 7 closed days","$"+SV.topup_usd.toLocaleString(), SV.topups+" client-confirmed purchases"],
+  ["Minds awakened — 7d", SV.awakens7.toLocaleString(), "backend-confirmed mind_awaken events"],
+  ["Weekly active users", SV.wau?SV.wau.toLocaleString():"n/a", (SV.mau?SV.mau.toLocaleString()+" MAU":"")],
+  ["Unbacked burn per WAU", SV.cost_per_wau!==null?("$"+SV.cost_per_wau):"n/a", "7d unbacked classified burn ÷ WAU"],
  ];
- document.getElementById("ttiles").innerHTML=ttiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
- const BK=[["c010","$0.10 invokes","var(--c-invoke)"],["c1","$1 equips","var(--c-equip)"],["c3","$3 credits","var(--c-growth)"],["c5","$5 referrals","#0aa5a5"],["stripe","Stripe $10/25/50","#b03a9c"],["other","Other","var(--ink3)"]];
- document.getElementById("tleg").innerHTML=BK.map(b=>`<span><span class="sw" style="background:${b[2]}"></span>${b[1]}</span>`).join("");
- const tmax=Math.max(...T.daily.map(d=>d.out_usd),1);
- document.getElementById("treasT").innerHTML=`<thead><tr><th>Day (UTC)</th><th class="r">Burn ≈ USD</th><th></th>${BK.map(b=>`<th class="r">${b[1].split(" ")[0]==="Stripe"?"Stripe":b[1].split(" ")[0]}</th>`).join("")}<th class="r">Out MOCA</th><th class="r">In MOCA</th><th class="r">Net MOCA</th></tr></thead><tbody>`+
-  T.daily.slice().reverse().map(d=>{
-   const bar=BK.map(b=>{const v=(d.b||{})[b[0]]||0;return v?`<div style="height:9px;background:${b[2]};width:${v/tmax*100}%"></div>`:"";}).join("");
-   const cells=BK.map(b=>{const v=(d.b||{})[b[0]]||0,w=(d.w||{})[b[0]]||0;return `<td class="r mono" style="${v?"":"color:var(--ink3)"}">${v?"$"+v.toFixed(2)+`<div style="font-size:11px;color:var(--ink3)">${w} wallet${w!==1?"s":""}</div>`:"—"}</td>`;}).join("");
-   return `<tr><td class="mono">${d.d}</td><td class="r mono">$${d.out_usd.toFixed(2)}</td><td style="width:22%;min-width:120px"><div style="display:flex;border-radius:3px;overflow:hidden">${bar}</div></td>${cells}<td class="r mono">${fmt(d.out)}</td><td class="r mono" style="color:var(--c-growth)">${d.inn?fmt(d.inn):"—"}</td><td class="r mono" style="color:${d.net<0?"var(--ink3)":"var(--c-growth)"}">${fmt(d.net)}</td></tr>`;
-  }).join("")+`</tbody>`;
+ document.getElementById("stiles").innerHTML=stiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
+ const dv=SV.diverge_usd;
+ document.getElementById("sdiverge").innerHTML=`<b>Cross-system check (${SV.days[0]} → ${SV.days[1]}):</b> Stripe-sized on-chain outflow $${SV.stripe_out_usd.toLocaleString()} vs platform-recorded top-ups $${SV.topup_usd.toLocaleString()} — divergence ${dv>=0?"+":""}$${Math.abs(dv).toLocaleString()} ${Math.abs(dv)>Math.max(25,SV.topup_usd*0.25)?'<b style="color:var(--warn)">⚠ investigate</b>':"(within expected event loss)"}. Updated ${SV.fetched} UTC${SV.complete?"":" · <b>⚠ serving cached (last fetch failed)</b>"}.`;
 }
-// other payouts — summary by type + collapsed full list
-const oth=DATA.other;
-document.getElementById("othN").textContent=oth.length+" tx · "+fmt(oth.reduce((a,b)=>a+b.val,0))+" MOCA";
-const agg={};
-oth.forEach(o=>{(agg[o.cat]??={n:0,moca:0}).n++;agg[o.cat].moca+=o.val;});
-const aggMoca=Object.values(agg).reduce((a,b)=>a+b.moca,0)||1;
-document.getElementById("othSum").innerHTML=`<thead><tr><th>Type</th><th class="r">Count</th><th class="r">MOCA</th><th class="r">≈ USD</th><th class="r">Share</th></tr></thead><tbody>`+
- Object.entries(agg).sort((a,b)=>b[1].moca-a[1].moca).map(([k,v])=>`<tr><td><span class="sw" style="background:${CC[k]||(k==='test'?CC.micro:CC.growth)};margin-right:6px"></span>${k}</td><td class="r">${v.n}</td><td class="r mono">${fmt(v.moca)}</td><td class="r mono">$${(v.moca*S.rate).toFixed(2)}</td><td class="r mono">${(v.moca/aggMoca*100).toFixed(1)}%</td></tr>`).join("")+`</tbody>`;
-document.getElementById("otherT").innerHTML=`<thead><tr><th>Time (UTC)</th><th>Type</th><th>Recipient</th><th class="r">MOCA</th><th class="r">≈ USD</th><th>Tx</th></tr></thead><tbody>`+
- oth.slice(0,40).map(o=>`<tr><td class="mono">${o.ts.replace("T"," ")}</td><td><span class="sw" style="background:${CC[o.cat]||(o.cat==='test'?CC.micro:CC.growth)};margin-right:6px"></span>${o.cat}</td><td class="mono"><a href="https://basescan.org/address/${o.to}" target="_blank">${o.to.slice(0,8)}…${o.to.slice(-4)}</a></td><td class="r mono">${o.val.toFixed(2)}</td><td class="r mono">$${(o.val*S.rate).toFixed(2)}</td><td class="mono"><a href="https://basescan.org/tx/${o.tx}" target="_blank">${o.tx.slice(0,10)}…</a></td></tr>`).join("")+`</tbody>`;
-
-// ecosystem health / pattern monitor
-const G=DATA.guard;
+// ---- AI zone ----
 const gtiles=[
- ["Organic payout share", G.organic_share+"%", "of creator earnings show organic patterns"],
- ["Earnings at risk", "$"+G.at_risk_usd, "flagged wallets — unconfirmed, heuristic"],
- ["Payout float", G.runway_adj?("~"+G.runway_adj+" days"):"n/a", G.balance?(fmt(G.balance)+" MOCA · "+(G.runway_days||"?")+"d at current pace, adj. for burn growth"):"balance unavailable"],
- ["Unbacked burn (24h)", "$"+G.burn24, "prev 24h: $"+G.burn_prev+(G.burn_prev>0&&G.burn24/G.burn_prev>2?" — accelerating ⚠":"")+" · FX drift "+(G.fx_drift_pct>0?"+":"")+G.fx_drift_pct+"%"],
+ ["Float projection", G.runway_total?(`<span style="${G.runway_total<14?"color:var(--warn)":""}">~`+G.runway_total+" days</span>"):"n/a", "balance (live rate) ÷ 7-day avg TOTAL outflow · ~"+(G.runway7||"?")+"d on unbacked burn only — projection, not a fact"],
+ ["Unbacked classified burn — 24h", "$"+G.burn24.toLocaleString(), "invokes+equips+credits+referrals (Stripe-sized deliveries excluded — revenue-backed) at day-implied rates · prev 24h: $"+G.burn_prev.toLocaleString()],
+ ["Wallets flagged for review", G.flagged_n+" of "+G.monitored_n, "$"+G.at_risk_usd.toLocaleString()+" of $"+G.ce_total_usd.toLocaleString()+" creator earnings — heuristic, unconfirmed"],
+ ["Creators earning", I.S.creators_n, "wallets with classified invoke/equip income"],
 ];
-if(G.runway_days!==null&&Math.min(G.runway_adj??99,G.runway_days)<14){
- const rb=document.getElementById("runwayBanner");
- rb.style.display="block";
- rb.innerHTML=`⛽ <strong>Payout float reminder:</strong> ~<strong>${G.runway_adj??G.runway_days} days</strong> at projected burn (${G.runway_days}d at current pace) — ${fmt(G.balance)} MOCA in the wallet vs $${G.burn24}/24h unbacked spend${G.burn_prev>0&&G.burn24/G.burn_prev>2?" <strong>(accelerating)</strong>":""}. Operational top-up cadence, not solvency — plan the next refill.`;
-}
 document.getElementById("gtiles").innerHTML=gtiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
-document.getElementById("gN").textContent=G.rows.length+" creators monitored";
-document.getElementById("gT").innerHTML=`<thead><tr><th>Creator</th><th class="r">Invokes</th><th class="r">Span</th><th class="r">Rhythm variety</th><th class="r">Repeating pattern</th><th class="r">Rapid-fire</th><th class="r">MOCA</th><th>Status</th></tr></thead><tbody>`+
+const S=I.S;
+const itiles=[
+ ["Invokes (classified)", S.tot.invoke.n.toLocaleString(), "$"+S.tot.invoke.usd.toLocaleString()+" · "+S.inv24+" in last 24h"],
+ ["Equips (classified)", S.tot.equip.n.toLocaleString(), S.eq24+" in last 24h"],
+ ["User growth / top-ups", S.tot.growth.n.toLocaleString(), "$"+S.tot.growth.usd.toLocaleString()],
+ ["Nonstandard size", S.tot.nonstandard.n.toLocaleString(), "$"+S.tot.nonstandard.usd.toLocaleString()+" — off-grid, not counted above"],
+];
+document.getElementById("itiles").innerHTML=itiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
+document.getElementById("fineT").innerHTML=`<thead><tr><th>Inferred type</th><th class="r">Count</th><th class="r">USD</th></tr></thead><tbody>`+
+ I.fine_table.map(f=>`<tr><td>${f.fine}</td><td class="r mono">${f.n.toLocaleString()}</td><td class="r mono">$${f.usd.toLocaleString()}</td></tr>`).join("")+`</tbody>`;
+document.getElementById("creatT").innerHTML=`<thead><tr><th>#</th><th>Creator wallet</th><th class="r">Invokes</th><th class="r">Equips</th><th class="r">USD</th><th class="r">Share</th></tr></thead><tbody>`+
+ I.creators.slice(0,15).map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r">${c.invoke.toLocaleString()}</td><td class="r">${c.equip}</td><td class="r mono">$${c.usd.toLocaleString()}</td><td class="r mono">${(c.usd/I.ce_total*100).toFixed(1)}%</td></tr>`).join("")+`</tbody>`;
+document.getElementById("patSum").innerHTML=`<span class="aibadge">AI-inferred</span>Payout pattern monitor <span class="pill" style="${G.flagged_n?"border-color:var(--warn);color:var(--warn)":""}">${G.flagged_n?G.flagged_n+" flagged · $"+G.at_risk_usd.toLocaleString():"no flags"}</span><span class="pill">${G.monitored_n} monitored</span>`;
+document.getElementById("gT").innerHTML=`<thead><tr><th>Creator</th><th class="r">Invokes</th><th class="r">Span</th><th class="r">Rhythm variety</th><th class="r">Repeating pattern</th><th class="r">Rapid-fire</th><th class="r">USD</th><th>Status</th></tr></thead><tbody>`+
  G.rows.map(g=>{
   const pill=g.status==="review"
-   ?`<span class="pill" style="border-color:var(--c-equip);color:var(--c-equip)">review suggested</span>`
-   :`<span class="pill" style="border-color:var(--c-growth);color:var(--c-growth)">organic</span>`;
+   ?`<span class="pill" style="border-color:var(--warn);color:var(--warn)">review suggested</span>`
+   :`<span class="pill" style="border-color:var(--c-in);color:var(--c-in)">no flags</span>`;
   const extra=[...g.flags,...g.tags].map(f=>`<span class="pill">${f}</span>`).join(" ");
-  return `<tr><td class="mono"><a href="https://basescan.org/address/${g.addr}" target="_blank">${g.addr.slice(0,8)}…${g.addr.slice(-4)}</a></td><td class="r">${g.n}</td><td class="r mono">${g.span_h}h</td><td class="r mono">${g.ent.toFixed(2)}</td><td class="r mono">${g.acf.toFixed(2)}</td><td class="r mono">${g.burst}%</td><td class="r mono">${fmt(g.moca)}</td><td>${pill} ${extra}</td></tr>`;
+  return `<tr><td class="mono"><a href="https://basescan.org/address/${g.addr}" target="_blank">${g.addr.slice(0,8)}…${g.addr.slice(-4)}</a>${g.label?` <span class="pill">${g.label}</span>`:""}</td><td class="r">${g.n.toLocaleString()}</td><td class="r mono">${g.span_h}h</td><td class="r mono">${g.ent.toFixed(2)}</td><td class="r mono">${g.acf.toFixed(2)}</td><td class="r mono">${g.burst}%</td><td class="r mono">$${g.usd.toLocaleString()}</td><td>${pill} ${extra}</td></tr>`;
  }).join("")+`</tbody>`;
 </script>

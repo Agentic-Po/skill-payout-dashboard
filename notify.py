@@ -68,35 +68,34 @@ def usd_line(label, key, note=""):
 
 # guard summary from the freshly built page
 import re
-G = json.loads(re.search(r'const DATA = (\{.*?\})\s*;', open(os.path.join(HERE, "index.html")).read(), re.S).group(1))["guard"]
+_D = json.loads(re.search(r'const DATA = (\{.*\})\s*;\n', open(os.path.join(HERE, "index.html")).read()).group(1))
+G = _D["infer"]["guard"]
+F = _D["facts"]
 health = []
-if G.get("balance") is not None:
-    bd = G.get("bal_delta24") or 0
-    sign = "+" if bd >= 0 else ""
+w24 = F["windows"][0]
+bal_m, bal_e = F["balance"].get("MOCA"), F["balance"].get("MENTE")
+if bal_m is not None:
     health.append("")
-    health.append(f"<b>Wallet:</b> <b>${G['balance']*RATE:,.2f}</b> ({G['balance']:,.0f} MOCA · {sign}{bd:,.0f} MOCA/24h)")
-if G.get("topup24"):
-    health.append(f"⬆️ <b>Top-up received:</b> +{G['topup24']:,.0f} MOCA in the last 24h")
+    health.append(f"<b>Wallet:</b> <b>${G['bal_usd']:,.0f}</b> ({bal_m:,.0f} MOCA + {bal_e or 0:,.0f} MENTE)")
+health.append(f"<b>24h:</b> out ${w24['out_usd']:,.0f} · in ${w24['in_usd']:,.0f} · net {'+' if w24['net_usd']>=0 else ''}${w24['net_usd']:,.0f}")
 if mode in ("daily", "weekly"):
-    health.append(f"<b>Organic payout share:</b> {G['organic_share']}% · <b>at risk:</b> ${G['at_risk_usd']} <i>(unconfirmed)</i>")
-    if G.get("runway_days") is not None:
-        health.append(f"<b>Payout float:</b> ~{G.get('runway_adj') or G['runway_days']} days projected ({G['balance']:,.0f} MOCA) — top-up cadence, not solvency")
+    health.append(f"<b>Pattern monitor:</b> {G['flagged_n']} of {G['monitored_n']} flagged · <b>at risk:</b> ${G['at_risk_usd']:,.2f} of ${G['ce_total_usd']:,.2f} <i>(heuristic, unconfirmed)</i>")
+    if G.get("runway7") is not None:
+        health.append(f"<b>Payout float:</b> ~{G['runway7']} days (7d-avg burn) · {G.get('runway24') or '?'}d at 24h pace — top-up cadence, not solvency")
 if mode == "weekly":
-    flagged = sum(1 for r in G["rows"] if r["status"] == "review")
     health.append("")
-    health.append(f"<i>Paste-ready:</i> This week: {cur['invoke']:,} invokes across {cur['creators']} creators, ${cur['moca_ce']*RATE:,.2f} paid to creators — {G['organic_share']}% organic, {flagged} account(s) under review, ${cur['moca_topup']*RATE:,.2f} of flows revenue-backed.")
-if G.get("recon_drift"):
-    health.append(f"⚠️ <b>Reconciliation drift:</b> {G['recon_drift']:,.1f} MOCA unexplained vs transfer logs")
+    health.append(f"<i>Paste-ready:</i> This week: {cur['invoke']:,} invokes across {cur['creators']} creators, ${cur['moca_ce']*RATE:,.2f} paid to creators — {G['flagged_n']} account(s) flagged for review, ${cur['moca_topup']*RATE:,.2f} of flows revenue-backed (Stripe-sized).")
+for sym, r in (F.get("recon") or {}).items():
+    if r and r.get("warn"):
+        health.append(f"⚠️ <b>Reconciliation drift ({sym}):</b> Δ moved {r['drift']:+,.1f} since last run — possible missed transfers")
 if G.get("burn_prev", 0) > 0 and G.get("burn24", 0) / G["burn_prev"] > 2 and mode != "hourly":
     health.append(f"⚠️ <b>Burn accelerating:</b> ${G['burn24']}/24h vs ${G['burn_prev']} prior")
-rw = min(G.get("runway_adj") or 99, G.get("runway_days") or 99)
+rw = min(G.get("runway7") or 99, G.get("runway24") or 99)
 if rw < 7:
-    # throttle for hourly: alert on threshold crossing/escalation or every 6h; daily/weekly always
-    prev_rw = hist[-2].get("runway_adj") if len(hist) >= 2 else None
+    prev_rw = hist[-2].get("runway7", hist[-2].get("runway_adj")) if len(hist) >= 2 else None
     crossed = prev_rw is None or prev_rw >= 7 or (rw < 1 <= prev_rw) or (rw < 0.5 <= prev_rw)
     if mode != "hourly" or crossed or now.hour % 6 == 0:
-        need = f" — top up ≥{G['topup_needed']:,.0f} MOCA for 7d float" if G.get("topup_needed") else ""
-        health.append(f"🔴 <b>Low float:</b> ${G['burn24']}/24h burn → ~{rw}d left{need}")
+        health.append(f"🔴 <b>Low float:</b> ${G['burn24']}/24h burn → ~{rw}d left")
 
 msg = "\n".join([
     f"{head} — <i>Skill Payout Dashboard</i>",
