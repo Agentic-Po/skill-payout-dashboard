@@ -97,7 +97,7 @@ td a{color:var(--acc);text-decoration:none}
   <div class="tiles" id="ttiles"></div>
   <div class="card">
     <h2>Daily wallet burn — past 3 months</h2>
-    <p class="note">All outgoing MOCA from the wallet per day (creator payouts, credits, referrals, top-up deliveries — everything), valued in USD at each day's implied payout rate where known (live rate otherwise), broken down by payout size. Inflows are treasury top-ups received.</p>
+    <p class="note">All outgoing MOCA from the wallet per day (creator payouts, credits, referrals, top-up deliveries — everything), valued in USD at each day's implied payout rate where known (live rate otherwise), broken down by payout size. Under each amount: unique recipient wallets that day — for the $3 column, that's how many minds/users received the $3 credit (same wallet on multiple days counts once per day). Inflows are treasury top-ups received.</p>
     <div class="legend" id="tleg"></div>
     <div class="scroll"><table id="treasT"></table></div>
   </div>
@@ -180,7 +180,7 @@ if(T){
  document.getElementById("treasT").innerHTML=`<thead><tr><th>Day (UTC)</th><th class="r">Burn ≈ USD</th><th></th>${BK.map(b=>`<th class="r">${b[1].split(" ")[0]==="Stripe"?"Stripe":b[1].split(" ")[0]}</th>`).join("")}<th class="r">Out MOCA</th><th class="r">In MOCA</th><th class="r">Net MOCA</th></tr></thead><tbody>`+
   T.daily.slice().reverse().map(d=>{
    const bar=BK.map(b=>{const v=(d.b||{})[b[0]]||0;return v?`<div style="height:9px;background:${b[2]};width:${v/tmax*100}%"></div>`:"";}).join("");
-   const cells=BK.map(b=>{const v=(d.b||{})[b[0]]||0;return `<td class="r mono" style="${v?"":"color:var(--ink3)"}">${v?"$"+v.toFixed(2):"—"}</td>`;}).join("");
+   const cells=BK.map(b=>{const v=(d.b||{})[b[0]]||0,w=(d.w||{})[b[0]]||0;return `<td class="r mono" style="${v?"":"color:var(--ink3)"}">${v?"$"+v.toFixed(2)+`<div style="font-size:11px;color:var(--ink3)">${w} wallet${w!==1?"s":""}</div>`:"—"}</td>`;}).join("");
    return `<tr><td class="mono">${d.d}</td><td class="r mono">$${d.out_usd.toFixed(2)}</td><td style="width:22%;min-width:120px"><div style="display:flex;border-radius:3px;overflow:hidden">${bar}</div></td>${cells}<td class="r mono">${fmt(d.out)}</td><td class="r mono" style="color:var(--c-growth)">${d.inn?fmt(d.inn):"—"}</td><td class="r mono" style="color:${d.net<0?"var(--ink3)":"var(--c-growth)"}">${fmt(d.net)}</td></tr>`;
   }).join("")+`</tbody>`;
 }
