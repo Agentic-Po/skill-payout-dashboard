@@ -97,7 +97,8 @@ td a{color:var(--acc);text-decoration:none}
   <div class="tiles" id="ttiles"></div>
   <div class="card">
     <h2>Daily wallet burn — past 3 months</h2>
-    <p class="note">All outgoing MOCA from the wallet per day (creator payouts, credits, referrals, top-up deliveries — everything), valued in USD at each day's implied payout rate where known (live rate otherwise). Inflows are treasury top-ups received.</p>
+    <p class="note">All outgoing MOCA from the wallet per day (creator payouts, credits, referrals, top-up deliveries — everything), valued in USD at each day's implied payout rate where known (live rate otherwise), broken down by payout size. Inflows are treasury top-ups received.</p>
+    <div class="legend" id="tleg"></div>
     <div class="scroll"><table id="treasT"></table></div>
   </div>
 
@@ -173,9 +174,15 @@ if(T){
   ["Inflow — 24h", fmt(T.in24_moca)+" MOCA", "treasury top-ups received"],
  ];
  document.getElementById("ttiles").innerHTML=ttiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
+ const BK=[["c010","$0.10 invokes","var(--c-invoke)"],["c1","$1 equips","var(--c-equip)"],["c3","$3 credits","var(--c-growth)"],["c5","$5 referrals","#0aa5a5"],["stripe","Stripe $10/25/50","#b03a9c"],["other","Other","var(--ink3)"]];
+ document.getElementById("tleg").innerHTML=BK.map(b=>`<span><span class="sw" style="background:${b[2]}"></span>${b[1]}</span>`).join("");
  const tmax=Math.max(...T.daily.map(d=>d.out_usd),1);
- document.getElementById("treasT").innerHTML=`<thead><tr><th>Day (UTC)</th><th class="r">Burn ≈ USD</th><th></th><th class="r">Out MOCA</th><th class="r">In MOCA</th><th class="r">Net MOCA</th></tr></thead><tbody>`+
-  T.daily.slice().reverse().map(d=>`<tr><td class="mono">${d.d}</td><td class="r mono">$${d.out_usd.toFixed(2)}</td><td style="width:30%"><div style="height:9px;border-radius:3px;background:var(--c-equip);width:${d.out_usd/tmax*100}%"></div></td><td class="r mono">${fmt(d.out)}</td><td class="r mono" style="color:var(--c-growth)">${d.inn?fmt(d.inn):"—"}</td><td class="r mono" style="color:${d.net<0?"var(--ink3)":"var(--c-growth)"}">${fmt(d.net)}</td></tr>`).join("")+`</tbody>`;
+ document.getElementById("treasT").innerHTML=`<thead><tr><th>Day (UTC)</th><th class="r">Burn ≈ USD</th><th></th>${BK.map(b=>`<th class="r">${b[1].split(" ")[0]==="Stripe"?"Stripe":b[1].split(" ")[0]}</th>`).join("")}<th class="r">Out MOCA</th><th class="r">In MOCA</th><th class="r">Net MOCA</th></tr></thead><tbody>`+
+  T.daily.slice().reverse().map(d=>{
+   const bar=BK.map(b=>{const v=(d.b||{})[b[0]]||0;return v?`<div style="height:9px;background:${b[2]};width:${v/tmax*100}%"></div>`:"";}).join("");
+   const cells=BK.map(b=>{const v=(d.b||{})[b[0]]||0;return `<td class="r mono" style="${v?"":"color:var(--ink3)"}">${v?"$"+v.toFixed(2):"—"}</td>`;}).join("");
+   return `<tr><td class="mono">${d.d}</td><td class="r mono">$${d.out_usd.toFixed(2)}</td><td style="width:22%;min-width:120px"><div style="display:flex;border-radius:3px;overflow:hidden">${bar}</div></td>${cells}<td class="r mono">${fmt(d.out)}</td><td class="r mono" style="color:var(--c-growth)">${d.inn?fmt(d.inn):"—"}</td><td class="r mono" style="color:${d.net<0?"var(--ink3)":"var(--c-growth)"}">${fmt(d.net)}</td></tr>`;
+  }).join("")+`</tbody>`;
 }
 // other payouts — summary by type + collapsed full list
 const oth=DATA.other;

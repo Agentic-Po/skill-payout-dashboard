@@ -291,14 +291,29 @@ guard = {"organic_share": organic_share, "at_risk_usd": round(at_risk * RATE, 2)
 
 # --- treasury view: whole-wallet daily flows (past 3 months), MOCA + USD ---
 out_d, out_usd_d, in_d = defaultdict(float), defaultdict(float), defaultdict(float)
+bkt_d = defaultdict(lambda: defaultdict(float))
+
+def bucket(r):
+    f = r["fine"]
+    if f in ("stripe $10", "stripe $25", "stripe $50"): return "stripe"
+    if f == "invoke": return "c010"
+    if f == "equip": return "c1"
+    if f == "$3 credit": return "c3"
+    if f == "referral $5": return "c5"
+    return "other"
+
 for r in rows:
-    out_d[r["ts"][:10]] += r["val"]
-    out_usd_d[r["ts"][:10]] += r["val"] * day_rate(r["ts"])
+    d = r["ts"][:10]
+    out_d[d] += r["val"]
+    usd = r["val"] * day_rate(r["ts"])
+    out_usd_d[d] += usd
+    bkt_d[d][bucket(r)] += usd
 for f in inflows:
     in_d[f["ts"][:10]] += f["val"]
 t_days = sorted(d for d in set(out_d) | set(in_d) if d >= CUTOFF[:10])
 t_daily = [{"d": d, "out": round(out_d[d], 1), "out_usd": round(out_usd_d[d], 2),
-            "inn": round(in_d[d], 1), "net": round(in_d[d] - out_d[d], 1)} for d in t_days]
+            "inn": round(in_d[d], 1), "net": round(in_d[d] - out_d[d], 1),
+            "b": {k: round(v, 2) for k, v in bkt_d[d].items()}} for d in t_days]
 full_days = [d for d in t_days if d < today]
 burn7 = round(sum(out_usd_d[d] for d in full_days[-7:]) / max(len(full_days[-7:]), 1), 2)
 treasury = {"balance": round(BALANCE, 0) if BALANCE else None,
