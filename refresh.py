@@ -26,7 +26,7 @@ TOKENS = {
 ADDR2SYM = {v["addr"]: k for k, v in TOKENS.items()}
 # counterparty labels confirmed off-chain (platform wallet-mind map / treasury ops)
 KNOWN = {"0x9a95d76c41aa34093a0db5f26f97309fe734a07f": "The Gamemaster (mind)",
-         "0xd85096faec1ac03075667b4c1a1661f5623bf111": "internal ops wallet (also a treasury funding source)",
+         "0xd85096faec1ac03075667b4c1a1661f5623bf111": "Cognition Credits collection wallet (mind spend sink; recycles into treasury)",
          "0xf605dbb5626dfc1448cee33e2e1221103021468f": "primary treasury funding source"}
 # Optional wallet↔mind map (drop wallet_mind_map.csv beside this script — gitignored,
 # from the platform's wallet-mind-map export). ONLY the display name is surfaced on
@@ -233,6 +233,49 @@ for f in inflows:
     f["rate"], f["rsrc"] = day_rate(f["tok"], f["ts"])
     f["usd"] = f["val"] * f["rate"]
 
+# --- market-price cross-check (era-aware pool OHLCV via GeckoTerminal) ---
+# Validates the day-implied payout oracle against external market data. MENTE:
+# USDC/MENTE Uniswap pool while it carried the volume, then the MOCA/MENTE
+# Aerodrome pool (quote side). MOCA: MOCA/USDC Aerodrome pool. Only new days
+# are fetched; stored beside the pinned rates for auditors.
+MARKET_POOLS = {
+    "MENTE": [("0xd76d44875716a708dbd55cd8ffc3eb1f94acbce3", "base"),
+              ("0x2a5eeea4d91042f779ee6014f4f6fd41f375262d", "quote")],
+    "MOCA":  [("0x2a5eeea4d91042f779ee6014f4f6fd41f375262d", "base")],
+}
+STATE.setdefault("market_rates", {})
+market_summary = {}
+try:
+    from datetime import datetime as _dt
+    for sym, pools in MARKET_POOLS.items():
+        mr = STATE["market_rates"].setdefault(sym, {})
+        need_recent = (_dt.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%d")
+        if not any(d >= need_recent for d in mr):
+            merged = {}
+            for pool, side in pools:
+                try:
+                    dd = get(f"https://api.geckoterminal.com/api/v2/networks/base/pools/{pool}/ohlcv/day?limit=120&token={side}")
+                    for ts, o, h, l, c, v in dd["data"]["attributes"]["ohlcv_list"]:
+                        day = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+                        if day not in merged or v > merged[day][1]:
+                            merged[day] = (c, v)
+                    time.sleep(0.5)
+                except Exception as e:
+                    print(sym, pool, "ohlcv failed:", e)
+            for day, (c, v) in merged.items():
+                if day not in mr and c:
+                    mr[day] = round(c, 8)
+        devs = []
+        for day, r in STATE["day_rates"][sym].items():
+            m = mr.get(day)
+            if m:
+                devs.append(abs(r - m) / m * 100)
+        if devs:
+            market_summary[sym] = {"n": len(devs), "within15": sum(1 for x in devs if x <= 15),
+                                   "max_dev": round(max(devs), 1)}
+except Exception as e:
+    print("market cross-check failed:", e)
+
 # ============================ LAYER 1 — FACTS ============================
 now = datetime.now(timezone.utc)
 today = now.strftime("%Y-%m-%d")
@@ -366,6 +409,7 @@ facts = {"windows": windows, "prev24": prev24, "monthly": monthly, "daily": dail
          "balance": {s: (round(BALANCE[s], 0) if BALANCE[s] is not None else None) for s in TOKENS},
          "balance_usd": {s: (round(BALANCE[s] * RATE[s], 0) if BALANCE[s] is not None else None) for s in TOKENS},
          "rate": RATE, "rate_src": RATE_SRC, "recon": recon,
+         "market_check": market_summary,
          "band_labels": BAND_LABEL, "band_keys": BAND_KEYS,
          "range": {"from": range_from, "to": rows[0]["ts"][:19] if rows else None}}
 

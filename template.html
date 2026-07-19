@@ -193,6 +193,7 @@ document.getElementById("scope").innerHTML=
  `<span><b>Scope:</b> one wallet · MENTE + MOCA only (${SC.excluded_in_tx} inbound transfers of other tokens excluded)</span>`+
  `<span><b>Data range:</b> ${F.range.from} → ${F.range.to} UTC${SC.complete?"":" · <b style='color:var(--warn)'>⚠ fetch incomplete this run</b>"}</span>`+
  `<span><b>Rates:</b> MENTE $${F.rate.MENTE.toFixed(6)} (${F.rate_src.MENTE}) · MOCA $${F.rate.MOCA.toFixed(6)} (${F.rate_src.MOCA})</span>`+
+ (F.market_check&&Object.keys(F.market_check).length?`<span><b>Rate validation:</b> ${Object.entries(F.market_check).map(([k,v])=>`${k} ${v.within15}/${v.n} days within 15% of pool OHLCV (max dev ${v.max_dev}%)`).join(" · ")} — era-aware market cross-check</span>`:"")+
  `<span><b>Balance reconciliation:</b> ${rec} — cache covers the wallet's full lifetime; balance valued at the newest cached block. The stable MENTE Δ (≈−88K, ~1.2% of MENTE-era flow) is outflows missing from Blockscout's transfer index (two full crawls, cross-checked vs the internal ledger's higher tx count) — raised with the data team; a moving Δ would flag in amber here</span>`+
  `<span><b>Note:</b> ${SC.note}</span>`;
 // fact tiles with deltas vs prev 24h
