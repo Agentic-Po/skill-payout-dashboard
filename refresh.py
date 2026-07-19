@@ -607,7 +607,8 @@ if os.path.exists(_snap_path):
     _dist = sum(r["usd"] for r in rows if _p0 <= r["ts"][:10] <= _p1
                 and r["cat"] in ("invoke", "equip", "growth") and r["fine"] not in STRIPE_FINE)
     stripe_snap["period_unbacked_dist_usd"] = round(_dist, 2)
-    stripe_snap["period_subsidy_ratio"] = round(_dist / stripe_snap["net_usd"], 1) if stripe_snap["net_usd"] else None
+    _proceeds = stripe_snap.get("net_proceeds_est_usd") or (stripe_snap["net_usd"] - stripe_snap["fees_est_usd"])
+    stripe_snap["period_subsidy_ratio"] = round(_dist / _proceeds, 1) if _proceeds else None
 
 infer = {"S": S, "creators": creators[:25], "ce_total": ce_total, "fine_table": fine_table, "guard": guard}
 

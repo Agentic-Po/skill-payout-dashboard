@@ -423,17 +423,20 @@ if(CG){
 // ---- verified Stripe snapshot ----
 const SS=DATA.stripe_snap;
 if(SS){
+ const kept=SS.net_proceeds_est_usd||(SS.net_usd-SS.fees_est_usd);
  document.getElementById("stripeCard").style.display="block";
- document.getElementById("ins-stripe").innerHTML="&rarr; Users have genuinely paid <b>$"+SS.net_usd.toLocaleString()+"</b> through Stripe ("+SS.paid+" payments, "+SS.period[0]+" → "+SS.period[1]+") — the real revenue floor is ~13x what client-side events record. Subsidy ratio on this verified basis: <b>$"+(SS.period_subsidy_ratio??"?")+"</b> distributed per $1 of revenue.";
+ document.getElementById("ins-stripe").innerHTML="&rarr; <b>Took in $"+SS.gross_usd.toLocaleString()+" &rarr; refunded $"+SS.refunded_usd+" &rarr; Stripe's cut ~$"+SS.fees_est_usd.toLocaleString()+" &rarr; we keep ~$"+kept.toLocaleString()+"</b> ("+SS.paid+" paid payments, "+SS.period[0]+" &rarr; "+SS.period[1]+") — about 13x what our own analytics had been catching.";
  const t=[
-  ["Net revenue — verified","$"+SS.net_usd.toLocaleString(), SS.paid+" paid payments · avg $"+SS.avg_paid_usd],
-  ["Gross / refunded","$"+SS.gross_usd.toLocaleString(), "$"+SS.refunded_usd+" refunded ("+SS.refunded+" tx) · "+SS.failed+" failed"],
-  ["Stripe fees (est.)","$"+SS.fees_est_usd.toLocaleString(), "from the CSV fee column (HK$"+SS.fees_hkd.toLocaleString()+")"],
-  ["Purchase mix", Object.entries(SS.tiers).map(([k,v])=>v+"×"+k).join(" · "), "tier counts sum exactly to gross — verified"],
-  ["Subsidy ratio — verified basis","$"+(SS.period_subsidy_ratio??"?")+" per $1", "same-period unbacked distribution $"+(SS.period_unbacked_dist_usd||0).toLocaleString()+" ÷ net revenue"],
+  ["Gross collected (paid tx)","$"+SS.gross_usd.toLocaleString(), SS.paid+" paid payments · avg $"+SS.avg_paid_usd],
+  ["Refunds","−$"+SS.refunded_usd.toLocaleString(), SS.refunded+" refund events · basis unverified (see note)"],
+  ["Net revenue (pre-fee)","$"+SS.net_usd.toLocaleString(), "gross − refunds, before Stripe fees"],
+  ["Stripe fees (est.)","−$"+SS.fees_est_usd.toLocaleString(), "billed in HKD, converted (see note)"],
+  ["Net proceeds (est. take-home)","≈ $"+kept.toLocaleString(), "net revenue − est. fees ≈ "+Math.round(kept/SS.gross_usd*100)+"% of gross"],
+  ["Subsidy ratio — verified basis","$"+(SS.period_subsidy_ratio??"?")+" per $1", "same-period unbacked distribution $"+(SS.period_unbacked_dist_usd||0).toLocaleString()+" ÷ net proceeds"],
  ];
  document.getElementById("stripeTiles").innerHTML=t.map(x=>`<div class="tile"><div class="k">${x[0]}</div><div class="v">${x[1]}</div><div class="d">${x[2]}</div></div>`).join("");
- document.getElementById("stripeNote").innerHTML=`<b>Permanent reference snapshot</b> captured ${SS.captured} from the platform's Stripe export (${SS.rows} rows via the internal treasury dashboard) — this is actual user spending at the moment money was received. It does not update; days after ${SS.period[1]} rely on the client-side estimates below until a live Stripe/hm_events feed lands (see Data gaps).`;
+ document.getElementById("stripeNote").innerHTML=`<b>Reconciliation:</b> gross collected $${SS.gross_usd.toLocaleString()} − refunds $${SS.refunded_usd} = net revenue (pre-fee) $${SS.net_usd.toLocaleString()} − Stripe fees est. $${SS.fees_est_usd.toLocaleString()} = <b>net proceeds ≈ $${kept.toLocaleString()}</b> · effective fee rate ≈ ${(SS.fees_est_usd/SS.gross_usd*100).toFixed(1)}% of gross · purchase mix mostly $10 and $25 packs (${Object.entries(SS.tiers).map(([k,v])=>v+"×"+k).join(", ")}).<br>
+<span style="font-size:11.5px">The $4.1 verified ratio and the $17.7 figure in the platform-events card below bracket the truth — $17.7 is the worst-case bound from incomplete client-side data; the verified number is the better estimate. Footnotes: refund basis unverified — gross covers paid rows only; whether the $${SS.refunded_usd} nets against included charges or the ${SS.refunded} excluded refunded rows needs per-row amount_refunded from Stripe. Fees are billed in HKD (HK$${SS.fees_hkd.toLocaleString()}), converted per transaction — an estimate, not Stripe's settled USD figure. ${SS.failed} failed attempts carry $0 and are excluded throughout. One-time snapshot (${SS.rows} rows) captured ${SS.captured}, data through ${SS.period[1]} — see Data gaps for the live-feed plan.</span>`;
 }
 // ---- server-recorded tier ----
 const SV=DATA.server;

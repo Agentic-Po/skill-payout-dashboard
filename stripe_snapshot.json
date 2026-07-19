@@ -87,5 +87,6 @@
   60
  ],
  "daily_note": "ordered bar values 2026-05-13\u21922026-07-15; zero-revenue days omitted by source chart",
- "permanence": "permanent reference snapshot \u2014 actual user spending through Stripe; superseded only by a live Stripe/hm_events feed"
+ "permanence": "permanent reference snapshot \u2014 actual user spending through Stripe; superseded only by a live Stripe/hm_events feed",
+ "net_proceeds_est_usd": 5987.83
 }
