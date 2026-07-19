@@ -27,7 +27,8 @@ ADDR2SYM = {v["addr"]: k for k, v in TOKENS.items()}
 # counterparty labels confirmed off-chain (platform wallet-mind map / treasury ops)
 KNOWN = {"0x9a95d76c41aa34093a0db5f26f97309fe734a07f": "The Gamemaster (mind)",
          "0xd85096faec1ac03075667b4c1a1661f5623bf111": "Cognition Credits collection wallet (mind spend sink; recycles into treasury)",
-         "0xf605dbb5626dfc1448cee33e2e1221103021468f": "primary treasury funding source",
+         "0xf605dbb5626dfc1448cee33e2e1221103021468f": "primary MENTE funding source — owner unconfirmed (Finance/platform ops?), identification open",
+         "0x4d3021a52b31ffafde3c46450d02c72807c3a178": "Po's Fireblocks wallet (manual MOCA top-ups)",
          "0x1c5ebb794335b72d773df2fd8f80f3d1afbb75dd": "gas funder (sends ETH to mind wallets for cognition spends)"}
 # Optional wallet↔mind map (drop wallet_mind_map.csv beside this script — gitignored,
 # from the platform's wallet-mind-map export). ONLY the display name is surfaced on
@@ -666,7 +667,7 @@ insights = {
 open_items = [
     {"item": "Confirm MENTE burn mechanism (event-less balance changes, ~$1,250 lifetime; sample txs 0x0080584a…, 0xc9f7afc5… in block 45862329)", "type": "clarify", "owner": "Po → MENTE team", "opened": "2026-07-19", "anchor": "scope"},
     {"item": "Reconcile $" + str(abs(server["diverge_usd"])) + " Stripe-sized outflow vs recorded top-ups", "type": "follow-up", "owner": "Po — blocked on hm_events Stripe export", "opened": "2026-07-18", "anchor": "serverCard"} if server else None,
-    {"item": "Label all inflow source wallets (Fireblocks / Finance / recycle) for bookkeeping", "type": "follow-up", "owner": "Po + treasury ops", "opened": "2026-07-19", "anchor": "srcT"},
+    {"item": "Identify owner of 0xf605dBb5…1468f — the primary MENTE funder (4.88M MENTE lifetime incl. an unattributed ~$6K on Jul 7); Po's Fireblocks and the collector are confirmed, three small early funders remain unlabeled", "type": "clarify", "owner": "Po + Finance/treasury ops", "opened": "2026-07-19", "anchor": "srcT"},
     {"item": "Formalize the recycle policy: collector→treasury flows are informal ops habit today — defining the rule defines who owns the economy's cash flow", "type": "clarify", "owner": "Po → Minh / platform", "opened": "2026-07-19", "anchor": "srcT"},
     {"item": "Subsidy-ratio trend: watch whether the weekly ratio bends down as revenue features land", "type": "trend", "owner": "dashboard (auto)", "opened": "2026-07-19", "anchor": "serverCard"},
     {"item": "Manual heartbeat: wallet stays solvent only by hand-refills — standing replenishment policy pending Minh", "type": "follow-up", "owner": "Po → Minh", "opened": "2026-07-19", "anchor": "plainStrip"},
