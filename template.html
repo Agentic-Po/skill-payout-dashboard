@@ -3,30 +3,37 @@
 <title>Minds Treasury Wallet — MENTE + MOCA</title>
 <style>
 :root{
-  --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#8a8984;
-  --line:#e6e5e0; --acc:#2a78d6;
+  --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#6f6e69;
+  --line:#e6e5e0; --acc:#1a5fb0;
   --c-mente:#7c5cd6; --c-moca:#2a78d6; --c-in:#008300; --warn:#9a5800; --warnbg:#fdf6ec;
   --band1:#dbe9f9; --band2:#a8cbf0; --band3:#6fa8e0; --band4:#3f7fc4; --band5:#2a5f9e; --band6:#1d4478; --band7:#122c52; --band8:#888; --band9:#b3b3ad;
 }
 @media (prefers-color-scheme: dark){:root{
-  --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#8a8984;
+  --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#9d9c96;
   --line:#2e2e2b; --acc:#3987e5;
   --c-mente:#9b83e8; --c-moca:#3987e5; --c-in:#3fa93f; --warn:#e8a44a; --warnbg:#241c10;
   --band1:#1c2c40; --band2:#27476b; --band3:#33608f; --band4:#437cb5; --band5:#5f97d3; --band6:#8ab5e5; --band7:#bcd6f2; --band8:#777; --band9:#444;
 }}
 :root[data-theme="dark"]{
-  --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#8a8984;
+  --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#9d9c96;
   --line:#2e2e2b; --acc:#3987e5;
   --c-mente:#9b83e8; --c-moca:#3987e5; --c-in:#3fa93f; --warn:#e8a44a; --warnbg:#241c10;
   --band1:#1c2c40; --band2:#27476b; --band3:#33608f; --band4:#437cb5; --band5:#5f97d3; --band6:#8ab5e5; --band7:#bcd6f2; --band8:#777; --band9:#444;
 }
 :root[data-theme="light"]{
-  --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#8a8984;
-  --line:#e6e5e0; --acc:#2a78d6;
+  --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#6f6e69;
+  --line:#e6e5e0; --acc:#1a5fb0;
   --c-mente:#7c5cd6; --c-moca:#2a78d6; --c-in:#008300; --warn:#9a5800; --warnbg:#fdf6ec;
   --band1:#dbe9f9; --band2:#a8cbf0; --band3:#6fa8e0; --band4:#3f7fc4; --band5:#2a5f9e; --band6:#1d4478; --band7:#122c52; --band8:#888; --band9:#b3b3ad;
 }
 *{box-sizing:border-box}
+html{scroll-behavior:smooth}
+a{color:var(--acc);text-decoration:none}
+a:hover{text-decoration:underline}
+a:visited{color:var(--acc)}
+.card a{font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.card a.pill,.card td a{font-weight:inherit;text-decoration:none}
+#registerCard,#gapsCard{scroll-margin-top:12px}
 body{background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,"SF Pro Text",Segoe UI,sans-serif;margin:0;padding:28px 20px 60px}
 .wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
 h1{font-size:21px;margin:0;letter-spacing:-.01em}
@@ -71,8 +78,10 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
 .scopebox{font-size:12.5px;color:var(--ink2);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px 24px}
 .scopebox b{color:var(--ink)}
 .showmore{cursor:pointer;font-size:13px;color:var(--acc);background:none;border:none;padding:8px 0}
-.insight{font-size:13px;font-weight:600;color:var(--ink);border-left:3px solid var(--acc);padding:2px 0 2px 10px;margin:6px 0 8px}
+.insight{font-size:13px;font-weight:500;color:var(--ink);border-left:3px solid var(--acc);padding:2px 0 2px 10px;margin:6px 0 8px}
 .metacard{border-left:6px solid var(--ink3)}
+.metacard td{vertical-align:top;font-size:12.5px;line-height:1.45}
+.metacard th:first-child{width:38%}
 @media (max-width:640px){
  body{padding:16px 10px 40px}
  .tile .v{font-size:20px}
@@ -95,34 +104,34 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
         <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--ink3)"/></marker>
         <marker id="arrG" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--c-in)"/></marker>
       </defs>
-      <g font-size="12" fill="var(--ink)">
-        <text x="150" y="26" text-anchor="middle" font-size="10" fill="var(--c-in)">value IN: Stripe fiat + treasury funding <tspan id="nExt" font-weight="700"></tspan></text>
+      <g font-size="13" fill="var(--ink)">
+        <text x="150" y="26" text-anchor="middle" font-size="11" fill="var(--c-in)">value IN: Stripe fiat + treasury funding <tspan id="nExt" font-weight="700"></tspan></text>
         <line x1="150" y1="34" x2="150" y2="114" stroke="var(--c-in)" stroke-width="1.5" marker-end="url(#arrG)"/>
         <rect x="430" y="18" width="220" height="54" rx="8" fill="none" stroke="var(--ink3)" stroke-width="1.5"/>
         <text x="540" y="40" text-anchor="middle" font-weight="650">Gas funder</text>
-        <text x="540" y="56" text-anchor="middle" font-size="10" fill="var(--ink2)">0x1c5E…75dd · ETH slivers</text>
+        <text x="540" y="56" text-anchor="middle" font-size="11" fill="var(--ink2)">0x1c5E…75dd · ETH slivers</text>
         <line x1="540" y1="72" x2="540" y2="114" stroke="var(--ink3)" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr)"/>
-        <text x="550" y="98" font-size="10" fill="var(--ink2)">ETH sliver · same block (gasless UX)</text>
+        <text x="550" y="98" font-size="11" fill="var(--ink2)">ETH sliver · same block (gasless UX)</text>
         <rect x="40"  y="120" width="220" height="64" rx="8" fill="none" stroke="var(--c-moca)"  stroke-width="1.5"/>
         <text x="150" y="146" text-anchor="middle" font-weight="650">Treasury Distribution</text>
-        <text x="150" y="164" text-anchor="middle" font-size="10" fill="var(--ink2)">0xBD95…2519 · this dashboard</text>
+        <text x="150" y="164" text-anchor="middle" font-size="11" fill="var(--ink2)">0xBD95…2519 · this dashboard</text>
         <rect x="430" y="120" width="220" height="64" rx="8" fill="none" stroke="var(--c-mente)" stroke-width="1.5"/>
         <text x="540" y="146" text-anchor="middle" font-weight="650">Mind wallet</text>
-        <text x="540" y="164" text-anchor="middle" font-size="10" fill="var(--ink2)">credits = MENTE 1:1 + MOCA by value</text>
+        <text x="540" y="164" text-anchor="middle" font-size="11" fill="var(--ink2)">credits = MENTE 1:1 + MOCA by value</text>
         <rect x="820" y="120" width="220" height="64" rx="8" fill="none" stroke="var(--c-in)"    stroke-width="1.5"/>
         <text x="930" y="146" text-anchor="middle" font-weight="650">Cognition Collector</text>
-        <text x="930" y="164" text-anchor="middle" font-size="10" fill="var(--ink2)">0xd850…f111 · consumption</text>
+        <text x="930" y="164" text-anchor="middle" font-size="11" fill="var(--ink2)">0xd850…f111 · consumption</text>
         <line x1="260" y1="152" x2="424" y2="152" stroke="var(--ink3)" stroke-width="1.5" marker-end="url(#arr)"/>
-        <text x="342" y="140" text-anchor="middle" font-size="10" fill="var(--ink2)">credits &amp; top-ups <tspan id="nDist" font-weight="700" fill="var(--ink)"></tspan></text>
+        <text x="342" y="140" text-anchor="middle" font-size="11" fill="var(--ink2)">credits &amp; top-ups <tspan id="nDist" font-weight="700" fill="var(--ink)"></tspan></text>
         <line x1="650" y1="152" x2="814" y2="152" stroke="var(--ink3)" stroke-width="1.5" marker-end="url(#arr)"/>
-        <text x="732" y="140" text-anchor="middle" font-size="10" fill="var(--ink2)">MENTE per request <tspan id="nCons" font-weight="700" fill="var(--ink)"></tspan></text>
+        <text x="732" y="140" text-anchor="middle" font-size="11" fill="var(--ink2)">MENTE per request <tspan id="nCons" font-weight="700" fill="var(--ink)"></tspan></text>
         <rect x="430" y="228" width="220" height="54" rx="8" fill="none" stroke="var(--ink3)" stroke-width="1.5"/>
         <text x="540" y="250" text-anchor="middle" font-weight="650">DEX pools</text>
-        <text x="540" y="266" text-anchor="middle" font-size="10" fill="var(--ink2)">MOCA→MENTE auto-swap</text>
+        <text x="540" y="266" text-anchor="middle" font-size="11" fill="var(--ink2)">MOCA→MENTE auto-swap</text>
         <line x1="540" y1="224" x2="540" y2="190" stroke="var(--ink3)" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr)"/>
-        <text x="550" y="212" font-size="10" fill="var(--ink2)">swap when MENTE empty</text>
+        <text x="550" y="212" font-size="11" fill="var(--ink2)">swap when MENTE empty</text>
         <path d="M 930 188 L 930 302 Q 930 310 922 310 L 158 310 Q 150 310 150 302 L 150 192" stroke="var(--c-in)" stroke-width="1.5" fill="none" stroke-dasharray="6 3" marker-end="url(#arrG)"/>
-        <text x="790" y="326" text-anchor="middle" font-size="10" fill="var(--c-in)">collected MENTE recycles into the treasury <tspan id="nRec" font-weight="700"></tspan></text>
+        <text x="790" y="326" text-anchor="middle" font-size="11" fill="var(--c-in)">collected MENTE recycles into the treasury <tspan id="nRec" font-weight="700"></tspan></text>
       </g>
     </svg></div>
     <details style="margin-top:6px"><summary class="showmore" style="display:block">how credits work, in words</summary>
@@ -265,7 +274,7 @@ document.getElementById("gen").textContent=SC.generated;
  const consPct=(F.cognition&&F.cognition.total_usd)?Math.round(F.cognition.total_usd/wA.out_usd*100):null;
  const floatD=DATA.infer.guard.runway_total;
  document.getElementById("plainStrip").innerHTML=
-  `<b>In one sentence:</b> since ${F.range.from} this wallet has distributed <b>$${wA.out_usd.toLocaleString(undefined,{maximumFractionDigits:0})}</b> of token credits and rewards into the Minds ecosystem${consPct?` — and <b>${consPct}%</b> of it has already been spent on actual cognition`:""}. The wallet holds ~<b>${floatD||"?"} days</b> of float and is refilled manually ($${(wA.in_recycled_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} of lifetime inflow is usage fees recycling back, $${(wA.in_external_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} manual funding) — if it empties, top-up fulfillment including Stripe stops. <a href="#registerCard">${openN} open item${openN===1?"":"s"} ↓</a>`;
+  `<b>In one sentence:</b> since ${F.range.from} this wallet has distributed <b>$${wA.out_usd.toLocaleString(undefined,{maximumFractionDigits:0})}</b> of token credits and rewards into the Minds ecosystem${consPct?` — and <b>${consPct}%</b> of it has already been spent on actual cognition`:""}. The wallet holds ~<b>${floatD||"?"} days</b> of float and is refilled manually ($${(wA.in_recycled_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} of lifetime inflow is usage fees recycling back, $${(wA.in_external_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} manual funding) — if it empties, top-up fulfillment including Stripe stops. <a href="#registerCard" class="pill" style="border-color:var(--acc);color:var(--acc);font-weight:600">${openN} open item${openN===1?"":"s"} ↓</a>`;
 }
 // scope + reconciliation
 const rec=Object.entries(F.recon).map(([s,r])=>{if(!r)return`${s} n/a`;
@@ -335,7 +344,7 @@ const bw=(W-padL-8)/H.length;
 let s="";
 const step=Math.max(Math.ceil(maxC/5/10)*10,5);
 for(let g=0;g<=maxC;g+=step){const y=Ht-padB-(Ht-padB-padT)*g/maxC;
- s+=`<line x1="${padL}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${padL-6}" y="${y+4}" font-size="10" fill="var(--ink3)" text-anchor="end">${g}</text>`;}
+ s+=`<line x1="${padL}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${padL-6}" y="${y+4}" font-size="11" fill="var(--ink3)" text-anchor="end">${g}</text>`;}
 H.forEach((h,i)=>{
  let y=Ht-padB; const x=padL+i*bw+.5, w=Math.max(bw-1,1.5);
  const dim=i===H.length-1?' opacity=".45"':"";
@@ -343,7 +352,7 @@ H.forEach((h,i)=>{
   if(!h[k])return; const hh=(Ht-padB-padT)*h[k]/maxC;
   y-=hh; s+=`<rect x="${x}" y="${y+.5}" width="${w}" height="${Math.max(hh-1,.5)}" fill="${col}"${dim} data-i="${i}"/>`;});
  s+=`<rect x="${x}" y="${padT}" width="${w}" height="${Ht-padB-padT}" fill="transparent" data-i="${i}"/>`;
- if(h.h.slice(11)==="00") s+=`<text x="${x}" y="${Ht-6}" font-size="10" fill="var(--ink3)">${h.h.slice(5,10)}</text>`;
+ if(h.h.slice(11)==="00") s+=`<text x="${x}" y="${Ht-6}" font-size="11" fill="var(--ink3)">${h.h.slice(5,10)}</text>`;
 });
 svg.innerHTML=s;
 function hourTip(e){const t=e.target.dataset.i;if(t===undefined)return null;const h=H[t];return `${h.h.replace("T"," ")}:00 UTC\nMOCA ${h.MOCA} · MENTE ${h.MENTE}`;}
@@ -388,7 +397,7 @@ if(CG){
   const mMax=Math.max(...cd.map(x=>x.mente),1);const bw=1060/cd.length;let sv="";
   cd.forEach((x,i)=>{const h=x.mente/mMax*54;
    sv+=`<rect x="${i*bw+2}" y="${62-h}" width="${bw-4}" height="${Math.max(h,1)}" fill="var(--c-mente)" opacity=".6" data-i="${i}"/><rect x="${i*bw+2}" y="8" width="${bw-4}" height="54" fill="transparent" data-i="${i}"/>`;});
-  sv+=`<text x="4" y="12" font-size="10" fill="var(--ink3)">MENTE consumed per day (last ${cd.length} days)</text>`;
+  sv+=`<text x="4" y="12" font-size="11" fill="var(--ink3)">MENTE consumed per day (last ${cd.length} days)</text>`;
   sp.innerHTML=sv;
   function cogTip(e){const t=e.target.dataset.i;if(t===undefined)return null;const x=cd[t];return `${x.d}\n${x.mente.toLocaleString()} MENTE · ${x.n} spend tx · ${x.minds} minds`;}
   sp.addEventListener("mousemove",e=>{if(pinned)return;const t=cogTip(e);if(!t){tip.style.opacity=0;return;}showTip(e,t);});
@@ -419,7 +428,7 @@ if(SV){
   sd.forEach((d,i)=>{const a=SV.daily[d].awakens/aMax*54;
    sv+=`<rect x="${i*bw+2}" y="${62-a}" width="${bw-4}" height="${Math.max(a,1)}" fill="var(--c-in)" opacity=".45" data-i="${i}"/><rect x="${i*bw+2}" y="8" width="${bw-4}" height="54" fill="transparent" data-i="${i}"/>`;});
   sv+=`<polyline fill="none" stroke="var(--c-moca)" stroke-width="2" points="${sd.map((d,i)=>(i*bw+bw/2)+","+(62-SV.daily[d].topup_usd/tMax*54)).join(" ")}"/>`;
-  sv+=`<text x="4" y="12" font-size="10" fill="var(--ink3)">bars: minds awakened/day · line: top-up USD/day (settled, ${sd[0]} → ${sd[sd.length-1]})</text>`;
+  sv+=`<text x="4" y="12" font-size="11" fill="var(--ink3)">bars: minds awakened/day · line: top-up USD/day (settled, ${sd[0]} → ${sd[sd.length-1]})</text>`;
   sp.innerHTML=sv;
   function sparkTip(e){const t=e.target.dataset.i;if(t===undefined)return null;const d=sd[t];return `${d}\n${SV.daily[d].awakens} minds awakened · $${SV.daily[d].topup_usd} top-ups · ${SV.daily[d].logins} logins`;}
   sp.addEventListener("mousemove",e=>{if(pinned)return;const t=sparkTip(e);if(!t){tip.style.opacity=0;return;}showTip(e,t);});
