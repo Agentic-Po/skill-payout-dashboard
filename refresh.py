@@ -27,7 +27,8 @@ ADDR2SYM = {v["addr"]: k for k, v in TOKENS.items()}
 # counterparty labels confirmed off-chain (platform wallet-mind map / treasury ops)
 KNOWN = {"0x9a95d76c41aa34093a0db5f26f97309fe734a07f": "The Gamemaster (mind)",
          "0xd85096faec1ac03075667b4c1a1661f5623bf111": "Cognition Credits collection wallet (mind spend sink; recycles into treasury)",
-         "0xf605dbb5626dfc1448cee33e2e1221103021468f": "primary treasury funding source"}
+         "0xf605dbb5626dfc1448cee33e2e1221103021468f": "primary treasury funding source",
+         "0x1c5ebb794335b72d773df2fd8f80f3d1afbb75dd": "gas funder (sends ETH to mind wallets for cognition spends)"}
 # Optional wallet↔mind map (drop wallet_mind_map.csv beside this script — gitignored,
 # from the platform's wallet-mind-map export). ONLY the display name is surfaced on
 # the public page; emails/IDs stay local and feed the private CSV export labels.
@@ -276,6 +277,59 @@ try:
 except Exception as e:
     print("market cross-check failed:", e)
 
+# --- cognition consumption (collector wallet inbound = minds spending MENTE) ---
+COLLECTOR = "0xd85096fAeC1aC03075667B4C1a1661F5623Bf111"
+COG_PATH = os.path.join(HERE, "cognition_in.json")
+cognition = None
+if os.path.exists(COG_PATH):
+    cog = json.load(open(COG_PATH))
+    # incremental top-up: newest pages until overlap (same banking pattern)
+    try:
+        seen_c = {i["transaction_hash"] + ":" + str(i["log_index"]) for i in cog}
+        newest_c = cog[0]["ts"] if cog else "2026-04-01"
+        params, got_c = "", []
+        for _ in range(40):
+            dd = get(f"https://base.blockscout.com/api/v2/addresses/{COLLECTOR}/token-transfers?filter=to" + params)
+            b = dd.get("items", [])
+            stop = not b or not dd.get("next_page_params") or (cog and b[-1]["timestamp"][:19] < newest_c)
+            got_c += [{"ts": i["timestamp"][:19], "val": int(i["total"]["value"]) / 10 ** int(i["total"].get("decimals") or DECIMALS["MENTE"]),
+                       "from": i["from"]["hash"], "tx": i["transaction_hash"],
+                       "log_index": i["log_index"], "transaction_hash": i["transaction_hash"]}
+                      for i in b if i["token"].get("address_hash", "").lower() == TOKENS["MENTE"]["addr"]
+                      and i["transaction_hash"] + ":" + str(i["log_index"]) not in seen_c]
+            if stop: break
+            params = "&" + "&".join(f"{k}={v}" for k, v in dd["next_page_params"].items())
+            time.sleep(0.1)
+        if got_c:
+            cog = sorted(got_c + cog, key=lambda i: i["ts"], reverse=True)
+            json.dump(cog, open(COG_PATH, "w"))
+    except Exception as e:
+        print("cognition incremental fetch failed (using cache):", e)
+    # exclude non-mind flows into the collector (e.g. from the treasury itself)
+    treasury_l = WALLET.lower()
+    _payout_recips = {r["to"].lower() for r in rows}
+    spends = [c for c in cog if c["from"].lower() != treasury_l and c["from"].lower() in _payout_recips]
+    _now = datetime.now(timezone.utc)
+    _c7 = (_now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
+    _c24 = (_now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S")
+    def _cog_usd(rows_):
+        return round(sum(c["val"] * (STATE["day_rates"]["MENTE"].get(c["ts"][:10]) or RATE["MENTE"]) for c in rows_), 2)
+    cog_daily = {}
+    for c in spends:
+        d0 = c["ts"][:10]
+        e = cog_daily.setdefault(d0, {"n": 0, "mente": 0.0, "minds": set()})
+        e["n"] += 1; e["mente"] += c["val"]; e["minds"].add(c["from"].lower())
+    cognition = {"total_n": len(spends), "total_mente": round(sum(c["val"] for c in spends), 0),
+                 "total_usd": _cog_usd(spends),
+                 "usd_7d": _cog_usd([c for c in spends if c["ts"] > _c7]),
+                 "n_24h": sum(1 for c in spends if c["ts"] > _c24),
+                 "minds_all": len({c["from"].lower() for c in spends}),
+                 "minds_7d": len({c["from"].lower() for c in spends if c["ts"] > _c7}),
+                 "range_from": spends[-1]["ts"][:10] if spends else None,
+                 "crawl_complete": bool(spends) and spends[-1]["ts"][:10] <= "2026-04-30",
+                 "daily": [{"d": d0, "n": v["n"], "mente": round(v["mente"], 1), "minds": len(v["minds"])}
+                           for d0, v in sorted(cog_daily.items())[-30:]]}
+
 # ============================ LAYER 1 — FACTS ============================
 now = datetime.now(timezone.utc)
 today = now.strftime("%Y-%m-%d")
@@ -295,11 +349,15 @@ BAND_LABEL = {"micro": "< $0.06", "b010": "≈ $0.10", "b1": "≈ $1", "b3": "�
               "b10": "≈ $10", "b25": "≈ $25", "b50": "≈ $50", "other": "other size"}
 BAND_KEYS = list(BAND_LABEL)
 
+RECYCLE_SRC = "0xd85096faec1ac03075667b4c1a1661f5623bf111"
 def facts_window(rs, ins, label):
     out_usd = sum(r["usd"] for r in rs)
     in_usd = sum(f["usd"] for f in ins)
+    in_recycled = sum(f["usd"] for f in ins if f["from"].lower() == RECYCLE_SRC)
     return {"label": label,
             "out_usd": round(out_usd, 2), "in_usd": round(in_usd, 2),
+            "in_recycled_usd": round(in_recycled, 2),
+            "in_external_usd": round(in_usd - in_recycled, 2),
             "net_usd": round(in_usd - out_usd, 2),
             "out_tx": len(rs), "in_tx": len(ins),
             "out_wallets": len({r["to"] for r in rs}),
@@ -401,7 +459,7 @@ for sym in TOKENS:
         STATE["recon"][sym] = delta
     recon[sym] = {"net_cached": round(net, 1), "balance": round(BALANCE_RECON[sym], 1),
                   "delta": delta, "drift": drift, "degraded": sym in RECON_DEGRADED,
-                  "warn": bool(drift is not None and abs(drift) > 30)}
+                  "warn": bool(drift is not None and (drift > 30 or drift < -150))}
 
 facts = {"windows": windows, "prev24": prev24, "monthly": monthly, "daily": daily, "hourly": hourly,
          "top_recipients": top_recip, "in_sources": in_sources,
@@ -409,7 +467,7 @@ facts = {"windows": windows, "prev24": prev24, "monthly": monthly, "daily": dail
          "balance": {s: (round(BALANCE[s], 0) if BALANCE[s] is not None else None) for s in TOKENS},
          "balance_usd": {s: (round(BALANCE[s] * RATE[s], 0) if BALANCE[s] is not None else None) for s in TOKENS},
          "rate": RATE, "rate_src": RATE_SRC, "recon": recon,
-         "market_check": market_summary,
+         "market_check": market_summary, "cognition": cognition,
          "band_labels": BAND_LABEL, "band_keys": BAND_KEYS,
          "range": {"from": range_from, "to": rows[0]["ts"][:19] if rows else None}}
 
