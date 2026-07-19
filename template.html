@@ -448,7 +448,7 @@ const SS=DATA.stripe_snap;
 if(SS){
  const kept=SS.net_proceeds_est_usd||(SS.net_usd-SS.fees_est_usd);
  document.getElementById("stripeCard").style.display="block";
- document.getElementById("ins-stripe").innerHTML="&rarr; <b>Took in $"+SS.gross_usd.toLocaleString()+" &rarr; refunded $"+SS.refunded_usd+" &rarr; Stripe's cut ~$"+SS.fees_est_usd.toLocaleString()+" &rarr; we keep ~$"+kept.toLocaleString()+"</b> ("+SS.paid+" paid payments, "+SS.period[0]+" &rarr; "+SS.period[1]+") — our client-side analytics caught only 227 of these 340 payments ($4,579 of $6,507) over the same period: ~30% of real revenue was invisible until this snapshot.";
+ document.getElementById("ins-stripe").innerHTML="&rarr; <b>Took in $"+SS.gross_usd.toLocaleString()+" &rarr; refunded $"+SS.refunded_usd+" &rarr; Stripe's cut ~$"+SS.fees_est_usd.toLocaleString()+" &rarr; we keep ~$"+kept.toLocaleString()+"</b> ("+SS.paid+" paid payments, "+SS.period[0]+" &rarr; "+SS.period[1]+") — vs client-side analytics: before May 29 tracking didn't exist ($1,176 uncaptured); after setup the residual loss is ~14% ($5,311 real vs $4,559 recorded) — the structural client-side gap only a server-side feed closes.";
  const t=[
   ["Gross collected (paid tx)","$"+SS.gross_usd.toLocaleString(), SS.paid+" paid payments · avg $"+SS.avg_paid_usd],
   ["Refunds","−$"+SS.refunded_usd.toLocaleString(), SS.refunded+" refund events · basis unverified (see note)"],
