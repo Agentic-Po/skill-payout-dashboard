@@ -180,6 +180,15 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <svg id="cogSpark" width="100%" height="70" viewBox="0 0 1060 70" style="margin-top:10px"></svg>
   </div>
 
+  <div class="card" id="fundCard" style="display:none">
+    <h2>Who pays for cognition? — treasury credits vs user-brought tokens</h2>
+    <p class="insight" id="ins-fund"></p>
+    <p class="note">Anyone can send SWARM / MENTE / MOCA straight to a mind's wallet as spendable Cognition Credits — a real, on-chain revenue stream separate from Stripe. We detect it by <b>conservation per mind wallet</b>: if a mind spent more on cognition than this treasury ever credited it, the excess had to come from tokens the user supplied.</p>
+    <div class="scroll"><table id="fundCalc"></table></div>
+    <p class="note" style="margin-top:10px"><b>Method &amp; caveats:</b> for each mind, <span class="mono">user-funded = max(0, consumed − treasury-credited)</span>, assuming treasury credits are spent first (so the total is a strict <b>lower bound</b>). All USD at each day's token price. "User-funded" here also includes mind→mind transfers (e.g. one mind awakening another), so it is not purely external deposits — separating those needs the wallet↔mind map (see Data gaps). Stripe top-ups are counted as treasury-funded (they leave from this treasury), so this figure is <b>additional to</b> Stripe revenue.</p>
+    <div class="tiles" id="fundTiles"></div>
+  </div>
+
   <div class="card" id="swarmCard" style="display:none">
     <h2>Generation 1 — the SWARM era (Jan–Apr 2026, closed)</h2>
     <p class="insight" id="ins-swarm"></p>
@@ -427,6 +436,28 @@ if(CG){
   sp.addEventListener("mouseleave",()=>{if(!pinned)tip.style.opacity=0;});
   sp.addEventListener("click",e=>{const t=cogTip(e);if(!t){pinned=null;tip.style.opacity=0;return;}pinned=sp;showTip(e,t);});
  }
+}
+// ---- Who pays for cognition? funding-source split ----
+if(CG&&CG.funding_split){
+ const F1=CG.funding_split, F2=CG.swarm_split;
+ document.getElementById("fundCard").style.display="block";
+ document.getElementById("ins-fund").innerHTML="&rarr; Users bring <b>~"+F1.user_pct+"%</b> of the fuel themselves: at least <b>$"+F1.user_funded_usd.toLocaleString()+"</b> of MENTE-era cognition was paid for with tokens users deposited directly — "+F1.minds_never_credited.toLocaleString()+" minds spent on cognition having received <b>nothing</b> from the treasury. This is on-chain revenue, additional to Stripe.";
+ const row=(f)=>`<tr><td><b>${f.era} era</b></td>`+
+   `<td class="r mono">$${f.consumed_usd.toLocaleString()}</td>`+
+   `<td class="r mono">−&nbsp;$${f.treasury_funded_usd.toLocaleString()}</td>`+
+   `<td class="r mono" style="color:var(--c-in)"><b>=&nbsp;$${f.user_funded_usd.toLocaleString()}</b></td>`+
+   `<td class="r mono">${f.user_pct}%</td>`+
+   `<td class="r mono">${f.minds_excess.toLocaleString()}${f.minds_never_credited!==undefined?" ("+f.minds_never_credited.toLocaleString()+" got $0)":""}</td></tr>`;
+ let body=row(F1); if(F2) body+=row(F2);
+ if(F2){const tc=F1.consumed_usd+F2.consumed_usd, tt=F1.treasury_funded_usd+F2.treasury_funded_usd, tu=F1.user_funded_usd+F2.user_funded_usd;
+  body+=`<tr style="border-top:2px solid var(--line)"><td><b>Both eras</b></td><td class="r mono"><b>$${tc.toLocaleString()}</b></td><td class="r mono">−&nbsp;$${tt.toLocaleString()}</td><td class="r mono" style="color:var(--c-in)"><b>=&nbsp;$${tu.toLocaleString()}</b></td><td class="r mono"><b>${(tu/tc*100).toFixed(1)}%</b></td><td class="r mono">—</td></tr>`;}
+ document.getElementById("fundCalc").innerHTML=`<thead><tr><th>Period</th><th class="r">Cognition consumed</th><th class="r">Treasury-credited</th><th class="r">User-funded (≥)</th><th class="r">User share</th><th class="r">Minds over-spending</th></tr></thead><tbody>${body}</tbody>`;
+ const uf=(F2?F1.user_funded_usd+F2.user_funded_usd:F1.user_funded_usd);
+ document.getElementById("fundTiles").innerHTML=[
+   ["User-funded cognition (≥, both eras)","$"+uf.toLocaleString(),"tokens users brought themselves — lower bound"],
+   ["Minds over-spending their credits",F1.minds_excess.toLocaleString(),F1.minds_never_credited.toLocaleString()+" received nothing from treasury yet still spent"],
+   ["User share of demand","~"+F1.user_pct+"%","stable across both economy generations ("+(F2?F2.user_pct+"% in SWARM era":"")+")"],
+ ].map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
 }
 // ---- Generation 1: SWARM era ----
 const SE=DATA.facts.swarm_era;

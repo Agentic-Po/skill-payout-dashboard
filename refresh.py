@@ -326,7 +326,51 @@ if os.path.exists(COG_PATH):
         d0 = c["ts"][:10]
         e = cog_daily.setdefault(d0, {"n": 0, "mente": 0.0, "minds": set()})
         e["n"] += 1; e["mente"] += c["val"]; e["minds"].add(c["from"].lower())
-    cognition = {"total_n": len(spends), "total_mente": round(sum(c["val"] for c in spends), 0),
+    # --- funding-source split: who pays for cognition? (Po's user-deposit detection) ---
+    # Per-wallet conservation: consumed_i − treasury_credits_i > 0 ⇒ the excess was
+    # funded by tokens the user brought (direct deposits, swaps, mind-to-mind).
+    # Credits are assumed spent FIRST, so user_funded is a strict lower bound.
+    _all_spend = defaultdict(float)   # USD consumed per wallet (any spender except treasury itself)
+    for c in cog:
+        if c["from"].lower() == treasury_l: continue
+        _all_spend[c["from"].lower()] += c["val"] * (STATE["day_rates"]["MENTE"].get(c["ts"][:10]) or RATE["MENTE"])
+    _credit = defaultdict(float)      # USD credited per wallet by this treasury (both tokens)
+    for r in rows:
+        _credit[r["to"].lower()] += r["usd"]
+    _user = _tre = 0.0; _n_excess = _n_never = 0
+    for w, sp_usd in _all_spend.items():
+        cr = _credit.get(w, 0.0)
+        ex = max(0.0, sp_usd - cr)
+        _user += ex
+        _tre += sp_usd - ex
+        if ex > 0.01:
+            _n_excess += 1
+            if cr == 0: _n_never += 1
+    funding_split = {"era": "MENTE", "consumed_usd": round(sum(_all_spend.values()), 0),
+                     "minds": len(_all_spend),
+                     "treasury_funded_usd": round(_tre, 0), "user_funded_usd": round(_user, 0),
+                     "user_pct": round(_user / sum(_all_spend.values()) * 100, 1) if _all_spend else 0,
+                     "minds_excess": _n_excess, "minds_never_credited": _n_never}
+    # SWARM era, same method, from the gen-1 crawl + daily CoinGecko prices
+    swarm_split = None
+    _sw_path, _sp_path = os.path.join(HERE, "swarm_era.json"), os.path.join(HERE, "swarm_prices.json")
+    if os.path.exists(_sw_path) and os.path.exists(_sp_path):
+        _se = json.load(open(_sw_path)); _sp = json.load(open(_sp_path))
+        _ss = defaultdict(float); _sr = defaultdict(float)
+        for r0 in _se["in"]:  _ss[r0["cp"].lower()] += r0["val"] * _sp.get(r0["ts"][:10], 0.001)
+        for r0 in _se["out"]: _sr[r0["cp"].lower()] += r0["val"] * _sp.get(r0["ts"][:10], 0.001)
+        _su = _st = 0.0; _sn = 0
+        for w, sp_usd in _ss.items():
+            ex = max(0.0, sp_usd - _sr.get(w, 0.0))
+            _su += ex; _st += sp_usd - ex
+            if ex > 0.01: _sn += 1
+        swarm_split = {"era": "SWARM", "consumed_usd": round(sum(_ss.values()), 0), "minds": len(_ss),
+                       "treasury_funded_usd": round(_st, 0), "user_funded_usd": round(_su, 0),
+                       "user_pct": round(_su / sum(_ss.values()) * 100, 1) if _ss else 0,
+                       "minds_excess": _sn}
+
+    cognition = {"funding_split": funding_split, "swarm_split": swarm_split,
+                 "total_n": len(spends), "total_mente": round(sum(c["val"] for c in spends), 0),
                  "total_usd": _cog_usd(spends),
                  "usd_7d": _cog_usd([c for c in spends if c["ts"] > _c7]),
                  "n_24h": sum(1 for c in spends if c["ts"] > _c24),
