@@ -337,6 +337,34 @@ if os.path.exists(COG_PATH):
                  "daily": [{"d": d0, "n": v["n"], "mente": round(v["mente"], 1), "minds": len(v["minds"])}
                            for d0, v in sorted(cog_daily.items())[-30:]]}
 
+# --- Generation-1 economy: the SWARM era (closed history, computed from
+# swarm_era.json + CoinGecko daily prices; both files are static archives) ---
+swarm_era = None
+_se_path = os.path.join(HERE, "swarm_era.json")
+_sp_path = os.path.join(HERE, "swarm_prices.json")
+if os.path.exists(_se_path) and os.path.exists(_sp_path):
+    _se = json.load(open(_se_path))
+    _sp = json.load(open(_sp_path))
+    def _susd(rows_):
+        return sum(r["val"] * _sp.get(r["ts"][:10], 0.001) for r in rows_)
+    _o, _i = _se["out"], _se["in"]
+    _md = defaultdict(lambda: {"out": 0.0, "inn": 0.0, "out_usd": 0.0, "in_usd": 0.0})
+    for r in _o:
+        m = r["ts"][:7]; _md[m]["out"] += r["val"]; _md[m]["out_usd"] += r["val"] * _sp.get(r["ts"][:10], 0.001)
+    for r in _i:
+        m = r["ts"][:7]; _md[m]["inn"] += r["val"]; _md[m]["in_usd"] += r["val"] * _sp.get(r["ts"][:10], 0.001)
+    _spenders = {r["cp"].lower() for r in _i}
+    _topped = {r["cp"].lower() for r in _o}
+    swarm_era = {"out_swarm": round(sum(r["val"] for r in _o)), "in_swarm": round(sum(r["val"] for r in _i)),
+                 "out_usd": round(_susd(_o), 2), "in_usd": round(_susd(_i), 2),
+                 "out_tx": len(_o), "in_tx": len(_i),
+                 "minds_topped": len(_topped), "minds_spent": len(_spenders),
+                 "minds_both": len(_topped & _spenders),
+                 "first_spend": min(r["ts"] for r in _i)[:10], "last_spend": max(r["ts"] for r in _i)[:10],
+                 "monthly": [{"m": m, "out": round(v["out"]), "inn": round(v["inn"]),
+                              "out_usd": round(v["out_usd"], 2), "in_usd": round(v["in_usd"], 2)}
+                             for m, v in sorted(_md.items())]}
+
 # ============================ LAYER 1 — FACTS ============================
 now = datetime.now(timezone.utc)
 today = now.strftime("%Y-%m-%d")
@@ -474,7 +502,7 @@ facts = {"windows": windows, "prev24": prev24, "monthly": monthly, "daily": dail
          "balance": {s: (round(BALANCE[s], 0) if BALANCE[s] is not None else None) for s in TOKENS},
          "balance_usd": {s: (round(BALANCE[s] * RATE[s], 0) if BALANCE[s] is not None else None) for s in TOKENS},
          "rate": RATE, "rate_src": RATE_SRC, "recon": recon,
-         "market_check": market_summary, "cognition": cognition,
+         "market_check": market_summary, "cognition": cognition, "swarm_era": swarm_era,
          "band_labels": BAND_LABEL, "band_keys": BAND_KEYS,
          "range": {"from": range_from, "to": rows[0]["ts"][:19] if rows else None}}
 

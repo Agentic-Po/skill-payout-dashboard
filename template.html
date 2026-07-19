@@ -180,6 +180,14 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <svg id="cogSpark" width="100%" height="70" viewBox="0 0 1060 70" style="margin-top:10px"></svg>
   </div>
 
+  <div class="card" id="swarmCard" style="display:none">
+    <h2>Generation 1 — the SWARM era (Jan–Apr 2026, closed)</h2>
+    <p class="insight" id="ins-swarm"></p>
+    <p class="note">Before MENTE, Cognition Credits ran on the SWARM token (Ethoswarm) through the same collector hub 0xd850…f111 — then acting as treasury AND collector combined. This is closed history: crawled once from chain, valued at each day's CoinGecko price, never re-fetched. Consumption stopped on the exact day the MENTE treasury went live (Apr 24) — a clean one-day migration.</p>
+    <div class="tiles" id="swarmTiles"></div>
+    <div class="scroll" style="margin-top:10px"><table id="swarmT"></table></div>
+  </div>
+
   <div class="card">
     <h2>Top recipient wallets — all history</h2>
     <p class="insight" id="ins-recipients"></p>
@@ -419,6 +427,21 @@ if(CG){
   sp.addEventListener("mouseleave",()=>{if(!pinned)tip.style.opacity=0;});
   sp.addEventListener("click",e=>{const t=cogTip(e);if(!t){pinned=null;tip.style.opacity=0;return;}pinned=sp;showTip(e,t);});
  }
+}
+// ---- Generation 1: SWARM era ----
+const SE=DATA.facts.swarm_era;
+if(SE){
+ document.getElementById("swarmCard").style.display="block";
+ document.getElementById("ins-swarm").innerHTML="&rarr; The economy worked from generation one: <b>"+SE.out_swarm.toLocaleString()+" SWARM distributed and "+(SE.in_swarm/SE.out_swarm*100).toFixed(1)+"% of it consumed</b> ("+SE.first_spend+" &rarr; "+SE.last_spend+") — near-perfect velocity, "+SE.minds_both.toLocaleString()+" minds completed the full top-up→spend loop before the MENTE migration.";
+ const t=[
+  ["Distributed (gen-1)", SE.out_swarm.toLocaleString()+" SWARM", "≈ $"+SE.out_usd.toLocaleString(undefined,{maximumFractionDigits:0})+" at each day's market price · "+SE.out_tx.toLocaleString()+" top-ups"],
+  ["Consumed on cognition", SE.in_swarm.toLocaleString()+" SWARM", "≈ $"+SE.in_usd.toLocaleString(undefined,{maximumFractionDigits:0})+" · "+SE.in_tx.toLocaleString()+" spends — "+(SE.in_swarm/SE.out_swarm*100).toFixed(1)+"% of distribution"],
+  ["Minds of the era", SE.minds_topped.toLocaleString()+" topped up", SE.minds_spent.toLocaleString()+" spent · "+SE.minds_both.toLocaleString()+" did both"],
+  ["Era boundaries", SE.first_spend+" → "+SE.last_spend, "consumption ceased the day the MENTE treasury launched"],
+ ];
+ document.getElementById("swarmTiles").innerHTML=t.map(x=>`<div class="tile"><div class="k">${x[0]}</div><div class="v" style="font-size:19px">${x[1]}</div><div class="d">${x[2]}</div></div>`).join("");
+ document.getElementById("swarmT").innerHTML=`<thead><tr><th>Month</th><th class="r">Distributed SWARM</th><th class="r">≈ USD</th><th class="r">Consumed SWARM</th><th class="r">≈ USD</th></tr></thead><tbody>`+
+  SE.monthly.map(m=>`<tr><td class="mono">${m.m}</td><td class="r mono">${m.out.toLocaleString()}</td><td class="r mono">$${m.out_usd.toLocaleString(undefined,{maximumFractionDigits:0})}</td><td class="r mono">${m.inn.toLocaleString()}</td><td class="r mono">$${m.in_usd.toLocaleString(undefined,{maximumFractionDigits:0})}</td></tr>`).join("")+`</tbody>`;
 }
 // ---- verified Stripe snapshot ----
 const SS=DATA.stripe_snap;
