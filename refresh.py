@@ -272,7 +272,9 @@ try:
             if m:
                 devs.append(abs(r - m) / m * 100)
         if devs:
+            devs.sort()
             market_summary[sym] = {"n": len(devs), "within15": sum(1 for x in devs if x <= 15),
+                                   "median_dev": round(devs[len(devs)//2], 1),
                                    "max_dev": round(max(devs), 1)}
 except Exception as e:
     print("market cross-check failed:", e)
@@ -647,7 +649,40 @@ scope = {"wallet": WALLET, "tokens": {s: TOKENS[s]["addr"] for s in TOKENS},
          "complete": data_complete, "excluded_in_tx": excluded_in,
          "note": "This wallet only. Other Minds wallets (e.g. Fireblocks) are out of scope."}
 
-data = {"scope": scope, "facts": facts, "infer": infer, "server": server}
+# ---- computed guided-view layer: insights, open items, gaps (panel-designed) ----
+dist_pace = round(out_di(cut7) / span_days + sum(r["usd"] for r in rows if r["ts"] > cut7 and r["cat"] in ("nonstandard", "micro")) / span_days, 2)
+_cons_ratio = round(cognition["total_usd"] / facts["windows"][3]["out_usd"] * 100) if cognition else None
+_rec_share = round(facts["windows"][3]["in_recycled_usd"] / facts["windows"][3]["in_usd"] * 100) if facts["windows"][3]["in_usd"] else 0
+insights = {
+    "diagram": "Every token here is a unit of cognition — this diagram is the economy; the rest of the page is its measurements.",
+    "flows": f"Outflow is the signal: ~${round(facts['windows'][1]['out_usd']/7):,}/day of distribution IS the ecosystem's activity. Inflow is manual treasury logistics keeping the wallet alive — {_rec_share}% of lifetime inflow is usage fees recycling back.",
+    "daily": f"Watch the pulse, not the balance: distribution spikes mark campaigns and growth pushes; the current pace is ~${round(facts['windows'][1]['out_usd']/7):,}/day.",
+    "cognition": (f"{_cons_ratio}% of everything ever distributed has been spent on real cognition — demand matches supply; this is the number that makes every other number mean something." if _cons_ratio else "Demand-side data loading."),
+    "recipients": "10,000+ wallets hold verifiable on-chain earnings history — the property layer. (This table counts only transfers FROM this treasury wallet.)",
+    "sources": "All inflow is deliberate ops — treasury refills and collector recycling. Every source wallet should carry a label; unlabeled = ask treasury ops.",
+    "server": "The off-chain shadow (Stripe checkout events only): where it disagrees with the chain is exactly where our data gaps live — revenue figures are floors until the Stripe export lands.",
+    "aizone": f"Best-guess triage, never fact: distribution is mostly invoke-sized, ~{guard['runway_total'] or '?'} days of float at current pace, and ${guard['at_risk_usd']:,} ({round(guard['at_risk_usd']/guard['ce_total_usd']*100,1)}% of creator earnings) looks unusual — nothing confirmed.",
+}
+open_items = [
+    {"item": "Confirm MENTE burn mechanism (event-less balance changes, ~$1,250 lifetime; sample txs 0x0080584a…, 0xc9f7afc5… in block 45862329)", "type": "clarify", "owner": "Po → MENTE team", "opened": "2026-07-19", "anchor": "scope"},
+    {"item": "Reconcile $" + str(abs(server["diverge_usd"])) + " Stripe-sized outflow vs recorded top-ups", "type": "follow-up", "owner": "Po — blocked on hm_events Stripe export", "opened": "2026-07-18", "anchor": "serverCard"} if server else None,
+    {"item": "Label all inflow source wallets (Fireblocks / Finance / recycle) for bookkeeping", "type": "follow-up", "owner": "Po + treasury ops", "opened": "2026-07-19", "anchor": "srcT"},
+    {"item": "Formalize the recycle policy: collector→treasury flows are informal ops habit today — defining the rule defines who owns the economy's cash flow", "type": "clarify", "owner": "Po → Minh / platform", "opened": "2026-07-19", "anchor": "srcT"},
+    {"item": "Subsidy-ratio trend: watch whether the weekly ratio bends down as revenue features land", "type": "trend", "owner": "dashboard (auto)", "opened": "2026-07-19", "anchor": "serverCard"},
+    {"item": "Manual heartbeat: wallet stays solvent only by hand-refills — standing replenishment policy pending Minh", "type": "follow-up", "owner": "Po → Minh", "opened": "2026-07-19", "anchor": "plainStrip"},
+]
+open_items = [o for o in open_items if o]
+gaps = [
+    {"missing": "Recycle policy (constitutional)", "effect": "collector→treasury flows are informal; ownership of the economy's cash flow undefined", "unlocks": "closed-loop rule, creator revenue-share, or burn discipline — a protocol instead of a babysat wallet"},
+    {"missing": "Stripe webhook export → PostHog/hm_events", "effect": "revenue understated; subsidy ratio only an upper bound; $165 divergence unresolvable", "unlocks": "true revenue-backed split; divergence control closes"},
+    {"missing": "Per-transfer memo/event from the payout contract", "effect": "classification is size-inference (±8%); amber zone larger than it needs to be", "unlocks": "exact payout types — most of the amber zone becomes fact"},
+    {"missing": "Wallet↔mind map (Katherine)", "effect": "recipients are hex addresses; per-creator economics invisible", "unlocks": "named earnings leaderboard + per-wallet hold/spend/exit disposition — retires the farming debate with data"},
+    {"missing": "MENTE burn-mechanism confirmation (platform)", "effect": "~1.2% of MENTE flow explained forensically but unconfirmed", "unlocks": "complete, auditable MENTE accounting; event emission restores full verifiability"},
+    {"missing": "Fireblocks wallet scope", "effect": "the $50K manual-support wallet is invisible to this dashboard", "unlocks": "whole-treasury view; no separate manual attestation needed"},
+]
+guard["dist_pace"] = dist_pace
+data = {"scope": scope, "facts": facts, "infer": infer, "server": server,
+        "insights": insights, "open_items": open_items, "gaps": gaps}
 
 json.dump(STATE, open(RATES_PATH, "w"), indent=0)
 

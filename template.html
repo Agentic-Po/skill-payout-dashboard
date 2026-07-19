@@ -71,6 +71,8 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
 .scopebox{font-size:12.5px;color:var(--ink2);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px 24px}
 .scopebox b{color:var(--ink)}
 .showmore{cursor:pointer;font-size:13px;color:var(--acc);background:none;border:none;padding:8px 0}
+.insight{font-size:13px;font-weight:600;color:var(--ink);border-left:3px solid var(--acc);padding:2px 0 2px 10px;margin:6px 0 8px}
+.metacard{border-left:6px solid var(--ink3)}
 @media (max-width:640px){
  body{padding:16px 10px 40px}
  .tile .v{font-size:20px}
@@ -85,52 +87,57 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
 
   <div class="card" id="plainStrip" style="border-left:6px solid var(--c-moca);font-size:15px"></div>
 
-  <div class="scopebox" id="scope"></div>
-
-  <details class="card">
-    <summary style="cursor:pointer;font-size:14px;font-weight:650;list-style:none">How Cognition Credits flow — the token cycle this dashboard tracks <span class="pill">diagram</span></summary>
-    <p class="note" style="margin-top:8px">A new mind gets a wallet at creation. Its <b>Cognitive Credits</b> = wallet balance of supported tokens: 1 MENTE = 1 credit; MOCA counts by USD value (USDC support planned). Holding MOCA with no MENTE triggers a small auto-swap to MENTE (the actionable credit). Each user request makes the mind pay MENTE to the collector — gasless for the user: the gas funder first sends a sliver of ETH to the mind wallet in the same moment (visible on-chain as paired transactions).</p>
-    <div class="scroll"><svg width="100%" viewBox="0 0 1080 190" style="min-width:820px">
-      <defs><marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--ink3)"/></marker></defs>
+  <details class="card" id="flowCard" open>
+    <summary style="cursor:pointer;font-size:14px;font-weight:650;list-style:none">How Cognition Credits flow — the token cycle this dashboard tracks <span class="pill" id="flowPill">hide diagram</span></summary>
+    <p class="insight" id="ins-diagram"></p>
+    <div class="scroll"><svg width="100%" viewBox="0 0 1080 330" style="min-width:900px">
+      <defs>
+        <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--ink3)"/></marker>
+        <marker id="arrG" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--c-in)"/></marker>
+      </defs>
       <g font-size="12" fill="var(--ink)">
-        <line x1="95" y1="18" x2="95" y2="50" stroke="var(--c-in)" stroke-width="1.5" marker-end="url(#arr)"/>
-        <text x="98" y="14" font-size="10" fill="var(--c-in)">value IN: Stripe fiat top-ups + treasury funding</text>
-        <rect x="10" y="55" width="170" height="58" rx="8" fill="none" stroke="var(--c-moca)" stroke-width="1.5"/>
-        <text x="95" y="78" text-anchor="middle" font-weight="650">Treasury Distribution</text>
-        <text x="95" y="94" text-anchor="middle" font-size="10" fill="var(--ink2)">0xBD95…2519 · this dashboard</text>
-        <line x1="350" y1="113" x2="350" y2="152" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="3 3" marker-end="url(#arr)"/>
-        <text x="345" y="166" text-anchor="end" font-size="10" fill="var(--warn)">value OUT: event-less contract burn (~1.2%, mechanism unconfirmed)</text>
-        <rect x="260" y="55" width="180" height="58" rx="8" fill="none" stroke="var(--c-mente)" stroke-width="1.5"/>
-        <text x="350" y="78" text-anchor="middle" font-weight="650">Mind wallet</text>
-        <text x="350" y="94" text-anchor="middle" font-size="10" fill="var(--ink2)">credits = MENTE 1:1 + MOCA by value</text>
-        <rect x="540" y="55" width="180" height="58" rx="8" fill="none" stroke="var(--c-in)" stroke-width="1.5"/>
-        <text x="630" y="78" text-anchor="middle" font-weight="650">Cognition Collector</text>
-        <text x="630" y="94" text-anchor="middle" font-size="10" fill="var(--ink2)">0xd850…f111 · consumption</text>
-        <rect x="810" y="10" width="180" height="44" rx="8" fill="none" stroke="var(--ink3)" stroke-width="1.5"/>
-        <text x="900" y="29" text-anchor="middle" font-weight="650">Gas funder</text>
-        <text x="900" y="43" text-anchor="middle" font-size="10" fill="var(--ink2)">0x1c5E…75dd · ETH slivers</text>
-        <rect x="810" y="120" width="180" height="44" rx="8" fill="none" stroke="var(--ink3)" stroke-width="1.5"/>
-        <text x="900" y="139" text-anchor="middle" font-weight="650">DEX pools</text>
-        <text x="900" y="153" text-anchor="middle" font-size="10" fill="var(--ink2)">MOCA→MENTE auto-swap</text>
-        <line x1="180" y1="84" x2="255" y2="84" stroke="var(--ink3)" stroke-width="1.5" marker-end="url(#arr)"/>
-        <text x="218" y="76" text-anchor="middle" font-size="10" fill="var(--ink2)">credits, top-ups</text>
-        <line x1="440" y1="84" x2="535" y2="84" stroke="var(--ink3)" stroke-width="1.5" marker-end="url(#arr)"/>
-        <text x="488" y="76" text-anchor="middle" font-size="10" fill="var(--ink2)">MENTE per request</text>
-        <line x1="810" y1="38" x2="444" y2="58" stroke="var(--ink3)" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr)"/>
-        <text x="610" y="34" text-anchor="middle" font-size="10" fill="var(--ink2)">ETH for the send (same block, gasless UX)</text>
-        <line x1="810" y1="140" x2="444" y2="110" stroke="var(--ink3)" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr)"/>
-        <text x="740" y="158" text-anchor="middle" font-size="10" fill="var(--ink2)">swap when MENTE empty</text>
-        <path d="M 630 113 C 630 175, 180 175, 100 116" stroke="var(--c-in)" stroke-width="1.5" fill="none" stroke-dasharray="6 3" marker-end="url(#arr)"/>
-        <text x="368" y="180" text-anchor="middle" font-size="10" fill="var(--c-in)">collected MENTE recycles into the treasury</text>
+        <text x="150" y="26" text-anchor="middle" font-size="10" fill="var(--c-in)">value IN: Stripe fiat + treasury funding <tspan id="nExt" font-weight="700"></tspan></text>
+        <line x1="150" y1="34" x2="150" y2="114" stroke="var(--c-in)" stroke-width="1.5" marker-end="url(#arrG)"/>
+        <rect x="430" y="18" width="220" height="54" rx="8" fill="none" stroke="var(--ink3)" stroke-width="1.5"/>
+        <text x="540" y="40" text-anchor="middle" font-weight="650">Gas funder</text>
+        <text x="540" y="56" text-anchor="middle" font-size="10" fill="var(--ink2)">0x1c5E…75dd · ETH slivers</text>
+        <line x1="540" y1="72" x2="540" y2="114" stroke="var(--ink3)" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+        <text x="550" y="98" font-size="10" fill="var(--ink2)">ETH sliver · same block (gasless UX)</text>
+        <rect x="40"  y="120" width="220" height="64" rx="8" fill="none" stroke="var(--c-moca)"  stroke-width="1.5"/>
+        <text x="150" y="146" text-anchor="middle" font-weight="650">Treasury Distribution</text>
+        <text x="150" y="164" text-anchor="middle" font-size="10" fill="var(--ink2)">0xBD95…2519 · this dashboard</text>
+        <rect x="430" y="120" width="220" height="64" rx="8" fill="none" stroke="var(--c-mente)" stroke-width="1.5"/>
+        <text x="540" y="146" text-anchor="middle" font-weight="650">Mind wallet</text>
+        <text x="540" y="164" text-anchor="middle" font-size="10" fill="var(--ink2)">credits = MENTE 1:1 + MOCA by value</text>
+        <rect x="820" y="120" width="220" height="64" rx="8" fill="none" stroke="var(--c-in)"    stroke-width="1.5"/>
+        <text x="930" y="146" text-anchor="middle" font-weight="650">Cognition Collector</text>
+        <text x="930" y="164" text-anchor="middle" font-size="10" fill="var(--ink2)">0xd850…f111 · consumption</text>
+        <line x1="260" y1="152" x2="424" y2="152" stroke="var(--ink3)" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="342" y="140" text-anchor="middle" font-size="10" fill="var(--ink2)">credits &amp; top-ups <tspan id="nDist" font-weight="700" fill="var(--ink)"></tspan></text>
+        <line x1="650" y1="152" x2="814" y2="152" stroke="var(--ink3)" stroke-width="1.5" marker-end="url(#arr)"/>
+        <text x="732" y="140" text-anchor="middle" font-size="10" fill="var(--ink2)">MENTE per request <tspan id="nCons" font-weight="700" fill="var(--ink)"></tspan></text>
+        <rect x="430" y="228" width="220" height="54" rx="8" fill="none" stroke="var(--ink3)" stroke-width="1.5"/>
+        <text x="540" y="250" text-anchor="middle" font-weight="650">DEX pools</text>
+        <text x="540" y="266" text-anchor="middle" font-size="10" fill="var(--ink2)">MOCA→MENTE auto-swap</text>
+        <line x1="540" y1="224" x2="540" y2="190" stroke="var(--ink3)" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+        <text x="550" y="212" font-size="10" fill="var(--ink2)">swap when MENTE empty</text>
+        <path d="M 930 188 L 930 302 Q 930 310 922 310 L 158 310 Q 150 310 150 302 L 150 192" stroke="var(--c-in)" stroke-width="1.5" fill="none" stroke-dasharray="6 3" marker-end="url(#arrG)"/>
+        <text x="790" y="326" text-anchor="middle" font-size="10" fill="var(--c-in)">collected MENTE recycles into the treasury <tspan id="nRec" font-weight="700"></tspan></text>
       </g>
     </svg></div>
+    <details style="margin-top:6px"><summary class="showmore" style="display:block">how credits work, in words</summary>
+      <p class="note">A new mind gets a wallet at creation. Its <b>Cognitive Credits</b> = wallet balance of supported tokens: 1 MENTE = 1 credit; MOCA counts by USD value (USDC support planned). Holding MOCA with no MENTE triggers a small auto-swap to MENTE (the actionable credit). Each user request makes the mind pay MENTE to the collector — gasless for the user: the gas funder first sends a sliver of ETH to the mind wallet in the same moment (visible on-chain as paired transactions). Value leaves the loop via an automatic contract burn (~1.2% lifetime, being confirmed) and enters via Stripe purchases and manual treasury funding.</p>
+    </details>
   </details>
+
+  <div class="scopebox" id="scope"></div>
 
   <p class="sect">Facts — observed on-chain</p>
   <div class="tiles" id="ftiles"></div>
 
   <div class="card">
     <h2>Flow summary — rolling windows &amp; calendar months</h2>
+    <p class="insight" id="ins-flows"></p>
     <p class="note">USD values historical transfers at that day's token price (method in the scope box); raw token amounts are exact. Net = inflow − outflow. Inflow splits into <b>external funding</b> vs <b>recycled consumption</b> (MENTE returning from the Cognition Collector) — tap a row for the split; gross distribution overstates net new injection by the recycled share.</p>
     <div class="scroll"><table id="winT"></table></div>
     <details style="margin-top:8px"><summary class="showmore" style="display:block">Calendar months (UTC)</summary><div class="scroll"><table id="monT"></table></div></details>
@@ -138,6 +145,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
 
   <div class="card">
     <h2>Daily flows</h2>
+    <p class="insight" id="ins-daily"></p>
     <p class="note">The mix bar splits each day's outflow by transfer size band (labels describe the amount only, not its purpose — hover for detail). The current UTC day is partial and marked. Showing the latest 21 days; expand for full history since <span id="d0"></span>.</p>
     <div class="legend" id="bleg"></div>
     <div class="scroll"><table id="dailyT"></table></div>
@@ -153,6 +161,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
 
 <div class="card" id="cogCard" style="display:none">
     <h2>Cognition consumption — minds spending MENTE</h2>
+    <p class="insight" id="ins-cognition"></p>
     <p class="note">On-chain demand side of the economy: MENTE flowing from mind wallets into the Cognition Credits collection wallet (<a href="https://basescan.org/address/0xd85096fAeC1aC03075667B4C1a1661F5623Bf111" target="_blank" class="mono">0xd85096…f111</a>) when minds spend credits on cognition. Collected tokens recycle back into this treasury. Treasury-originated transfers to the collector are excluded; spenders are restricted to wallets that previously received treasury payouts. USD at that day’s token price. Early sample — treat consumption vs distribution parity as an early signal until the 30-day series completes.</p>
     <div class="tiles" id="cogTiles"></div>
     <svg id="cogSpark" width="100%" height="70" viewBox="0 0 1060 70" style="margin-top:10px"></svg>
@@ -160,12 +169,14 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
 
   <div class="card">
     <h2>Top recipient wallets — all history</h2>
+    <p class="insight" id="ins-recipients"></p>
     <p class="note">Ranked by total USD received from this wallet. Labels come from the platform's wallet↔mind map where confirmed; unlabeled wallets are unidentified. Active days = distinct UTC days receiving.</p>
     <div class="scroll"><table id="recipT"></table></div>
   </div>
 
   <div class="card">
     <h2>Inflow sources — all history</h2>
+    <p class="insight" id="ins-sources"></p>
     <p class="note">Where this wallet's funding comes from. Labels from the treasury ops map where confirmed; unlabeled sources are unidentified.</p>
     <div class="scroll"><table id="srcT"></table></div>
   </div>
@@ -175,7 +186,8 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
   <p class="sect" id="serverSect" style="display:none">Server-recorded — platform events (PostHog · T+2 settled)</p>
   <div class="card" id="serverCard" style="display:none;border:1.5px solid var(--c-in);border-left:6px solid var(--c-in)">
     <h2 style="color:var(--c-in);text-transform:uppercase;letter-spacing:.06em;font-size:13px">Server-recorded — PostHog (platform events)</h2>
-    <p class="note">Independent of the on-chain data above: events recorded by the Minds platform (PostHog project 459477). <b>Recent 2 days excluded</b> — platform data arrives late, so a day only counts once it is 2 full days old (the same idea as T+2 settlement in traditional finance). Top-ups here are client-confirmed and lossy — the server-side Stripe webhook event is not yet exported to PostHog (open ask to the data team).</p>
+    <p class="note">Independent of the on-chain data above: events recorded by the Minds platform (PostHog project 459477). <b>Recent 2 days excluded</b> — platform data arrives late, so a day only counts once it is 2 full days old (the same idea as T+2 settlement in traditional finance). Top-ups here are <b>Stripe checkout events only</b> (coupons and manual top-ups never appear here), client-confirmed and lossy — the server-side Stripe webhook event is not yet exported to PostHog (open ask to the data team).</p>
+    <p class="insight" id="ins-server"></p>
     <div class="tiles" id="stiles"></div>
     <svg id="spark" width="100%" height="70" viewBox="0 0 1060 70" style="margin-top:10px"></svg>
     <p class="note" id="sdiverge" style="margin-top:6px"></p>
@@ -183,6 +195,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
 
   <div class="aizone">
     <div class="zhead">AI-inferred interpretation</div>
+    <p class="insight" id="ins-aizone" style="border-left-color:var(--warn)"></p>
     <div class="zsub">Everything in this amber zone is inferred — from transfer sizes, timing heuristics, or projections — not read from a ledger. Each block states its method. Treat as triage, not truth.</div>
 
     <div class="tiles" id="gtiles"></div>
@@ -212,6 +225,18 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
       </div>
     </details>
   </div>
+
+  <div class="card metacard" id="registerCard">
+    <h2>Open items &amp; follow-ups</h2>
+    <p class="note">The single accountability list — every clarification, follow-up, and trend-to-watch from all sections, with owner and opened date.</p>
+    <div class="scroll"><table id="regT"></table></div>
+  </div>
+
+  <div class="card metacard" id="gapsCard">
+    <h2>Data gaps &amp; what's landing next</h2>
+    <p class="note">Known limits of this dashboard, stated once — each gap names what its resolution unlocks. Not weaknesses: the roadmap from inference to verifiable fact.</p>
+    <div class="scroll"><table id="gapsT"></table></div>
+  </div>
 </div>
 <div class="tip" id="tip"></div>
 <script>
@@ -234,13 +259,13 @@ function bindTips(root){root.querySelectorAll("[data-tip]").forEach(el=>{
 });}
 document.addEventListener("click",e=>{if(pinned&&!pinned.contains(e.target)){pinned=null;tip.style.opacity=0;}},true);
 document.getElementById("gen").textContent=SC.generated;
+// plain-English summary strip — outflow-first (the outflow IS the ecosystem's activity)
 {const wA=F.windows[3];
- const openItems=[];
- if(DATA.server&&Math.abs(DATA.server.diverge_usd)>Math.max(25,DATA.server.topup_usd*0.25))openItems.push("a $"+Math.abs(DATA.server.diverge_usd).toFixed(0)+" payment-records gap");
- openItems.push("an automatic token burn (~$1,250 lifetime) being confirmed with the platform team");
- const mv=(F.cognition&&F.cognition.total_usd)?` \u2014 and minds have spent $${F.cognition.total_usd.toLocaleString(undefined,{maximumFractionDigits:0})} of it on actual cognition (${Math.round(F.cognition.total_usd/wA.out_usd*100)}% of everything distributed)`:"";
+ const openN=(DATA.open_items||[]).length;
+ const consPct=(F.cognition&&F.cognition.total_usd)?Math.round(F.cognition.total_usd/wA.out_usd*100):null;
+ const floatD=DATA.infer.guard.runway_total;
  document.getElementById("plainStrip").innerHTML=
-  `<b>In one sentence:</b> since ${F.range.from} this wallet has distributed <b>$${wA.out_usd.toLocaleString(undefined,{maximumFractionDigits:0})}</b> in token credits and rewards; <b>$${wA.in_usd.toLocaleString(undefined,{maximumFractionDigits:0})}</b> has flowed in ($${(wA.in_recycled_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} of that is usage fees recycling back + $${(wA.in_external_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} funding), so the balance is net positive${mv}. ${openItems.length} item${openItems.length===1?"":"s"} under review: ${openItems.join("; ")} \u2014 details in context below.`;
+  `<b>In one sentence:</b> since ${F.range.from} this wallet has distributed <b>$${wA.out_usd.toLocaleString(undefined,{maximumFractionDigits:0})}</b> of token credits and rewards into the Minds ecosystem${consPct?` — and <b>${consPct}%</b> of it has already been spent on actual cognition`:""}. The wallet holds ~<b>${floatD||"?"} days</b> of float and is refilled manually ($${(wA.in_recycled_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} of lifetime inflow is usage fees recycling back, $${(wA.in_external_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} manual funding) — if it empties, top-up fulfillment including Stripe stops. <a href="#registerCard">${openN} open item${openN===1?"":"s"} ↓</a>`;
 }
 // scope + reconciliation
 const rec=Object.entries(F.recon).map(([s,r])=>{if(!r)return`${s} n/a`;
@@ -251,7 +276,7 @@ document.getElementById("scope").innerHTML=
  `<span><b>Scope:</b> one wallet · MENTE + MOCA only (${SC.excluded_in_tx} inbound transfers of other tokens excluded)</span>`+
  `<span><b>Data range:</b> ${F.range.from} → ${F.range.to} UTC${SC.complete?"":" · <b style='color:var(--warn)'>⚠ fetch incomplete this run</b>"}</span>`+
  `<span><b>Rates:</b> MENTE $${F.rate.MENTE.toFixed(6)} (${F.rate_src.MENTE}) · MOCA $${F.rate.MOCA.toFixed(6)} (${F.rate_src.MOCA})</span>`+
- (F.market_check&&Object.keys(F.market_check).length?`<span><b>Rate validation:</b> ${Object.entries(F.market_check).map(([k,v])=>`${k} ${v.within15}/${v.n} days within 15% of market price history (max gap ${v.max_dev}%)`).join(" · ")} — prices cross-checked against the right trading pool for each period</span>`:"")+
+ (F.market_check&&Object.keys(F.market_check).length?`<span><b>Rate validation:</b> ${Object.entries(F.market_check).map(([k,v])=>`${k} ${v.within15}/${v.n} typically within ${v.median_dev??"?"}% of market price (${v.within15}/${v.n} days inside the 15% gate; worst day ${v.max_dev}%)`).join(" · ")} — each day priced at its own day's rate, cross-checked against the right trading pool for that period</span>`:"")+
  `<span><b>Balance reconciliation:</b> ${rec} — cache covers the wallet's full lifetime; balance valued at the newest cached block. The MENTE Δ (<b>≈$1,250 over the wallet's lifetime</b> — 88K tokens, ~1.2%) is an automatic burn by the token contract itself — expected platform behavior being confirmed with the team, <b>not missing funds</b>. (Technical: transfer logs verify exact vs raw chain, 36,715 = 36,715; the delta accrues in blocks with zero token events — the contract changes balances without emitting them.) Movement beyond this pattern flags in amber here</span>`+
  `<span><b>Note:</b> ${SC.note}</span>`;
 // fact tiles with deltas vs prev 24h
@@ -262,7 +287,7 @@ const ftiles=[
  ["Wallet balance", usd(balUsd), fmt0(F.balance.MENTE||0)+" MENTE · "+fmt0(F.balance.MOCA||0)+" MOCA"],
  ["Outflow — 24h", usd(w24.out_usd), w24.out_tx+" tx · "+w24.out_wallets+" wallets"+delta(w24.out_usd,p24.out_usd)],
  ["Inflow — 24h", usd(w24.in_usd), w24.in_tx+" transfer"+(w24.in_tx===1?"":"s")+" · "+w24.in_sources+" source"+(w24.in_sources===1?"":"s")],
- ["Net flow — 24h", (w24.net_usd>=0?"+":"")+usd(Math.abs(w24.net_usd)).replace("$",w24.net_usd>=0?"$":"-$"), "inflow minus outflow"],
+ ["Distribution pace — 7d", "$"+Math.round(F.windows[1].out_usd/7).toLocaleString()+"/day", "avg daily distribution — the operative treasury number"],
  ["Outflow — all history", usd(wall.out_usd), wall.out_tx.toLocaleString()+" tx since "+F.range.from],
  ["Recipient wallets", fmt0(F.wallets_all), fmt0(F.wallets_repeat)+" received on 2+ days"],
 ];
@@ -271,8 +296,8 @@ document.getElementById("ftiles").innerHTML=ftiles.map(t=>`<div class="tile" sty
 // window + month tables (compact: USD out/in/net; per-token split via tooltip)
 function flowRows(ws){return ws.map(w=>{
  const split=`MENTE $${w.out_usd_tok.MENTE.toLocaleString()} / MOCA $${w.out_usd_tok.MOCA.toLocaleString()}\nin: $${(w.in_external_usd??0).toLocaleString()} external funding + $${(w.in_recycled_usd??0).toLocaleString()} recycled consumption\nraw out: ${fmt(w.out_raw.MENTE)} MENTE · ${fmt(w.out_raw.MOCA)} MOCA\nraw in: ${fmt(w.in_raw.MENTE)} MENTE · ${fmt(w.in_raw.MOCA)} MOCA`;
- return `<tr data-tip="${split.replace(/"/g,"&quot;")}"><td>${w.label}</td><td class="r mono">$${w.out_usd.toLocaleString()}</td><td class="r mono">$${w.in_usd.toLocaleString()}</td><td class="r mono" style="color:${w.net_usd<0?"var(--ink2)":"var(--c-in)"}">${w.net_usd<0?"−":"+"}$${Math.abs(w.net_usd).toLocaleString()}</td><td class="r mono">${w.out_tx.toLocaleString()}</td><td class="r mono">${w.out_wallets.toLocaleString()}</td></tr>`;}).join("");}
-const flowHead=`<thead><tr><th>Period</th><th class="r">Out USD</th><th class="r">In USD</th><th class="r">Net USD</th><th class="r">Out tx</th><th class="r">Recipients</th></tr></thead>`;
+ return `<tr data-tip="${split.replace(/"/g,"&quot;")}"><td>${w.label}</td><td class="r mono">$${w.out_usd.toLocaleString()}</td><td class="r mono" style="color:var(--c-in)">$${(w.in_recycled_usd||0).toLocaleString()}</td><td class="r mono">$${(w.in_external_usd||0).toLocaleString()}</td><td class="r mono">${w.out_tx.toLocaleString()}</td><td class="r mono">${w.out_wallets.toLocaleString()}</td></tr>`;}).join("");}
+const flowHead=`<thead><tr><th>Period</th><th class="r">Out USD</th><th class="r">In: recycled</th><th class="r">In: funding</th><th class="r">Out tx</th><th class="r">Recipients</th></tr></thead>`;
 document.getElementById("winT").innerHTML=flowHead+`<tbody>`+flowRows(F.windows)+`</tbody>`;
 document.getElementById("monT").innerHTML=flowHead+`<tbody>`+flowRows(F.monthly)+`</tbody>`;
 bindTips(document.getElementById("winT"));bindTips(document.getElementById("monT"));
@@ -286,12 +311,12 @@ const dmax=Math.max(...list.map(d=>d.out_usd),1);
 return list.map(d=>{
  const bar=BK.map(k=>{const v=(d.bands[k]||{}).usd||0;return v?`<div style="height:10px;background:${BC[k]};width:${v/dmax*100}%"></div>`:"";}).join("");
  const tipTxt=BK.filter(k=>d.bands[k]).map(k=>`${F.band_labels[k]}: ${d.bands[k].n} tx · $${d.bands[k].usd.toFixed(0)} · ${d.bands[k].w} wallets`).join("\n")||"no outflow";
- return `<tr data-tip="${tipTxt.replace(/"/g,"&quot;")}" style="${d.partial?"opacity:.75":""}"><td class="mono">${d.d}${d.partial?' <span class="pill">partial day</span>':""}</td><td class="r mono">$${d.out_usd.toFixed(2)}</td><td style="width:26%;min-width:130px"><div style="display:flex;border-radius:3px;overflow:hidden">${bar}</div></td><td class="r mono">${d.out_tx}</td><td class="r mono">${d.wallets}</td><td class="r mono" style="color:${d.in_usd?"var(--c-in)":"var(--ink3)"}">${d.in_usd?"$"+d.in_usd.toFixed(0):"—"}</td><td class="r mono" style="color:${d.net_usd<0?"var(--ink2)":"var(--c-in)"}">${d.net_usd<0?"−":"+"}$${Math.abs(d.net_usd).toFixed(0)}</td></tr>`;});}
-const dHead=`<thead><tr><th>Day (UTC)</th><th class="r">Out USD</th><th>Size-band mix</th><th class="r">Tx</th><th class="r">Wallets</th><th class="r">In USD</th><th class="r">Net USD</th></tr></thead>`;
+ return `<tr data-tip="${tipTxt.replace(/"/g,"&quot;")}" style="${d.partial?"opacity:.75":""}"><td class="mono">${d.d}${d.partial?' <span class="pill">partial day</span>':""}</td><td class="r mono">$${d.out_usd.toFixed(2)}</td><td style="width:26%;min-width:130px"><div style="display:flex;border-radius:3px;overflow:hidden">${bar}</div></td><td class="r mono">${d.out_tx}</td><td class="r mono">${d.wallets}</td><td class="r mono" style="color:${d.in_usd?"var(--c-in)":"var(--ink3)"}">${d.in_usd?"$"+d.in_usd.toFixed(0):"—"}</td></tr>`;});}
+const dHead=`<thead><tr><th>Day (UTC)</th><th class="r">Out USD</th><th>Size-band mix</th><th class="r">Tx</th><th class="r">Wallets</th><th class="r">In USD</th></tr></thead>`;
 const dailyT=document.getElementById("dailyT");
 const revDaily=F.daily.slice().reverse();
 function withMonthSeps(list,html){const out=[];let cur=null;
- list.forEach((d,i)=>{const m=d.d.slice(0,7);if(cur!==null&&m!==cur)out.push(`<tr class="mrow"><td colspan="7">${m}</td></tr>`);else if(i===0)out.push(`<tr class="mrow"><td colspan="7">${m}</td></tr>`);cur=m;out.push(html[i]);});
+ list.forEach((d,i)=>{const m=d.d.slice(0,7);if(cur!==null&&m!==cur)out.push(`<tr class="mrow"><td colspan="6">${m}</td></tr>`);else if(i===0)out.push(`<tr class="mrow"><td colspan="6">${m}</td></tr>`);cur=m;out.push(html[i]);});
  return out.join("");}
 function renderDaily(all){const list=all?revDaily:revDaily.slice(0,21);dailyT.innerHTML=dHead+`<tbody>`+withMonthSeps(list,buildRows(list))+`</tbody>`;bindTips(dailyT);}
 renderDaily(false);
@@ -330,6 +355,22 @@ document.getElementById("recipT").innerHTML=`<thead><tr><th>#</th><th>Wallet</th
  F.top_recipients.map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${c.n.toLocaleString()}</td><td class="r mono">${c.days}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${c.usd.toLocaleString()}</td><td class="r mono">${c.share}%</td></tr>`).join("")+`</tbody>`;
 document.getElementById("srcT").innerHTML=`<thead><tr><th>Source wallet</th><th class="r">Transfers</th><th class="r">First → last</th><th class="r">USD</th></tr></thead><tbody>`+
  F.in_sources.map(c=>`<tr><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${c.n.toLocaleString()}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${c.usd.toLocaleString()}</td></tr>`).join("")+`</tbody>`;
+// ---- guided-view: insights, diagram numbers, register ----
+if(DATA.insights){for(const[k,v]of Object.entries(DATA.insights)){const el=document.getElementById("ins-"+k);if(el)el.innerHTML="&rarr; "+v;}}
+{const wA=F.windows[3];
+ const put=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=" · $"+v.toLocaleString(undefined,{maximumFractionDigits:0})+" lifetime";};
+ put("nDist",wA.out_usd);put("nExt",wA.in_external_usd||0);put("nRec",wA.in_recycled_usd||0);
+ if(F.cognition)put("nCons",F.cognition.total_usd);
+ const fc=document.getElementById("flowCard"),fp=document.getElementById("flowPill");
+ try{if(localStorage.getItem("flowOpen")==="0")fc.removeAttribute("open");}catch(e){}
+ const syncPill=()=>{fp.textContent=fc.open?"hide diagram":"show diagram";};
+ syncPill();
+ fc.addEventListener("toggle",()=>{syncPill();try{localStorage.setItem("flowOpen",fc.open?"1":"0");}catch(e){}});
+}
+if(DATA.open_items){document.getElementById("regT").innerHTML=`<thead><tr><th>Item</th><th>Type</th><th>Owner</th><th class="r">Opened</th></tr></thead><tbody>`+
+ DATA.open_items.map(o=>`<tr><td>${o.item}${o.anchor?` <a href="#${o.anchor}" class="pill">section ↑</a>`:""}</td><td><span class="pill">${o.type}</span></td><td>${o.owner}</td><td class="r mono">${o.opened}</td></tr>`).join("")+`</tbody>`;}
+if(DATA.gaps){document.getElementById("gapsT").innerHTML=`<thead><tr><th>What's missing</th><th>Effect on this page</th><th>What it unlocks</th></tr></thead><tbody>`+
+ DATA.gaps.map(g=>`<tr><td><b>${g.missing}</b></td><td>${g.effect}</td><td>${g.unlocks}</td></tr>`).join("")+`</tbody>`;}
 // ---- cognition consumption (facts) ----
 const CG=DATA.facts.cognition;
 if(CG){
@@ -390,7 +431,7 @@ if(SV){
 }
 // ---- AI zone ----
 const gtiles=[
- ["Distribution float", G.runway_total?(`<span style="${G.runway_total<14?"color:var(--warn)":""}">~`+G.runway_total+" days</span>"):"n/a", "balance ÷ 7-day avg total distribution — projection, not a countdown: treasury refills on approval (see inflow sources). Proposed policy: standing replenishment reviewed against the subsidy-ratio and loop-closure trend"],
+ ["Distribution float", G.runway_total?(`<span style="${G.runway_total<5?"color:#d33;font-weight:800":(G.runway_total<14?"color:var(--warn)":"")}">~`+G.runway_total+" days"+(G.runway_total<5?" — fulfillment at risk, top-up required":"")+"</span>"):"n/a", "balance ÷ 7-day avg total distribution — projection, not a countdown: treasury refills on approval (see inflow sources). Proposed policy: standing replenishment reviewed against the subsidy-ratio and loop-closure trend"],
  ["Unbacked distribution — 24h", "$"+G.burn24.toLocaleString(), "invokes+equips+credits+referrals (Stripe-sized deliveries excluded — revenue-backed) at that day's token price · prev 24h: $"+G.burn_prev.toLocaleString()],
  ["Wallets flagged for review", G.flagged_n+" of "+G.monitored_n, "$"+G.at_risk_usd.toLocaleString()+" ("+(G.at_risk_usd/G.ce_total_usd*100).toFixed(1)+"% of creator earnings) show unusual timing — under review, none confirmed"],
  ["Loop closure — earn + receive", G.loop_n!==undefined?G.loop_n:"n/a", "credited wallets that later earned creator fees ($"+(G.loop_usd||0).toLocaleString()+" total · "+(G.loop_gt10||0)+" earned >$10, "+(G.loop_gt50||0)+" >$50) — user→creator flywheel, early-stage"],
