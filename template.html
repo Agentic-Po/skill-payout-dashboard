@@ -6,25 +6,25 @@
   --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#6f6e69;
   --line:#e6e5e0; --acc:#1a5fb0;
   --c-mente:#7c5cd6; --c-moca:#2a78d6; --c-in:#008300; --warn:#9a5800; --warnbg:#fdf6ec;
-  --band1:#dbe9f9; --band2:#a8cbf0; --band3:#6fa8e0; --band4:#3f7fc4; --band5:#2a5f9e; --band6:#1d4478; --band7:#122c52; --band8:#888; --band9:#b3b3ad;
+  --band1:#00907c; --band2:#4f8fdd; --band3:#3f3fb8; --band4:#a855d6; --band5:#8f1770; --band6:#e0447a; --band7:#a35400; --band8:#8a8984; --band9:#c6c5bf;
 }
 @media (prefers-color-scheme: dark){:root{
   --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#9d9c96;
   --line:#2e2e2b; --acc:#3987e5;
   --c-mente:#9b83e8; --c-moca:#3987e5; --c-in:#3fa93f; --warn:#e8a44a; --warnbg:#241c10;
-  --band1:#1c2c40; --band2:#27476b; --band3:#33608f; --band4:#437cb5; --band5:#5f97d3; --band6:#8ab5e5; --band7:#bcd6f2; --band8:#777; --band9:#444;
+  --band1:#12a389; --band2:#3d63d6; --band3:#8f7bea; --band4:#8f3ec4; --band5:#d557b3; --band6:#c33556; --band7:#c87f26; --band8:#888782; --band9:#4e4e49;
 }}
 :root[data-theme="dark"]{
   --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#9d9c96;
   --line:#2e2e2b; --acc:#3987e5;
   --c-mente:#9b83e8; --c-moca:#3987e5; --c-in:#3fa93f; --warn:#e8a44a; --warnbg:#241c10;
-  --band1:#1c2c40; --band2:#27476b; --band3:#33608f; --band4:#437cb5; --band5:#5f97d3; --band6:#8ab5e5; --band7:#bcd6f2; --band8:#777; --band9:#444;
+  --band1:#12a389; --band2:#3d63d6; --band3:#8f7bea; --band4:#8f3ec4; --band5:#d557b3; --band6:#c33556; --band7:#c87f26; --band8:#888782; --band9:#4e4e49;
 }
 :root[data-theme="light"]{
   --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#6f6e69;
   --line:#e6e5e0; --acc:#1a5fb0;
   --c-mente:#7c5cd6; --c-moca:#2a78d6; --c-in:#008300; --warn:#9a5800; --warnbg:#fdf6ec;
-  --band1:#dbe9f9; --band2:#a8cbf0; --band3:#6fa8e0; --band4:#3f7fc4; --band5:#2a5f9e; --band6:#1d4478; --band7:#122c52; --band8:#888; --band9:#b3b3ad;
+  --band1:#00907c; --band2:#4f8fdd; --band3:#3f3fb8; --band4:#a855d6; --band5:#8f1770; --band6:#e0447a; --band7:#a35400; --band8:#8a8984; --band9:#c6c5bf;
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -53,6 +53,7 @@ h1{font-size:21px;margin:0;letter-spacing:-.01em}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink2);margin-bottom:10px}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .sw{width:10px;height:10px;border-radius:3px;display:inline-block;border:1px solid var(--line)}
+.bandchip{display:inline-block;font-size:10px;font-weight:650;padding:1px 7px;border-radius:4px;color:#fff;font-variant-numeric:tabular-nums}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;color:var(--ink3);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
 td{padding:7px 8px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
@@ -313,12 +314,12 @@ bindTips(document.getElementById("winT"));bindTips(document.getElementById("monT
 // daily table — compact with band mix bar + tooltip
 const BK=F.band_keys;
 const BC={micro:"var(--band9)",b010:"var(--band1)",b1:"var(--band2)",b3:"var(--band3)",b5:"var(--band4)",b10:"var(--band5)",b25:"var(--band6)",b50:"var(--band7)",other:"var(--band8)"};
-document.getElementById("bleg").innerHTML=BK.map(k=>`<span><span class="sw" style="background:${BC[k]}"></span>${F.band_labels[k]}</span>`).join("");
+document.getElementById("bleg").innerHTML=BK.map(k=>`<span class="bandchip" style="background:${BC[k]}${(k==="micro"||k==="other")?";color:var(--ink)":""}">${F.band_labels[k]}</span>`).join(" ");
 document.getElementById("d0").textContent=F.range.from;
 function buildRows(list){
 const dmax=Math.max(...list.map(d=>d.out_usd),1);
 return list.map(d=>{
- const bar=BK.map(k=>{const v=(d.bands[k]||{}).usd||0;return v?`<div style="height:10px;background:${BC[k]};width:${v/dmax*100}%"></div>`:"";}).join("");
+ const bar=BK.map(k=>{const v=(d.bands[k]||{}).usd||0;return v?`<div style="height:10px;background:${BC[k]};width:${v/dmax*100}%;border-right:1px solid var(--surface)"></div>`:"";}).join("");
  const tipTxt=BK.filter(k=>d.bands[k]).map(k=>`${F.band_labels[k]}: ${d.bands[k].n} tx · $${d.bands[k].usd.toFixed(0)} · ${d.bands[k].w} wallets`).join("\n")||"no outflow";
  return `<tr data-tip="${tipTxt.replace(/"/g,"&quot;")}" style="${d.partial?"opacity:.75":""}"><td class="mono">${d.d}${d.partial?' <span class="pill">partial day</span>':""}</td><td class="r mono">$${d.out_usd.toFixed(2)}</td><td style="width:26%;min-width:130px"><div style="display:flex;border-radius:3px;overflow:hidden">${bar}</div></td><td class="r mono">${d.out_tx}</td><td class="r mono">${d.wallets}</td><td class="r mono" style="color:${d.in_usd?"var(--c-in)":"var(--ink3)"}">${d.in_usd?"$"+d.in_usd.toFixed(0):"—"}</td></tr>`;});}
 const dHead=`<thead><tr><th>Day (UTC)</th><th class="r">Out USD</th><th>Size-band mix</th><th class="r">Tx</th><th class="r">Wallets</th><th class="r">In USD</th></tr></thead>`;

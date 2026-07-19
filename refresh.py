@@ -28,7 +28,7 @@ ADDR2SYM = {v["addr"]: k for k, v in TOKENS.items()}
 KNOWN = {"0x9a95d76c41aa34093a0db5f26f97309fe734a07f": "The Gamemaster (mind)",
          "0xd85096faec1ac03075667b4c1a1661f5623bf111": "Cognition Credits collection wallet (mind spend sink; recycles into treasury)",
          "0xf605dbb5626dfc1448cee33e2e1221103021468f": "primary MENTE funding source — owner unconfirmed (Finance/platform ops?), identification open",
-         "0x4d3021a52b31ffafde3c46450d02c72807c3a178": "Po's Fireblocks wallet (manual MOCA top-ups)",
+         "0x4d3021a52b31ffafde3c46450d02c72807c3a178": "Minds team Fireblocks wallet",
          "0x1c5ebb794335b72d773df2fd8f80f3d1afbb75dd": "gas funder (sends ETH to mind wallets for cognition spends)"}
 # Optional wallet↔mind map (drop wallet_mind_map.csv beside this script — gitignored,
 # from the platform's wallet-mind-map export). ONLY the display name is surfaced on
