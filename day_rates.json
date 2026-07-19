@@ -84,15 +84,15 @@
 }
 },
 "last_accepted_rate": {
-"MOCA": 0.0086495,
-"MENTE": 0.01433
+"MOCA": 0.00876659,
+"MENTE": 0.01443
 },
 "recon": {
 "MOCA": -538.6,
 "MENTE": -88066.7
 },
 "pending_rate": {
-"MOCA": 0.0086495
+"MOCA": 0.00876659
 },
 "open_day_rate": {
 "MOCA": {

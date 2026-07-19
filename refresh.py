@@ -26,7 +26,11 @@ TOKENS = {
 ADDR2SYM = {v["addr"]: k for k, v in TOKENS.items()}
 # counterparty labels confirmed off-chain (platform wallet-mind map / treasury ops)
 KNOWN = {"0x9a95d76c41aa34093a0db5f26f97309fe734a07f": "The Gamemaster (mind)",
-         "0xd85096faec1ac03075667b4c1a1661f5623bf111": "Cognition Credits collection wallet (mind spend sink; recycles into treasury)",
+         "0xd85096faec1ac03075667b4c1a1661f5623bf111": "Cognition Credits collector — also the original SWARM-era treasury+collector hub (pre-Apr 2026)",
+         "0xea87169699dabd028a78d4b91544b4298086baf6": "SWARM token contract (original Cognition Credit token, migrated to MENTE ~Apr 2026)",
+         "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432": "AgentIdentity registry (historic, ERC-8004 era)",
+         "0x7b85e278a7446d8349b066e835d3057d895aecff": "registration-era gas funder (historic)",
+         "0xd8506866faadfdcfb9600479ba7dc652a203f111": "⚠ ADDRESS-POISONING MIMIC — fake lookalike of the collector, do NOT use",
          "0xf605dbb5626dfc1448cee33e2e1221103021468f": "primary MENTE funding source — owner unconfirmed (Finance/platform ops?), identification open",
          "0x4d3021a52b31ffafde3c46450d02c72807c3a178": "Minds team Fireblocks wallet",
          "0x1c5ebb794335b72d773df2fd8f80f3d1afbb75dd": "gas funder (sends ETH to mind wallets for cognition spends)"}
@@ -679,7 +683,7 @@ insights = {
 }
 open_items = [
     {"item": "Confirm MENTE burn mechanism (event-less balance changes, ~$1,250 lifetime; sample txs 0x0080584a…, 0xc9f7afc5… in block 45862329)", "type": "clarify", "owner": "Po → MENTE team", "opened": "2026-07-19", "anchor": "scope"},
-    {"item": "Reconcile $" + str(abs(server["diverge_usd"])) + " Stripe-sized outflow vs recorded top-ups", "type": "follow-up", "owner": "Po — blocked on hm_events Stripe export", "opened": "2026-07-18", "anchor": "serverCard"} if server else None,
+    {"item": "Reconcile Stripe-sized outflow vs recorded top-ups — Valerii holds Stripe API access (feeds PostHog) and can close this end-to-end", "type": "follow-up", "owner": "Po → Valerii (Stripe API access confirmed)", "opened": "2026-07-18", "anchor": "serverCard"} if server else None,
     {"item": "Identify owner of 0xf605dBb5…1468f — the primary MENTE funder (4.88M MENTE lifetime incl. an unattributed ~$6K on Jul 7); Po's Fireblocks and the collector are confirmed, three small early funders remain unlabeled", "type": "clarify", "owner": "Po + Finance/treasury ops", "opened": "2026-07-19", "anchor": "srcT"},
     {"item": "Formalize the recycle policy: collector→treasury flows are informal ops habit today — defining the rule defines who owns the economy's cash flow", "type": "clarify", "owner": "Po → Minh / platform", "opened": "2026-07-19", "anchor": "srcT"},
     {"item": "Subsidy-ratio trend: watch whether the weekly ratio bends down as revenue features land", "type": "trend", "owner": "dashboard (auto)", "opened": "2026-07-19", "anchor": "serverCard"},
@@ -687,8 +691,9 @@ open_items = [
 ]
 open_items = [o for o in open_items if o]
 gaps = [
+    {"missing": "SWARM era (pre-Apr 2026) not yet integrated", "effect": "this dashboard covers the MENTE/MOCA credit era (from Apr 12/24); the economy's first generation ran on SWARM (Ethoswarm token) through the SAME collector hub 0xd850… — those flows are not yet counted", "unlocks": "full multi-era economy history: crawl the collector's SWARM in/outflows and add an era-aware timeline"},
     {"missing": "Recycle policy (constitutional)", "effect": "collector→treasury flows are informal; ownership of the economy's cash flow undefined", "unlocks": "closed-loop rule, creator revenue-share, or burn discipline — a protocol instead of a babysat wallet"},
-    {"missing": "Stripe webhook export → PostHog/hm_events", "effect": "live revenue still client-side only; an interim VERIFIED snapshot (Stripe CSV, May 13–Jul 15: net $6,455) now anchors the true numbers — live feed needed for ongoing days", "unlocks": "true revenue-backed split; divergence control closes"},
+    {"missing": "Complete Stripe data feed — Valerii has Stripe API access (pulls for PostHog today, but only client-side events land)", "effect": "live revenue still client-side only; an interim VERIFIED snapshot (Stripe CSV, May 13–Jul 15: net $6,455) now anchors the true numbers — live feed needed for ongoing days", "unlocks": "true revenue-backed split; divergence control closes"},
     {"missing": "Per-transfer memo/event from the payout contract", "effect": "classification is size-inference (±8%); amber zone larger than it needs to be", "unlocks": "exact payout types — most of the amber zone becomes fact"},
     {"missing": "Wallet↔mind map (Katherine)", "effect": "recipients are hex addresses; per-creator economics invisible", "unlocks": "named earnings leaderboard + per-wallet hold/spend/exit disposition — retires the farming debate with data"},
     {"missing": "MENTE burn-mechanism confirmation (platform)", "effect": "~1.2% of MENTE flow explained forensically but unconfirmed", "unlocks": "complete, auditable MENTE accounting; event emission restores full verifiability"},
