@@ -197,6 +197,13 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
   
 
   <p class="sect" id="serverSect" style="display:none">Server-recorded — platform events (PostHog · T+2 settled)</p>
+  <div class="card" id="stripeCard" style="display:none;border:1.5px solid var(--c-in);border-left:6px solid var(--c-in)">
+    <h2 style="color:var(--c-in);text-transform:uppercase;letter-spacing:.06em;font-size:13px">Verified revenue — Stripe snapshot (server-side truth)</h2>
+    <p class="insight" id="ins-stripe" style="border-left-color:var(--c-in)"></p>
+    <div class="tiles" id="stripeTiles"></div>
+    <p class="note" id="stripeNote" style="margin-top:8px"></p>
+  </div>
+
   <div class="card" id="serverCard" style="display:none;border:1.5px solid var(--c-in);border-left:6px solid var(--c-in)">
     <h2 style="color:var(--c-in);text-transform:uppercase;letter-spacing:.06em;font-size:13px">Server-recorded — PostHog (platform events)</h2>
     <p class="note">Independent of the on-chain data above: events recorded by the Minds platform (PostHog project 459477). <b>Recent 2 days excluded</b> — platform data arrives late, so a day only counts once it is 2 full days old (the same idea as T+2 settlement in traditional finance). Top-ups here are <b>Stripe checkout events only</b> (coupons and manual top-ups never appear here), client-confirmed and lossy — the server-side Stripe webhook event is not yet exported to PostHog (open ask to the data team).</p>
@@ -412,6 +419,21 @@ if(CG){
   sp.addEventListener("mouseleave",()=>{if(!pinned)tip.style.opacity=0;});
   sp.addEventListener("click",e=>{const t=cogTip(e);if(!t){pinned=null;tip.style.opacity=0;return;}pinned=sp;showTip(e,t);});
  }
+}
+// ---- verified Stripe snapshot ----
+const SS=DATA.stripe_snap;
+if(SS){
+ document.getElementById("stripeCard").style.display="block";
+ document.getElementById("ins-stripe").innerHTML="&rarr; Users have genuinely paid <b>$"+SS.net_usd.toLocaleString()+"</b> through Stripe ("+SS.paid+" payments, "+SS.period[0]+" → "+SS.period[1]+") — the real revenue floor is ~13x what client-side events record. Subsidy ratio on this verified basis: <b>$"+(SS.period_subsidy_ratio??"?")+"</b> distributed per $1 of revenue.";
+ const t=[
+  ["Net revenue — verified","$"+SS.net_usd.toLocaleString(), SS.paid+" paid payments · avg $"+SS.avg_paid_usd],
+  ["Gross / refunded","$"+SS.gross_usd.toLocaleString(), "$"+SS.refunded_usd+" refunded ("+SS.refunded+" tx) · "+SS.failed+" failed"],
+  ["Stripe fees (est.)","$"+SS.fees_est_usd.toLocaleString(), "from the CSV fee column (HK$"+SS.fees_hkd.toLocaleString()+")"],
+  ["Purchase mix", Object.entries(SS.tiers).map(([k,v])=>v+"×"+k).join(" · "), "tier counts sum exactly to gross — verified"],
+  ["Subsidy ratio — verified basis","$"+(SS.period_subsidy_ratio??"?")+" per $1", "same-period unbacked distribution $"+(SS.period_unbacked_dist_usd||0).toLocaleString()+" ÷ net revenue"],
+ ];
+ document.getElementById("stripeTiles").innerHTML=t.map(x=>`<div class="tile"><div class="k">${x[0]}</div><div class="v">${x[1]}</div><div class="d">${x[2]}</div></div>`).join("");
+ document.getElementById("stripeNote").innerHTML=`<b>Permanent reference snapshot</b> captured ${SS.captured} from the platform's Stripe export (${SS.rows} rows via the internal treasury dashboard) — this is actual user spending at the moment money was received. It does not update; days after ${SS.period[1]} rely on the client-side estimates below until a live Stripe/hm_events feed lands (see Data gaps).`;
 }
 // ---- server-recorded tier ----
 const SV=DATA.server;

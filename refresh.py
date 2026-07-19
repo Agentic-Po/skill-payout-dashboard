@@ -597,6 +597,18 @@ guard = {"flagged_n": len(flagged), "monitored_n": len(grows), "at_risk_usd": at
          "burn24": round(burn24, 2), "burn_prev": round(burn_prev, 2),
          "burn7avg": round(burn7avg, 2), "rows": grows}
 
+# permanent Stripe snapshot (verified server-side revenue reference)
+stripe_snap = None
+_snap_path = os.path.join(HERE, "stripe_snapshot.json")
+if os.path.exists(_snap_path):
+    stripe_snap = json.load(open(_snap_path))
+    # distribution over the same period, for a like-for-like subsidy ratio
+    _p0, _p1 = stripe_snap["period"]
+    _dist = sum(r["usd"] for r in rows if _p0 <= r["ts"][:10] <= _p1
+                and r["cat"] in ("invoke", "equip", "growth") and r["fine"] not in STRIPE_FINE)
+    stripe_snap["period_unbacked_dist_usd"] = round(_dist, 2)
+    stripe_snap["period_subsidy_ratio"] = round(_dist / stripe_snap["net_usd"], 1) if stripe_snap["net_usd"] else None
+
 infer = {"S": S, "creators": creators[:25], "ce_total": ce_total, "fine_table": fine_table, "guard": guard}
 
 # ================= SERVER-RECORDED TIER (PostHog, optional) =================
@@ -675,14 +687,14 @@ open_items = [
 open_items = [o for o in open_items if o]
 gaps = [
     {"missing": "Recycle policy (constitutional)", "effect": "collector→treasury flows are informal; ownership of the economy's cash flow undefined", "unlocks": "closed-loop rule, creator revenue-share, or burn discipline — a protocol instead of a babysat wallet"},
-    {"missing": "Stripe webhook export → PostHog/hm_events", "effect": "revenue understated; subsidy ratio only an upper bound; $165 divergence unresolvable", "unlocks": "true revenue-backed split; divergence control closes"},
+    {"missing": "Stripe webhook export → PostHog/hm_events", "effect": "live revenue still client-side only; an interim VERIFIED snapshot (Stripe CSV, May 13–Jul 15: net $6,455) now anchors the true numbers — live feed needed for ongoing days", "unlocks": "true revenue-backed split; divergence control closes"},
     {"missing": "Per-transfer memo/event from the payout contract", "effect": "classification is size-inference (±8%); amber zone larger than it needs to be", "unlocks": "exact payout types — most of the amber zone becomes fact"},
     {"missing": "Wallet↔mind map (Katherine)", "effect": "recipients are hex addresses; per-creator economics invisible", "unlocks": "named earnings leaderboard + per-wallet hold/spend/exit disposition — retires the farming debate with data"},
     {"missing": "MENTE burn-mechanism confirmation (platform)", "effect": "~1.2% of MENTE flow explained forensically but unconfirmed", "unlocks": "complete, auditable MENTE accounting; event emission restores full verifiability"},
     {"missing": "Fireblocks wallet scope", "effect": "the $50K manual-support wallet is invisible to this dashboard", "unlocks": "whole-treasury view; no separate manual attestation needed"},
 ]
 guard["dist_pace"] = dist_pace
-data = {"scope": scope, "facts": facts, "infer": infer, "server": server,
+data = {"scope": scope, "facts": facts, "infer": infer, "server": server, "stripe_snap": stripe_snap,
         "insights": insights, "open_items": open_items, "gaps": gaps}
 
 json.dump(STATE, open(RATES_PATH, "w"), indent=0)
