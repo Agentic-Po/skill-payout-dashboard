@@ -65,6 +65,9 @@ td a{color:var(--acc);text-decoration:none}
 .mrow td{background:color-mix(in srgb,var(--ink) 5%,var(--surface));font-weight:650;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2)}
 .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);color:var(--ink2)}
 .tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--bg);font-size:12px;padding:6px 9px;border-radius:6px;opacity:0;transition:opacity .1s;z-index:9;white-space:pre-line;font-variant-numeric:tabular-nums}
+.tip table{border-collapse:collapse;font-size:12px}
+.tip td{padding:1px 6px 1px 0;border:none;color:var(--bg);font-variant-numeric:tabular-nums}
+.tip .bandchip{font-size:10px;padding:0 6px;min-width:44px;text-align:center}
 .aizone{border:1.5px solid var(--warn);border-left:6px solid var(--warn);border-radius:10px;padding:14px 16px;background:var(--warnbg);display:flex;flex-direction:column;gap:14px}
 .aizone>.zhead{font-size:13px;font-weight:700;color:var(--warn);text-transform:uppercase;letter-spacing:.06em}
 .aizone>.zsub{font-size:12.5px;color:var(--ink2);margin-top:-10px}
@@ -257,15 +260,18 @@ const fmt0=n=>n.toLocaleString("en-US",{maximumFractionDigits:0});
 const usd=n=>"$"+n.toLocaleString("en-US",{maximumFractionDigits:0});
 const tip=document.getElementById("tip");
 let pinned=null;
-function showTip(e,txt){tip.textContent=txt;tip.style.left=Math.min((e.clientX||60)+14,window.innerWidth-220)+"px";tip.style.top=((e.clientY||120)-10)+"px";tip.style.opacity=1;}
+function showTip(e,txt,html){if(html){tip.innerHTML=txt;}else{tip.textContent=txt;}
+ const w=html?300:220;
+ tip.style.left=Math.min((e.clientX||60)+14,window.innerWidth-w)+"px";tip.style.top=((e.clientY||120)-10)+"px";tip.style.opacity=1;}
 function hideTip(){if(!pinned)tip.style.opacity=0;}
-function bindTips(root){root.querySelectorAll("[data-tip]").forEach(el=>{
+function bindTips(root){root.querySelectorAll("[data-tip],[data-tiphtml]").forEach(el=>{
  el.setAttribute("tabindex","0");
- el.addEventListener("mousemove",e=>{if(!pinned)showTip(e,el.dataset.tip)});
+ const T=()=>el.dataset.tiphtml||el.dataset.tip, H=()=>!!el.dataset.tiphtml;
+ el.addEventListener("mousemove",e=>{if(!pinned)showTip(e,T(),H())});
  el.addEventListener("mouseleave",hideTip);
- el.addEventListener("focus",e=>{const r=el.getBoundingClientRect();showTip({clientX:r.left+40,clientY:r.top+20},el.dataset.tip)});
+ el.addEventListener("focus",e=>{const r=el.getBoundingClientRect();showTip({clientX:r.left+40,clientY:r.top+20},T(),H())});
  el.addEventListener("blur",()=>{pinned=null;tip.style.opacity=0;});
- el.addEventListener("click",e=>{if(pinned===el){pinned=null;tip.style.opacity=0;}else{pinned=el;showTip(e,el.dataset.tip);}});
+ el.addEventListener("click",e=>{if(pinned===el){pinned=null;tip.style.opacity=0;}else{pinned=el;showTip(e,T(),H());}});
 });}
 document.addEventListener("click",e=>{if(pinned&&!pinned.contains(e.target)){pinned=null;tip.style.opacity=0;}},true);
 document.getElementById("gen").textContent=SC.generated;
@@ -320,8 +326,9 @@ function buildRows(list){
 const dmax=Math.max(...list.map(d=>d.out_usd),1);
 return list.map(d=>{
  const bar=BK.map(k=>{const v=(d.bands[k]||{}).usd||0;return v?`<div style="height:10px;background:${BC[k]};width:${v/dmax*100}%;border-right:1px solid var(--surface)"></div>`:"";}).join("");
- const tipTxt=BK.filter(k=>d.bands[k]).map(k=>`${F.band_labels[k]}: ${d.bands[k].n} tx · $${d.bands[k].usd.toFixed(0)} · ${d.bands[k].w} wallets`).join("\n")||"no outflow";
- return `<tr data-tip="${tipTxt.replace(/"/g,"&quot;")}" style="${d.partial?"opacity:.75":""}"><td class="mono">${d.d}${d.partial?' <span class="pill">partial day</span>':""}</td><td class="r mono">$${d.out_usd.toFixed(2)}</td><td style="width:26%;min-width:130px"><div style="display:flex;border-radius:3px;overflow:hidden">${bar}</div></td><td class="r mono">${d.out_tx}</td><td class="r mono">${d.wallets}</td><td class="r mono" style="color:${d.in_usd?"var(--c-in)":"var(--ink3)"}">${d.in_usd?"$"+d.in_usd.toFixed(0):"—"}</td></tr>`;});}
+ const tipRows=BK.filter(k=>d.bands[k]).map(k=>`<tr><td><span class="bandchip" style="background:${BC[k]}${(k==="micro"||k==="other")?";color:#111":""}">${F.band_labels[k]}</span></td><td style="text-align:right">${d.bands[k].n} tx</td><td style="text-align:right"><b>$${d.bands[k].usd.toFixed(0)}</b></td><td style="text-align:right">${d.bands[k].w} wallets</td></tr>`).join("");
+  const tipTxt=`<b>${d.d}</b> — $${d.out_usd.toFixed(0)} out<table>${tipRows||"<tr><td>no outflow</td></tr>"}</table>`;
+ return `<tr data-tiphtml="${tipTxt.replace(/"/g,"&quot;")}" style="${d.partial?"opacity:.75":""}"><td class="mono">${d.d}${d.partial?' <span class="pill">partial day</span>':""}</td><td class="r mono">$${d.out_usd.toFixed(2)}</td><td style="width:26%;min-width:130px"><div style="display:flex;border-radius:3px;overflow:hidden">${bar}</div></td><td class="r mono">${d.out_tx}</td><td class="r mono">${d.wallets}</td><td class="r mono" style="color:${d.in_usd?"var(--c-in)":"var(--ink3)"}">${d.in_usd?"$"+d.in_usd.toFixed(0):"—"}</td></tr>`;});}
 const dHead=`<thead><tr><th>Day (UTC)</th><th class="r">Out USD</th><th>Size-band mix</th><th class="r">Tx</th><th class="r">Wallets</th><th class="r">In USD</th></tr></thead>`;
 const dailyT=document.getElementById("dailyT");
 const revDaily=F.daily.slice().reverse();
