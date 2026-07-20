@@ -214,7 +214,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
   <div class="card" id="registryCard">
     <h2>Address registry — every wallet in the loop</h2>
     <p class="note">Full, untruncated addresses for every material participant. Everywhere else this page shortens addresses — tables to <span class="mono">0xd85096…f111</span>, the flow diagram and prose to <span class="mono">0xd850…f111</span>. <b>The short form is not a safe identifier</b>: the Cognition Credits collector and its address-poisoning mimic are identical in it. Anything flagged <span class="pill" style="background:var(--c-out);color:#fff">ambiguous when shortened</span> must be matched in full. Click any address to copy it.</p>
-    <div class="scroll"><table id="regT"></table></div>
+    <div class="scroll"><table id="addrT"></table></div>
   </div>
 
 
@@ -416,8 +416,8 @@ if(DATA.registry&&DATA.registry.length){
           +`<td class="r mono"><a href="https://basescan.org/address/${r.addr}" target="_blank">basescan ↗</a></td></tr>`;
     });
   });
-  document.getElementById("regT").innerHTML=`<thead><tr><th>Address (full)</th><th>Role</th><th class="r">Explorer</th></tr></thead><tbody>${body}</tbody>`;
-  document.getElementById("regT").addEventListener("click",e=>{
+  document.getElementById("addrT").innerHTML=`<thead><tr><th>Address (full)</th><th>Role</th><th class="r">Explorer</th></tr></thead><tbody>${body}</tbody>`;
+  document.getElementById("addrT").addEventListener("click",e=>{
     const t=e.target.closest(".copyaddr"); if(!t)return;
     navigator.clipboard.writeText(t.dataset.a).then(()=>{
       const o=t.textContent; t.textContent="copied ✓"; setTimeout(()=>{t.textContent=o;},900);
