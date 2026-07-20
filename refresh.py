@@ -795,7 +795,12 @@ registry = [
     _reg("0x8004a169fb4a3325136eb29fa0ceb6d2e539a432", "AgentIdentity registry — ERC-8004 era (historic, economically inert)", "Infrastructure"),
     _reg("0x4d3021a52b31ffafde3c46450d02c72807c3a178", "Minds team Fireblocks wallet — manual MOCA top-ups", "Funding sources"),
     _reg("0xf605dbb5626dfc1448cee33e2e1221103021468f", "Primary MENTE funder — OWNER UNCONFIRMED, identification open", "Funding sources"),
+    _reg("0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B", "EIP-7702 delegator implementation the treasury EOA delegates to", "Infrastructure"),
+    _reg("0x45d0cEAd7c0a2E1a0528C4131A2d95DE9a394839", "Early MENTE funder (Apr 2026) — unidentified; also spent 100k MENTE into the collector", "Funding sources"),
+    _reg("0xbDCb95A80d4C770fa811B1FAF0bb4Cf204d310b5", "Early MENTE funder (Apr–May 2026) — unidentified", "Funding sources"),
+    _reg("0x0a2854Fbbd9B3Ef66F17d47284E7f899b9509330", "Swap counterparty — took 72k MENTE, returned 112k MOCA; venue unconfirmed", "Liquidity"),
     _reg("0xd8506866faadfdcfb9600479ba7dc652a203f111", "ADDRESS-POISONING MIMIC of the collector — never copy the collector from a transaction history", "Warnings", True),
+    _reg("0x9a95a47a4f90c9c14ae8e3a9c37e822ed0e5a07f", "ADDRESS-POISONING MIMIC of The Gamemaster mind — zero-value poison transfers, SWARM era", "Warnings", True),
 ]
 _have = {r["addr"].lower() for r in registry}
 for _c in top_recip[:10]:                      # material outflow counterparties
