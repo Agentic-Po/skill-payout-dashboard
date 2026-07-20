@@ -595,16 +595,27 @@ try:
                          and f["from"].lower() == RECYCLE_SRC.lower()), reverse=True)
     _mente_out_days = sorted((r["ts"][:10] for r in rows if r["tok"] == "MENTE"), reverse=True)
     _closed = [p for p in series.get("MENTE", []) if not p.get("partial")]
-    _chg = None; _dtz = None; _status = None
+    _chg = None; _dtz = None; _status = None; _flat = 0
     if len(_closed) >= 8:
-        _chg = round((_closed[-1]["qty"] - _closed[-8]["qty"]) / 7.0, 1)   # signed /day
+        # trailing days with no MENTE movement at all (delta == 0) => frozen
+        for p in reversed(_closed):
+            if abs(p.get("delta") or 0) < 1:
+                _flat += 1
+            else:
+                break
         _bnow = BALANCE.get("MENTE") or _closed[-1]["qty"]
-        if abs(_chg) < max(1.0, _bnow * 0.001):
+        # rate of change measured over the ACTIVE window (exclude the flat tail)
+        _active = _closed[:len(_closed) - _flat] if _flat else _closed
+        if _flat >= 3:
             _status = "frozen"
-        elif _chg < 0:
-            _status = "declining"; _dtz = int(_bnow / -_chg) if _chg else None
+        elif len(_active) >= 8:
+            _chg = round((_active[-1]["qty"] - _active[-8]["qty"]) / 7.0, 1)
+            if _chg < 0:
+                _status = "declining"; _dtz = int(_bnow / -_chg) if _chg else None
+            else:
+                _status = "growing"
         else:
-            _status = "growing"
+            _status = "frozen" if _flat else "declining"
     balance_series = {
         "tokens": [s for s in TOKENS if s in series],
         "series": series,
@@ -614,6 +625,7 @@ try:
         "last_mente_recycle": _mente_rec[0] if _mente_rec else None,
         "last_mente_out": _mente_out_days[0] if _mente_out_days else None,
         "mente_change_7d": _chg, "mente_status": _status, "days_to_zero": _dtz,
+        "mente_flat_days": _flat,
         "moca_ledger_from": (min((r["ts"][:10] for r in rows if r["tok"] == "MOCA"), default=None)),
         "recon": {s: recon.get(s) for s in TOKENS},
     }
