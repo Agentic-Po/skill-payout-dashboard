@@ -156,6 +156,17 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <details style="margin-top:8px"><summary class="showmore" style="display:block">Calendar months (UTC)</summary><div class="scroll"><table id="monT"></table></div></details>
   </div>
 
+  <div class="card" id="balCard" style="display:none">
+    <h2>Treasury balance — daily, by token</h2>
+    <div class="sub" id="balSub" style="margin:-2px 0 8px"></div>
+    <div id="balHead" style="font-size:15px;margin:6px 0 10px"></div>
+    <div id="balRecycle"></div>
+    <div id="balSpark" style="margin:12px 0"></div>
+    <div class="scroll"><table id="balT"></table></div>
+    <button class="showmore" id="moreBal">Show full history ▾</button>
+    <p class="note" id="balFoot" style="margin-top:10px"></p>
+  </div>
+
   <div class="card">
     <h2>Daily flows</h2>
     <p class="insight" id="ins-daily"></p>
@@ -374,6 +385,81 @@ function withMonthSeps(list,html){const out=[];let cur=null;
  list.forEach((d,i)=>{const m=d.d.slice(0,7);if(cur!==null&&m!==cur)out.push(`<tr class="mrow"><td colspan="6">${m}</td></tr>`);else if(i===0)out.push(`<tr class="mrow"><td colspan="6">${m}</td></tr>`);cur=m;out.push(html[i]);});
  return out.join("");}
 function renderDaily(all){const list=all?revDaily:revDaily.slice(0,21);dailyT.innerHTML=dHead+`<tbody>`+withMonthSeps(list,buildRows(list))+`</tbody>`;bindTips(dailyT);}
+
+// ---- treasury balance — daily, by token (reconstructed, anchored to chain) ----
+if(F.balance_series&&F.balance_series.tokens&&F.balance_series.tokens.length){
+  const B=F.balance_series, toks=B.tokens, S=B.series;
+  document.getElementById("balCard").style.display="";
+  const days=S[toks[0]].map(p=>p.d);
+  const at=(tok,d)=>{const s=S[tok];return s.find(p=>p.d===d);};
+  const latest=days[days.length-1];
+  const qty=(tok,d)=>{const p=at(tok,d);return p?p.qty:0;};
+  const usdOf=(tok,d)=>{const p=at(tok,d);return p?p.usd:0;};
+  const totUsd=d=>toks.reduce((s,t)=>s+(usdOf(t,d)||0),0);
+
+  document.getElementById("balSub").innerHTML=`Reconstructed from on-chain transfers, anchored to the verified balance at block ${B.recon_block.toLocaleString()} — not a recorded snapshot.`;
+
+  // headline in Po's exact format, held tokens only (>0)
+  const held=toks.filter(t=>qty(t,latest)>0.5);
+  const parts=held.map(t=>`${usd(usdOf(t,latest))} ${t}`).join(" + ");
+  const dISO=latest.replace(/-/g,"/");
+  document.getElementById("balHead").innerHTML=
+    `<b>${dISO} UTC</b> · Total balance <b>${usd(totUsd(latest))}</b> = ${parts} `
+    +`<span class="pill" title="the reconstructed series ends exactly on the on-chain balance">live, as of ${(SC&&SC.updated)||"now"} · reconstructed = on-chain ✓</span>`;
+
+  // recycle strip — the answer to Po's actual question
+  const dz=B.days_to_zero, dec=B.mente_decline_7d;
+  document.getElementById("balRecycle").innerHTML=
+    `<div style="border-left:3px solid var(--warn);padding-left:10px;margin:4px 0 2px">
+       <b>Is MENTE flowing back?</b> Last collector→treasury recycle: <b>${B.last_mente_recycle||"—"}</b>. Last MENTE inflow of any kind: <b>${B.last_mente_in||"—"}</b>.
+       Since then the Treasury's MENTE only declines — the slope below <b>is</b> the recycle gap.
+       ${(dec!=null&&dec<0)?`Trailing-7-day drain ~<b>${fmt0(-dec)} MENTE/day</b>${dz?`; at that pace, ~<b>${dz} days</b> to zero with no top-up.`:"."}`:""}
+     </div>`;
+
+  // paired sparklines: MENTE staircase down vs MOCA sawtooth
+  const spark=(tok,label,color)=>{
+    const s=S[tok], mx=Math.max(...s.map(p=>p.qty),1), W=s.length, bw=100/W, H=44;
+    const bars=s.map(p=>`<span title="${p.d}: ${fmt0(p.qty)} ${tok}${p.partial?" (live)":""}" style="display:inline-block;width:${bw}%;height:${Math.max(1,p.qty/mx*H)}px;background:${color};opacity:${p.partial?.55:1};margin-right:1px;vertical-align:bottom"></span>`).join("");
+    return `<div style="flex:1;min-width:230px"><div class="sub">${label}</div><div style="height:${H}px;font-size:0;margin-top:3px">${bars}</div><div class="sub">${s[0].d} → ${latest}</div></div>`;
+  };
+  document.getElementById("balSpark").innerHTML=
+    `<div style="display:flex;gap:20px;flex-wrap:wrap">`
+    +spark("MENTE","MENTE — only declines since the recycle leg died ↓","var(--c-mente)")
+    +(toks.includes("MOCA")?spark("MOCA","MOCA — sawtooth: manual top-ups up, payouts down","var(--c-moca)"):"")
+    +`</div>`;
+
+  // table: newest first, MENTE Δ + recycled-in columns
+  const hasM=toks.includes("MENTE");
+  const head=`<thead><tr><th>Date (UTC)</th>`
+    +toks.map(t=>`<th class="r">${t} qty</th><th class="r">${t} $</th>`).join("")
+    +`<th class="r">Total $</th>`
+    +(hasM?`<th class="r">MENTE Δ<br><span class="sub">out−in</span></th><th class="r">recycled-in</th>`:"")
+    +`</tr></thead>`;
+  const rowFor=d=>{
+    const m=hasM?at("MENTE",d):null;
+    const dcell=m&&m.delta!=null?`<td class="r mono" style="color:${m.delta<0?"var(--warn)":"var(--c-in)"}">${m.delta<0?"":"+"}${fmt0(m.delta)}</td>`:`<td class="r sub">—</td>`;
+    const rcell=m?`<td class="r mono"${(m.in_rec||0)===0?' style="color:var(--warn)"':''}>${fmt0(m.in_rec||0)}</td>`:"";
+    const part=at(toks[0],d)&&at(toks[0],d).partial;
+    return `<tr${part?' style="opacity:.7"':''}><td class="mono">${d.replace(/-/g,"/")}${part?' <span class="sub">live</span>':''}</td>`
+      +toks.map(t=>{const p=at(t,d);return `<td class="r mono">${p?fmt0(p.qty):"—"}</td><td class="r mono" title="${p?p.rsrc:""}">${p?usd(p.usd):"—"}</td>`;}).join("")
+      +`<td class="r mono">${usd(totUsd(d))}</td>`+(hasM?dcell+rcell:"")+`</tr>`;
+  };
+  const revDays=[...days].reverse();
+  const renderBal=all=>{const list=all?revDays:revDays.slice(0,14);document.getElementById("balT").innerHTML=head+`<tbody>`+list.map(rowFor).join("")+`</tbody>`;};
+  renderBal(false);
+  let balAll=false;
+  document.getElementById("moreBal").onclick=e=>{balAll=!balAll;renderBal(balAll);e.target.textContent=balAll?"Show less ▴":"Show full history ▾";};
+
+  const burn=B.burn_offset, rc=B.recon&&B.recon.MENTE;
+  const stale=rc&&(rc.warn||rc.degraded);
+  document.getElementById("balFoot").innerHTML=
+    (stale?`<b style="color:var(--warn)">⚠ Reconstruction integrity check flagged (drift ${rc.drift}) — treat this section as provisional this run.</b> `:"")
+    +`<b>MENTE did not arrive over the weekend</b> — the dashboard began <i>displaying</i> MENTE recently; the balance was always present. `
+    +`Balances are rebuilt by walking backward from the verified on-chain balance, subtracting each day's net transfers. `
+    +`Pre-cache holdings and ${burn?`~${fmt0(Math.abs(burn))} MENTE of`:"an"} event-less contract burn are carried as a constant offset, so days before the burn may be understated by up to that amount. `
+    +`Closed days are priced at that day's immutable rate, never today's. `
+    +`SWARM (prior era, ended 2026-04-24) and USDC were never held by this wallet — not shown.`;
+}
 renderDaily(false);
 let allDays=false;
 document.getElementById("moreDays").addEventListener("click",function(){allDays=!allDays;renderDaily(allDays);this.textContent=allDays?"Show latest 21 days ▴":"Show full history ▾";});
