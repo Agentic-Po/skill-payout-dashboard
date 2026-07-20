@@ -540,7 +540,82 @@ for sym in TOKENS:
                   "delta": delta, "drift": drift, "degraded": sym in RECON_DEGRADED,
                   "warn": bool(drift is not None and (drift > 30 or drift < -150))}
 
+# ================= DAILY BALANCE, RECONSTRUCTED =================
+# Walk BACKWARD from the block-pinned on-chain balance, subtracting each day's
+# net transfers. Ties to chain at the recent end by construction; the pre-cache
+# holdings + the event-less MENTE burn sit as a constant offset at the oldest day
+# (recon delta) — never spread across the series. Never forward-sum from zero.
+balance_series = None
+try:
+    _bdays = sorted({r["ts"][:10] for r in rows if r["blk"] <= RECON_BLOCK}
+                    | {f["ts"][:10] for f in inflows if f["blk"] <= RECON_BLOCK})
+    _bdays = [d for d in _bdays if d >= "2026-04-25"]        # drop the partial genesis day
+    _today = now.strftime("%Y-%m-%d")
+    series = {}
+    for sym in TOKENS:
+        if BALANCE_RECON.get(sym) is None:
+            continue
+        _out = defaultdict(float); _inc = defaultdict(float)
+        for r in rows:
+            if r["tok"] == sym and r["blk"] <= RECON_BLOCK:
+                _out[r["ts"][:10]] += r["val"]
+        for f in inflows:
+            if f["tok"] == sym and f["blk"] <= RECON_BLOCK:
+                _inc[f["ts"][:10]] += f["val"]
+        _net = {d: _inc[d] - _out[d] for d in _bdays}
+        # backward walk: bal at end of the newest cached day == pinned balance
+        _cached = [d for d in _bdays if d <= max(d2 for d2 in _bdays)]
+        _bal = {}; _b = BALANCE_RECON[sym]
+        for d in reversed(_bdays):
+            _bal[d] = round(_b, 1)
+            _b -= _net[d]
+        _rec_src = RECYCLE_SRC.lower()
+        pts = []
+        for d in _bdays:
+            _r, _rs = day_rate(sym, d + "T12:00:00")
+            row = {"d": d, "qty": _bal[d], "usd": round(_bal[d] * _r, 0), "rsrc": _rs}
+            if sym == "MENTE":
+                row["out"] = round(_out[d], 1)
+                row["in_rec"] = round(sum(f["val"] for f in inflows
+                                          if f["tok"] == "MENTE" and f["blk"] <= RECON_BLOCK
+                                          and f["ts"][:10] == d and f["from"].lower() == _rec_src), 1)
+                row["in_ext"] = round(_inc[d] - row["in_rec"], 1)
+                row["delta"] = round(_net[d], 1)
+            pts.append(row)
+        # today's live row (partial — uses live balance, not end-of-day)
+        if BALANCE.get(sym) is not None:
+            pts.append({"d": _today, "qty": round(BALANCE[sym], 1),
+                        "usd": round(BALANCE[sym] * RATE[sym], 0), "rsrc": RATE_SRC[sym],
+                        "partial": True, **({"delta": None} if sym == "MENTE" else {})})
+        series[sym] = pts
+    # recycle-signal scalars (MENTE)
+    _mente_in = sorted((f["ts"][:10] for f in inflows if f["tok"] == "MENTE"), reverse=True)
+    _mente_rec = sorted((f["ts"][:10] for f in inflows if f["tok"] == "MENTE"
+                         and f["from"].lower() == RECYCLE_SRC.lower()), reverse=True)
+    _mseries = series.get("MENTE", [])
+    _closed = [p for p in _mseries if not p.get("partial")]
+    _decl = None; _dtz = None
+    if len(_closed) >= 8:
+        _last7 = _closed[-7:]
+        _drain = (_closed[-8]["qty"] - _closed[-1]["qty"]) / 7.0     # mean daily change
+        _decl = round(_drain, 1)
+        if _drain < 0 and BALANCE.get("MENTE"):
+            _dtz = int(BALANCE["MENTE"] / -_drain)
+    balance_series = {
+        "tokens": [s for s in TOKENS if s in series],
+        "series": series,
+        "recon_block": RECON_BLOCK,
+        "burn_offset": (recon.get("MENTE") or {}).get("delta"),
+        "last_mente_in": _mente_in[0] if _mente_in else None,
+        "last_mente_recycle": _mente_rec[0] if _mente_rec else None,
+        "mente_decline_7d": _decl, "days_to_zero": _dtz,
+        "recon": {s: recon.get(s) for s in TOKENS},
+    }
+except Exception as _e:
+    print("balance_series failed:", _e)
+
 facts = {"windows": windows, "prev24": prev24, "monthly": monthly, "daily": daily, "hourly": hourly,
+         "balance_series": balance_series,
          "top_recipients": top_recip, "in_sources": in_sources,
          "wallets_all": len(wal_days), "wallets_repeat": repeat_wallets,
          "balance": {s: (round(BALANCE[s], 0) if BALANCE[s] is not None else None) for s in TOKENS},
@@ -969,6 +1044,7 @@ hist.append({"ts": now.strftime("%Y-%m-%dT%H:%M"),
              "moca": round(sum(r["val"] for r in rows if r["tok"] == "MOCA"), 1),
              "creators": S["creators_n"], "rate": RATE["MOCA"],
              "balance": round(BALANCE["MOCA"], 1) if BALANCE["MOCA"] is not None else None,
+             "mente_balance": round(BALANCE["MENTE"], 1) if BALANCE.get("MENTE") is not None else None,
              "runway7": runway7, "runway_adj": runway7})
 json.dump(hist, open(hist_path, "w"))
 
