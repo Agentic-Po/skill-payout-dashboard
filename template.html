@@ -393,8 +393,9 @@ if(F.balance_series&&F.balance_series.tokens&&F.balance_series.tokens.length){
   const days=S[toks[0]].map(p=>p.d);
   const at=(tok,d)=>{const s=S[tok];return s.find(p=>p.d===d);};
   const latest=days[days.length-1];
-  const qty=(tok,d)=>{const p=at(tok,d);return p?p.qty:0;};
-  const usdOf=(tok,d)=>{const p=at(tok,d);return p?p.usd:0;};
+  const cq=q=>Math.max(0,q);                       // a balance can't be negative
+  const qty=(tok,d)=>{const p=at(tok,d);return p?cq(p.qty):0;};
+  const usdOf=(tok,d)=>{const p=at(tok,d);return p?Math.max(0,p.usd):0;};
   const totUsd=d=>toks.reduce((s,t)=>s+(usdOf(t,d)||0),0);
 
   document.getElementById("balSub").innerHTML=`Reconstructed from on-chain transfers, anchored to the verified balance at block ${B.recon_block.toLocaleString()} — not a recorded snapshot.`;
@@ -407,25 +408,29 @@ if(F.balance_series&&F.balance_series.tokens&&F.balance_series.tokens.length){
     `<b>${dISO} UTC</b> · Total balance <b>${usd(totUsd(latest))}</b> = ${parts} `
     +`<span class="pill" title="the reconstructed series ends exactly on the on-chain balance">live, as of ${(SC&&SC.updated)||"now"} · reconstructed = on-chain ✓</span>`;
 
-  // recycle strip — the answer to Po's actual question
-  const dz=B.days_to_zero, dec=B.mente_decline_7d;
+  // recycle strip — the answer to Po's actual question, status-aware
+  const st=B.mente_status, chg=B.mente_change_7d, dz=B.days_to_zero;
+  const mNow=fmt0(qty("MENTE",latest));
+  let line;
+  if(st==="frozen") line=`The MENTE pile is <b>frozen at ${mNow} MENTE</b>: no inflow since <b>${B.last_mente_in||"—"}</b>, no outflow since <b>${B.last_mente_out||"—"}</b>. It neither recycles back nor pays out — it just sits (recent MENTE outflows were swaps to MOCA, the token now being distributed).`;
+  else if(st==="declining") line=`The Treasury's MENTE <b>only declines</b> — the slope below is the recycle gap. Trailing-7-day drain ~<b>${fmt0(-chg)} MENTE/day</b>${dz?`; ~<b>${dz} days</b> to zero with no top-up.`:"."}`;
+  else line=`Treasury MENTE currently at <b>${mNow}</b>.`;
   document.getElementById("balRecycle").innerHTML=
     `<div style="border-left:3px solid var(--warn);padding-left:10px;margin:4px 0 2px">
-       <b>Is MENTE flowing back?</b> Last collector→treasury recycle: <b>${B.last_mente_recycle||"—"}</b>. Last MENTE inflow of any kind: <b>${B.last_mente_in||"—"}</b>.
-       Since then the Treasury's MENTE only declines — the slope below <b>is</b> the recycle gap.
-       ${(dec!=null&&dec<0)?`Trailing-7-day drain ~<b>${fmt0(-dec)} MENTE/day</b>${dz?`; at that pace, ~<b>${dz} days</b> to zero with no top-up.`:"."}`:""}
-     </div>`;
+       <b>Is MENTE flowing back?</b> Last collector→treasury recycle: <b>${B.last_mente_recycle||"—"}</b> — nothing since.
+       ${line}</div>`;
 
   // paired sparklines: MENTE staircase down vs MOCA sawtooth
   const spark=(tok,label,color)=>{
-    const s=S[tok], mx=Math.max(...s.map(p=>p.qty),1), W=s.length, bw=100/W, H=44;
-    const bars=s.map(p=>`<span title="${p.d}: ${fmt0(p.qty)} ${tok}${p.partial?" (live)":""}" style="display:inline-block;width:${bw}%;height:${Math.max(1,p.qty/mx*H)}px;background:${color};opacity:${p.partial?.55:1};margin-right:1px;vertical-align:bottom"></span>`).join("");
+    const s=S[tok], mx=Math.max(...s.map(p=>cq(p.qty)),1), W=s.length, bw=100/W, H=44;
+    const bars=s.map(p=>`<span title="${p.d}: ${fmt0(cq(p.qty))} ${tok}${p.partial?" (live)":""}" style="display:inline-block;width:${bw}%;height:${Math.max(1,cq(p.qty)/mx*H)}px;background:${color};opacity:${p.partial?.55:1};margin-right:1px;vertical-align:bottom"></span>`).join("");
     return `<div style="flex:1;min-width:230px"><div class="sub">${label}</div><div style="height:${H}px;font-size:0;margin-top:3px">${bars}</div><div class="sub">${s[0].d} → ${latest}</div></div>`;
   };
+  const mLabel=B.mente_status==="frozen"?"MENTE — frozen; no recycle in, no pay-out":"MENTE — declines since the recycle leg died ↓";
   document.getElementById("balSpark").innerHTML=
     `<div style="display:flex;gap:20px;flex-wrap:wrap">`
-    +spark("MENTE","MENTE — only declines since the recycle leg died ↓","var(--c-mente)")
-    +(toks.includes("MOCA")?spark("MOCA","MOCA — sawtooth: manual top-ups up, payouts down","var(--c-moca)"):"")
+    +spark("MENTE",mLabel,"var(--c-mente)")
+    +(toks.includes("MOCA")?spark("MOCA","MOCA — the active token: top-ups + swaps in, payouts out","var(--c-moca)"):"")
     +`</div>`;
 
   // table: newest first, MENTE Δ + recycled-in columns
@@ -441,7 +446,7 @@ if(F.balance_series&&F.balance_series.tokens&&F.balance_series.tokens.length){
     const rcell=m?`<td class="r mono"${(m.in_rec||0)===0?' style="color:var(--warn)"':''}>${fmt0(m.in_rec||0)}</td>`:"";
     const part=at(toks[0],d)&&at(toks[0],d).partial;
     return `<tr${part?' style="opacity:.7"':''}><td class="mono">${d.replace(/-/g,"/")}${part?' <span class="sub">live</span>':''}</td>`
-      +toks.map(t=>{const p=at(t,d);return `<td class="r mono">${p?fmt0(p.qty):"—"}</td><td class="r mono" title="${p?p.rsrc:""}">${p?usd(p.usd):"—"}</td>`;}).join("")
+      +toks.map(t=>{const p=at(t,d);return `<td class="r mono">${p?fmt0(cq(p.qty)):"—"}</td><td class="r mono" title="${p?p.rsrc:""}">${p?usd(Math.max(0,p.usd)):"—"}</td>`;}).join("")
       +`<td class="r mono">${usd(totUsd(d))}</td>`+(hasM?dcell+rcell:"")+`</tr>`;
   };
   const revDays=[...days].reverse();
@@ -458,6 +463,7 @@ if(F.balance_series&&F.balance_series.tokens&&F.balance_series.tokens.length){
     +`Balances are rebuilt by walking backward from the verified on-chain balance, subtracting each day's net transfers. `
     +`Pre-cache holdings and ${burn?`~${fmt0(Math.abs(burn))} MENTE of`:"an"} event-less contract burn are carried as a constant offset, so days before the burn may be understated by up to that amount. `
     +`Closed days are priced at that day's immutable rate, never today's. `
+    +(B.moca_ledger_from?`MOCA transfers in the ledger begin ${B.moca_ledger_from}; the wallet held ~0 MOCA before then (shown as 0, not negative). `:"")
     +`SWARM (prior era, ended 2026-04-24) and USDC were never held by this wallet — not shown.`;
 }
 renderDaily(false);
