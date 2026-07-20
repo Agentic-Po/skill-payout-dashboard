@@ -807,6 +807,15 @@ try:
     _ci = defaultdict(float)                       # collector intake, for the sweep rate
     for c in (cog if "cog" in dir() else []):
         _ci[c["ts"][:10]] += c["val"]
+    # collector's own MENTE balance — the ~60% that never leaves under either route
+    _bal = None
+    try:
+        for _b in get(f"https://base.blockscout.com/api/v2/addresses/{COLLECTOR}/token-balances"):
+            if (_b.get("token") or {}).get("address_hash", "").lower() == TOKENS["MENTE"]["addr"]:
+                _bal = int(_b["value"]) / 10 ** int(_b["token"]["decimals"])
+    except Exception as _e:
+        print("collector balance fetch failed:", _e)
+
     _sdays, _rdays = sorted(_sd), sorted(_rd)
     if _sdays:
         # the sweep tracks the PRIOR day's intake far more tightly than same-day
@@ -817,15 +826,35 @@ try:
             if _ci.get(_p):
                 _sh.append(_sd[d] / _ci[_p])
         _cum_i = sum(v for d, v in _ci.items() if d >= _sdays[0])
+        # old route measured on the same cumulative basis, so the two are comparable
+        _rdaily = [d for d in _rdays if d >= "2026-05-21"]           # its daily-cadence phase
+        _rwin = sum(v for d, v in _ci.items() if _rdays and _rdays[0] <= d <= _rdays[-1])
+        # one continuous series across the boundary: intake vs each route
+        _all_days = sorted(set(list(_ci) + _rdays + _sdays))
+        _all_days = [d for d in _all_days if _rdays and d >= _rdays[0]]
+        _mrate = RATE.get("MENTE") or TOKENS["MENTE"]["fallback_rate"]
+        _pre = [v for d, v in _ci.items() if _rdaily and _rdaily[0] <= d <= _rdaily[-1]]
+        _post = [v for d, v in _ci.items() if d >= _sdays[0]]
         sink = {"addr": SINK, "days": len(_sdays), "first": _sdays[0], "last": _sdays[-1],
                 "total": round(sum(_sd.values()), 2),
                 "daily": [{"d": d, "val": round(_sd[d], 2)} for d in _sdays],
+                "series": [{"d": d, "i": round(_ci.get(d, 0), 1),
+                            "r": round(_rd.get(d, 0), 1), "s": round(_sd.get(d, 0), 1)}
+                           for d in _all_days],
+                "boundary": _sdays[0],
                 "out_n": len(_out), "out_total": round(sum(r["val"] for r in _out), 2),
                 "share_median": round(statistics.median(_sh) * 100, 1) if _sh else None,
                 "share_cum": round(sum(_sd.values()) / _cum_i * 100, 1) if _cum_i else None,
                 "recycle_total": round(sum(_rd.values()), 2), "recycle_n": len(_rdays),
                 "recycle_first": _rdays[0] if _rdays else None,
-                "recycle_last": _rdays[-1] if _rdays else None}
+                "recycle_last": _rdays[-1] if _rdays else None,
+                "recycle_share_cum": round(sum(_rd.values()) / _rwin * 100, 1) if _rwin else None,
+                "recycle_span_days": (datetime.strptime(_rdays[-1], "%Y-%m-%d")
+                                      - datetime.strptime(_rdays[0], "%Y-%m-%d")).days + 1 if _rdays else None,
+                "collector_bal": round(_bal, 2) if _bal else None,
+                "rate": _mrate,
+                "intake_pre": round(statistics.mean(_pre)) if _pre else None,
+                "intake_post": round(statistics.mean(_post)) if _post else None}
 except Exception as e:
     print("sink fetch failed:", e)
 
