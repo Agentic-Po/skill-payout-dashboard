@@ -855,6 +855,31 @@ try:
                 "rate": _mrate,
                 "intake_pre": round(statistics.mean(_pre)) if _pre else None,
                 "intake_post": round(statistics.mean(_post)) if _post else None}
+
+        # --- contract audit -------------------------------------------------
+        # DATops is owed a contractual 40% of cognition spend. The old route
+        # delivered 39.7% against total collector intake over ~7 weeks, which is
+        # what validates that denominator; the same base is used for both routes.
+        CONTRACT = 0.40
+        _base_new = _cum_i
+        _base_old = _rwin
+        _exp_new, _got_new = _base_new * CONTRACT, sum(_sd.values())
+        _by_month = {}
+        for d, v in _sd.items():
+            _by_month.setdefault(d[:7], [0.0, 0.0])[0] += v
+        for d, v in _ci.items():
+            if d >= _sdays[0]:
+                _by_month.setdefault(d[:7], [0.0, 0.0])[1] += v
+        sink["contract"] = {
+            "rate": CONTRACT * 100,
+            "old_pct": round(sum(_rd.values()) / _base_old * 100, 1) if _base_old else None,
+            "new_pct": round(_got_new / _base_new * 100, 1) if _base_new else None,
+            "expected": round(_exp_new), "actual": round(_got_new),
+            "variance": round(_got_new - _exp_new),
+            "variance_usd": round((_got_new - _exp_new) * _mrate),
+            "months": [{"m": m, "pct": round(v[0] / v[1] * 100, 1), "short": round(v[1] * CONTRACT - v[0])}
+                       for m, v in sorted(_by_month.items()) if v[1]],
+        }
 except Exception as e:
     print("sink fetch failed:", e)
 
