@@ -212,10 +212,12 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
   </div>
 
   <div class="card" id="sinkCard" style="display:none;border-left:6px solid var(--warn)">
-    <h2>Where collected MENTE goes — recycle cadence</h2>
+    <h2 id="sinkHead">Collected MENTE stopped coming back here</h2>
+    <div id="sinkWho" style="font-size:13px;line-height:1.65;margin:2px 0 12px"></div>
+    <p class="note" id="sinkGov" style="border-left:3px solid var(--warn);padding-left:10px;margin:0 0 12px"><b>No on-chain rule enforces any of this.</b> The collector is a plain key-controlled wallet running a script — whoever holds the key can change the destination or the rate at any time, without notice. Every rate below is <b>observed behaviour, not policy</b>.</p>
     <p class="insight" id="ins-sink"></p>
     <div id="sinkBody"></div>
-    <p class="note">Both legs are measured on-chain. The sweep rate is stated against the <b>previous</b> day's collector intake — the sweep tracks T-1 intake far more tightly than same-day (standard deviation ~10pp vs ~32pp), which is consistent with a nightly job. Treat the rate as measured behaviour, not a published policy: no rule has been confirmed by the platform team.</p>
+    <p class="note" id="sinkFoot"></p>
   </div>
 
   <div class="card" id="registryCard">
@@ -408,31 +410,75 @@ document.getElementById("recipT").innerHTML=`<thead><tr><th>#</th><th>Wallet</th
  F.top_recipients.map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${c.n.toLocaleString()}</td><td class="r mono">${c.days}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${c.usd.toLocaleString()}</td><td class="r mono">${c.share}%</td></tr>`).join("")+`</tbody>`;
 document.getElementById("srcT").innerHTML=`<thead><tr><th>Source wallet</th><th class="r">Transfers</th><th class="r">First → last</th><th class="r">USD</th></tr></thead><tbody>`+
  F.in_sources.map(c=>`<tr><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${c.n.toLocaleString()}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${c.usd.toLocaleString()}</td></tr>`).join("")+`</tbody>`;
-// ---- collector outflow: recycle leg vs idle sink ----
+// ---- collector outflow: where collected MENTE goes ----
 if(DATA.sink&&DATA.sink.days){
-  const S=DATA.sink, card=document.getElementById("sinkCard"); card.style.display="";
-  const fmt=n=>n.toLocaleString(undefined,{maximumFractionDigits:0});
-  const mx=Math.max(...S.daily.map(d=>d.val),1);
-  const bars=S.daily.map(d=>`<span title="${d.d}: ${fmt(d.val)} MENTE" style="display:inline-block;width:${(100/S.daily.length).toFixed(2)}%;height:${Math.max(2,d.val/mx*46).toFixed(0)}px;background:var(--warn);margin-right:1px;vertical-align:bottom"></span>`).join("");
+  const S=DATA.sink; document.getElementById("sinkCard").style.display="";
+  const f=n=>n.toLocaleString(undefined,{maximumFractionDigits:0});
+  const usd=n=>"$"+(n*(S.rate||0)).toLocaleString(undefined,{maximumFractionDigits:0});
+  const shortA=a=>a.slice(0,6)+"…"+a.slice(-4);
+  const SINK_NAME="DATops sweep wallet";
+  const D=(a,t)=>`<a href="https://basescan.org/address/${a}" target="_blank" class="mono" title="${t}">${shortA(a)}</a>`;
+  const COLL="0xd85096fAeC1aC03075667B4C1a1661F5623Bf111", TRE="0xBD956171F5B50936f0Ad1C4db80c022bd2442519";
+
+  document.getElementById("sinkHead").textContent=`Collected MENTE stopped coming back here on ${S.recycle_last}`;
+
+  // who's who — every wallet named before it is used
+  document.getElementById("sinkWho").innerHTML=
+    `<div><b>Collector</b> ${D(COLL,COLL)} — where MENTE lands when a user makes a request; the demand-side sink.${S.collector_bal?` Holds <b>${f(S.collector_bal)} MENTE</b> (${usd(S.collector_bal)}).`:""}</div>
+     <div><b>Minds Treasury Distribution</b> ${D(TRE,TRE)} — <b>the wallet this dashboard is about</b>; pays credits out to mind wallets.</div>
+     <div><b>${SINK_NAME}</b> ${D(S.addr,S.addr)} — receives the current daily sweep. <span style="color:var(--warn)">Attributed to DATops — not verified on-chain.</span> Zero outbound, ever.</div>`;
+
+  // one continuous series across the boundary: intake area + the active route's bars
+  let chart="";
+  if(S.series&&S.series.length){
+    const H=64, W=S.series.length, im=Math.max(...S.series.map(x=>x.i),1);
+    const bw=100/W;
+    chart=S.series.map((x,i)=>{
+      const after=x.d>=S.boundary, routed=after?x.s:x.r;
+      const ih=Math.max(1,x.i/im*H), rh=Math.max(0,routed/im*H);
+      return `<span title="${x.d} intake ${f(x.i)} ${after?"swept":"returned"} ${f(routed)}" `
+        +`style="position:relative;display:inline-block;width:${bw}%;height:${H}px;vertical-align:bottom">`
+        +`<span style="position:absolute;bottom:0;left:0;right:1px;height:${ih}px;background:var(--line)"></span>`
+        +`<span style="position:absolute;bottom:0;left:0;right:1px;height:${rh}px;background:${after?"var(--warn)":"var(--c-in)"}"></span></span>`;
+    }).join("");
+    chart=`<div style="height:${H}px;margin:12px 0 2px;font-size:0">${chart}</div>`
+      +`<div class="sub" style="display:flex;gap:16px;flex-wrap:wrap"><span><span style="display:inline-block;width:9px;height:9px;background:var(--line)"></span> collector intake</span>`
+      +`<span><span style="display:inline-block;width:9px;height:9px;background:var(--c-in)"></span> returned to treasury (to ${S.recycle_last})</span>`
+      +`<span><span style="display:inline-block;width:9px;height:9px;background:var(--warn)"></span> swept away (from ${S.boundary})</span></div>`;
+  }
+
   const idle=S.out_n===0;
+  const perDay=S.total/S.days;
   document.getElementById("sinkBody").innerHTML=
-    `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:10px 0 4px">
-       <div><div class="sub">Leg 1 — collector → this treasury <b>(ENDED)</b></div>
-         <div class="mono" style="font-size:20px">${fmt(S.recycle_total)} MENTE</div>
-         <div class="sub">${S.recycle_n} days · ${S.recycle_first} → <b>${S.recycle_last}</b> · daily from 2026-05-21, then stopped</div></div>
-       <div><div class="sub">Leg 2 — collector → holding wallet <b>(ACTIVE)</b></div>
-         <div class="mono" style="font-size:20px">${fmt(S.total)} MENTE</div>
-         <div class="sub">${S.days} days · ${S.first} → ${S.last} · daily, ~01:00 UTC${S.share_median?` · median ${S.share_median}% of prior-day intake`:""}</div></div>
+    `<p class="insight" style="border-color:var(--ink3)">&rarr; <b>The rate barely changed; the destination did.</b> About two-fifths of collector intake left under the old route, about a third under the new one. The other ~60% has never left the collector at all — under either route.</p>
+     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px;margin:12px 0 2px">
+       <div><div class="sub">Old route — collector &rarr; Minds Treasury Distribution<br><i>stopped ${S.recycle_last}</i></div>
+         <div class="mono" style="font-size:20px;color:var(--c-in)">+${f(S.recycle_total)} MENTE</div>
+         <div class="sub">${usd(S.recycle_total)} · returned here. ${S.recycle_n} active days across ${S.recycle_first}–${S.recycle_last}${S.recycle_span_days?` (${S.recycle_span_days} calendar days; daily only from 2026-05-21)`:""}.${S.recycle_share_cum?` Cumulative <b>${S.recycle_share_cum}%</b> of collector intake.`:""}</div></div>
+       <div><div class="sub">Current route — collector &rarr; ${SINK_NAME}<br><i>active since ${S.first}</i></div>
+         <div class="mono" style="font-size:20px;color:var(--warn)">−${f(S.total)} MENTE</div>
+         <div class="sub">${usd(S.total)} · left the loop, never returned. ${S.days} days, ${S.first}–${S.last}, daily at ~01:00 UTC. Cumulative <b>${S.share_cum}%</b> of collector intake.</div></div>
+       <div><div class="sub">Never left — stays in the collector</div>
+         <div class="mono" style="font-size:20px">${S.collector_bal?f(S.collector_bal):"—"} MENTE</div>
+         <div class="sub">${S.collector_bal?usd(S.collector_bal)+" · ":""}roughly 60% of everything users spend has always stayed here, in both periods. Largest pool on this page.</div></div>
      </div>
-     <div style="height:48px;margin:8px 0 2px">${bars}</div>
-     <div class="sub">Daily sweep to <span class="mono">${S.addr}</span> · cumulative ${S.share_cum}% of collector intake since ${S.first}</div>
-     <p class="note" style="margin-top:10px;color:${idle?"var(--warn)":"inherit"}">
-       <b>${idle?"This wallet has never sent anything out":`⚠ This wallet has made ${S.out_n} outbound MENTE transfer(s), totalling ${fmt(S.out_total)}`}.</b>
-       Leg 2 began <b>${S.first}</b>, the day after Leg 1 stopped (<b>${S.recycle_last}</b>) — a redirect of the existing daily leg, not an additional flow.
-       While it continues, collected credits do <b>not</b> return to this treasury, so the recycled share of inflow is historical.</p>`;
+     ${chart}
+     <div class="sub" style="margin-top:6px">Daily sweep to the ${SINK_NAME} ${shortA(S.addr)} · ${S.share_cum}% of collector intake since ${S.first}.${(S.intake_pre&&S.intake_post)?` Collector intake also fell <b>${Math.round((1-S.intake_post/S.intake_pre)*100)}%</b> across the boundary (${f(S.intake_pre)} → ${f(S.intake_post)} MENTE/day) — smaller bars reflect <b>lower usage</b>, not a lower sweep rate.`:""}</div>
+     <p class="note" style="margin-top:10px">
+       <b>Nothing new started.</b> One existing daily transfer changed destination: the transfer into Minds Treasury Distribution stopped on <b>${S.recycle_last}</b>, and on <b>${S.first}</b> the same daily transfer restarted pointing at ${shortA(S.addr)}.
+       Outbound transactions from that wallet since ${S.first}: <b>${idle?"zero":S.out_n}</b>. Ownership is not verifiable on-chain, so treat the balance as <b>unreconciled</b> until the platform team confirms custody.
+       At the current pace the sweep runs ~${f(perDay)} MENTE/day (~${usd(perDay)}/day) — a ceiling, not a forecast, since usage is falling.
+       While this continues, Minds Treasury Distribution receives nothing back, and any “recycled inflow” figure elsewhere on this dashboard describes ${S.recycle_first}–${S.recycle_last} only.</p>`;
+
+  document.getElementById("sinkFoot").innerHTML=
+    `Amounts and timing are on-chain facts; <b>control is not</b>. The collector is an EOA with EIP-7702 delegation to a <i>stateless</i> delegator, so no on-chain rule constrains the split — it is a script, and the destination wallet's owner is unverified.
+     Rates above are cumulative shares of collector intake, stated on the same basis for both routes. On a prior-day basis the current route's median is ${S.share_median}%; the sweep tracks prior-day intake far more tightly than same-day (σ ~10pp vs ~32pp), consistent with a nightly job.
+     The wallet is referred to internally as the “40% wallet”; measured behaviour is below that. No rate has been confirmed by the platform team.`;
+
   const ins=document.getElementById("ins-sink");
-  if(ins)ins.innerHTML="&rarr; "+`Since ${S.first} the recycle loop is open, not closed: ${fmt(S.total)} MENTE (${S.share_cum}% of collector intake) has been swept daily to a wallet that has never spent it, while treasury recycling stopped on ${S.recycle_last}.`;
+  if(ins)ins.innerHTML=`&rarr; On <b>${S.first}</b> the daily sweep out of the collector was redirected: same job, similar share, new destination. <b>${f(S.total)} MENTE</b> (${usd(S.total)}) has since accumulated at the ${SINK_NAME} and <b>none of it has ever moved</b>. Inflow to Minds Treasury Distribution from user spending is currently <b>zero</b>.`;
 }
+
 // ---- address registry: full addresses, grouped, copy-on-click ----
 if(DATA.registry&&DATA.registry.length){
   const R=DATA.registry, order=["Treasury","Collector","Funding sources","Recipients","Token contracts","Liquidity","Infrastructure","Other labeled","Warnings"];
