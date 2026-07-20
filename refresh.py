@@ -773,6 +773,62 @@ gaps = [
 ]
 guard["dist_pace"] = dist_pace
 
+# ================= COLLECTOR OUTFLOW — recycle vs idle sink =================
+# Collected MENTE used to recycle back into this treasury daily. On 2026-06-19 that
+# leg was redirected to a holding wallet that has never sent anything out. Both legs
+# are measured here so the handover (and the fact the loop no longer closes) is visible.
+SINK = "0xf0961686bC71B8A1f42E7888bD8160e9B6240f40"
+sink = None
+try:
+    def _sweep(direction):
+        acc, params = [], ""
+        for _ in range(20):
+            dd = get(f"https://base.blockscout.com/api/v2/addresses/{SINK}/token-transfers?filter={direction}" + params)
+            b = dd.get("items", [])
+            acc += [{"ts": i["timestamp"][:19],
+                     "val": int(i["total"]["value"]) / 10 ** int(i["total"].get("decimals") or DECIMALS["MENTE"]),
+                     "cp": (i["from"] if direction == "to" else i["to"])["hash"]}
+                    for i in b if i["token"].get("address_hash", "").lower() == TOKENS["MENTE"]["addr"]]
+            if not b or not dd.get("next_page_params"):
+                break
+            params = "&" + "&".join(f"{k}={v}" for k, v in dd["next_page_params"].items())
+            time.sleep(0.1)
+        return acc
+
+    _in, _out = _sweep("to"), _sweep("from")
+    _sd = defaultdict(float)
+    for r in _in:
+        if r["cp"].lower() == COLLECTOR.lower():
+            _sd[r["ts"][:10]] += r["val"]
+    _rd = defaultdict(float)                       # the old leg: collector -> treasury
+    for f in inflows:
+        if f["from"].lower() == COLLECTOR.lower():
+            _rd[f["ts"][:10]] += f["val"]
+    _ci = defaultdict(float)                       # collector intake, for the sweep rate
+    for c in (cog if "cog" in dir() else []):
+        _ci[c["ts"][:10]] += c["val"]
+    _sdays, _rdays = sorted(_sd), sorted(_rd)
+    if _sdays:
+        # the sweep tracks the PRIOR day's intake far more tightly than same-day
+        # (stdev ~10pp vs ~32pp), so the rate is stated on a T-1 basis.
+        _sh = []
+        for d in _sdays:
+            _p = (datetime.strptime(d, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+            if _ci.get(_p):
+                _sh.append(_sd[d] / _ci[_p])
+        _cum_i = sum(v for d, v in _ci.items() if d >= _sdays[0])
+        sink = {"addr": SINK, "days": len(_sdays), "first": _sdays[0], "last": _sdays[-1],
+                "total": round(sum(_sd.values()), 2),
+                "daily": [{"d": d, "val": round(_sd[d], 2)} for d in _sdays],
+                "out_n": len(_out), "out_total": round(sum(r["val"] for r in _out), 2),
+                "share_median": round(statistics.median(_sh) * 100, 1) if _sh else None,
+                "share_cum": round(sum(_sd.values()) / _cum_i * 100, 1) if _cum_i else None,
+                "recycle_total": round(sum(_rd.values()), 2), "recycle_n": len(_rdays),
+                "recycle_first": _rdays[0] if _rdays else None,
+                "recycle_last": _rdays[-1] if _rdays else None}
+except Exception as e:
+    print("sink fetch failed:", e)
+
 # ================= ADDRESS REGISTRY =================
 # Every material participant in the loop, with the FULL address. The rest of the
 # page truncates to 0xXXXXXXXX…XXXX, which is unsafe here: the collector has a
@@ -784,7 +840,7 @@ def _reg(addr, role, group, warn=False):
 
 registry = [
     _reg(WALLET, "Treasury Distribution wallet — the subject of this dashboard", "Treasury"),
-    _reg(COLLECTOR, "Cognition Credits collector — minds pay MENTE here per request; recycles to treasury", "Collector"),
+    _reg(COLLECTOR, "Cognition Credits collector — minds pay MENTE here per request; recycled to treasury until 2026-06-18, now swept to the holding wallet below", "Collector"),
     _reg(TOKENS["MENTE"]["addr"], "MENTE token contract — the current cognition credit", "Token contracts"),
     _reg(TOKENS["MOCA"]["addr"], "MOCA token contract — counted by USD value, auto-swaps to MENTE", "Token contracts"),
     _reg("0xea87169699dabd028a78d4b91544b4298086baf6", "SWARM token contract — generation-1 credit (Ethoswarm), migrated ~Apr 2026", "Token contracts"),
@@ -795,6 +851,7 @@ registry = [
     _reg("0x8004a169fb4a3325136eb29fa0ceb6d2e539a432", "AgentIdentity registry — ERC-8004 era (historic, economically inert)", "Infrastructure"),
     _reg("0x4d3021a52b31ffafde3c46450d02c72807c3a178", "Minds team Fireblocks wallet — manual MOCA top-ups", "Funding sources"),
     _reg("0xf605dbb5626dfc1448cee33e2e1221103021468f", "Primary MENTE funder — OWNER UNCONFIRMED, identification open", "Funding sources"),
+    _reg(SINK, "Collector sweep destination — receives a daily MENTE sweep from the collector since 2026-06-19; has never sent anything out", "Collector"),
     _reg("0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B", "EIP-7702 delegator implementation the treasury EOA delegates to", "Infrastructure"),
     _reg("0x45d0cEAd7c0a2E1a0528C4131A2d95DE9a394839", "Early MENTE funder (Apr 2026) — unidentified; also spent 100k MENTE into the collector", "Funding sources"),
     _reg("0xbDCb95A80d4C770fa811B1FAF0bb4Cf204d310b5", "Early MENTE funder (Apr–May 2026) — unidentified", "Funding sources"),
@@ -834,7 +891,7 @@ for _r in registry:
         _r["collision"] = "short"      # ambiguous in the 0xXXXX…XXXX diagram/prose form
 
 data = {"scope": scope, "facts": facts, "infer": infer, "server": server, "stripe_snap": stripe_snap,
-        "insights": insights, "open_items": open_items, "gaps": gaps, "registry": registry}
+        "insights": insights, "open_items": open_items, "gaps": gaps, "registry": registry, "sink": sink}
 
 json.dump(STATE, open(RATES_PATH, "w"), indent=0)
 
