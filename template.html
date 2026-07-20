@@ -211,6 +211,13 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <div class="scroll"><table id="srcT"></table></div>
   </div>
 
+  <div class="card" id="sinkCard" style="display:none;border-left:6px solid var(--c-out)">
+    <h2>Where collected MENTE goes — recycle cadence</h2>
+    <p class="insight" id="ins-sink"></p>
+    <div id="sinkBody"></div>
+    <p class="note">Both legs are measured on-chain. The sweep rate is stated against the <b>previous</b> day's collector intake — the sweep tracks T-1 intake far more tightly than same-day (standard deviation ~10pp vs ~32pp), which is consistent with a nightly job. Treat the rate as measured behaviour, not a published policy: no rule has been confirmed by the platform team.</p>
+  </div>
+
   <div class="card" id="registryCard">
     <h2>Address registry — every wallet in the loop</h2>
     <p class="note">Full, untruncated addresses for every material participant. Everywhere else this page shortens addresses — tables to <span class="mono">0xd85096…f111</span>, the flow diagram and prose to <span class="mono">0xd850…f111</span>. <b>The short form is not a safe identifier</b>: the Cognition Credits collector and its address-poisoning mimic are identical in it. Anything flagged <span class="pill" style="background:var(--c-out);color:#fff">ambiguous when shortened</span> must be matched in full. Click any address to copy it.</p>
@@ -401,6 +408,31 @@ document.getElementById("recipT").innerHTML=`<thead><tr><th>#</th><th>Wallet</th
  F.top_recipients.map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${c.n.toLocaleString()}</td><td class="r mono">${c.days}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${c.usd.toLocaleString()}</td><td class="r mono">${c.share}%</td></tr>`).join("")+`</tbody>`;
 document.getElementById("srcT").innerHTML=`<thead><tr><th>Source wallet</th><th class="r">Transfers</th><th class="r">First → last</th><th class="r">USD</th></tr></thead><tbody>`+
  F.in_sources.map(c=>`<tr><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${c.n.toLocaleString()}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${c.usd.toLocaleString()}</td></tr>`).join("")+`</tbody>`;
+// ---- collector outflow: recycle leg vs idle sink ----
+if(DATA.sink&&DATA.sink.days){
+  const S=DATA.sink, card=document.getElementById("sinkCard"); card.style.display="";
+  const fmt=n=>n.toLocaleString(undefined,{maximumFractionDigits:0});
+  const mx=Math.max(...S.daily.map(d=>d.val),1);
+  const bars=S.daily.map(d=>`<span title="${d.d}: ${fmt(d.val)} MENTE" style="display:inline-block;width:${(100/S.daily.length).toFixed(2)}%;height:${Math.max(2,d.val/mx*46).toFixed(0)}px;background:var(--c-out);margin-right:1px;vertical-align:bottom"></span>`).join("");
+  const idle=S.out_n===0;
+  document.getElementById("sinkBody").innerHTML=
+    `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:10px 0 4px">
+       <div><div class="sub">Leg 1 — collector → this treasury <b>(ENDED)</b></div>
+         <div class="mono" style="font-size:20px">${fmt(S.recycle_total)} MENTE</div>
+         <div class="sub">${S.recycle_n} days · ${S.recycle_first} → <b>${S.recycle_last}</b> · daily from 2026-05-21, then stopped</div></div>
+       <div><div class="sub">Leg 2 — collector → holding wallet <b>(ACTIVE)</b></div>
+         <div class="mono" style="font-size:20px">${fmt(S.total)} MENTE</div>
+         <div class="sub">${S.days} days · ${S.first} → ${S.last} · daily, ~01:00 UTC${S.share_median?` · median ${S.share_median}% of prior-day intake`:""}</div></div>
+     </div>
+     <div style="height:48px;margin:8px 0 2px">${bars}</div>
+     <div class="sub">Daily sweep to <span class="mono">${S.addr}</span> · cumulative ${S.share_cum}% of collector intake since ${S.first}</div>
+     <p class="note" style="margin-top:10px;color:${idle?"var(--c-out)":"inherit"}">
+       <b>${idle?"This wallet has never sent anything out":`⚠ This wallet has made ${S.out_n} outbound MENTE transfer(s), totalling ${fmt(S.out_total)}`}.</b>
+       Leg 2 began <b>${S.first}</b>, the day after Leg 1 stopped (<b>${S.recycle_last}</b>) — a redirect of the existing daily leg, not an additional flow.
+       While it continues, collected credits do <b>not</b> return to this treasury, so the recycled share of inflow is historical.</p>`;
+  const ins=document.getElementById("ins-sink");
+  if(ins)ins.innerHTML="&rarr; "+`Since ${S.first} the recycle loop is open, not closed: ${fmt(S.total)} MENTE (${S.share_cum}% of collector intake) has been swept daily to a wallet that has never spent it, while treasury recycling stopped on ${S.recycle_last}.`;
+}
 // ---- address registry: full addresses, grouped, copy-on-click ----
 if(DATA.registry&&DATA.registry.length){
   const R=DATA.registry, order=["Treasury","Collector","Funding sources","Recipients","Token contracts","Liquidity","Infrastructure","Other labeled","Warnings"];
