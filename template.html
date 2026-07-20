@@ -211,7 +211,12 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <div class="scroll"><table id="srcT"></table></div>
   </div>
 
-  
+  <div class="card" id="registryCard">
+    <h2>Address registry — every wallet in the loop</h2>
+    <p class="note">Full, untruncated addresses for every material participant. Everywhere else this page shortens addresses — tables to <span class="mono">0xd85096…f111</span>, the flow diagram and prose to <span class="mono">0xd850…f111</span>. <b>The short form is not a safe identifier</b>: the Cognition Credits collector and its address-poisoning mimic are identical in it. Anything flagged <span class="pill" style="background:var(--c-out);color:#fff">ambiguous when shortened</span> must be matched in full. Click any address to copy it.</p>
+    <div class="scroll"><table id="regT"></table></div>
+  </div>
+
 
   <p class="sect" id="serverSect" style="display:none">Server-recorded — platform events (PostHog · T+2 settled)</p>
   <div class="card" id="stripeCard" style="display:none;border:1.5px solid var(--c-in);border-left:6px solid var(--c-in)">
@@ -396,6 +401,29 @@ document.getElementById("recipT").innerHTML=`<thead><tr><th>#</th><th>Wallet</th
  F.top_recipients.map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${c.n.toLocaleString()}</td><td class="r mono">${c.days}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${c.usd.toLocaleString()}</td><td class="r mono">${c.share}%</td></tr>`).join("")+`</tbody>`;
 document.getElementById("srcT").innerHTML=`<thead><tr><th>Source wallet</th><th class="r">Transfers</th><th class="r">First → last</th><th class="r">USD</th></tr></thead><tbody>`+
  F.in_sources.map(c=>`<tr><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${c.n.toLocaleString()}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${c.usd.toLocaleString()}</td></tr>`).join("")+`</tbody>`;
+// ---- address registry: full addresses, grouped, copy-on-click ----
+if(DATA.registry&&DATA.registry.length){
+  const R=DATA.registry, order=["Treasury","Collector","Funding sources","Recipients","Token contracts","Liquidity","Infrastructure","Other labeled","Warnings"];
+  const groups=[...new Set(R.map(r=>r.group))].sort((a,b)=>order.indexOf(a)-order.indexOf(b));
+  let body="";
+  groups.forEach(g=>{
+    body+=`<tr class="mrow"><td colspan="3">${g}</td></tr>`;
+    R.filter(r=>r.group===g).forEach(r=>{
+      const warn=r.warn?`style="color:var(--c-out)"`:"";
+      const flag=r.collision?` <span class="pill" style="background:var(--c-out);color:#fff" title="${r.collision==="table"?"Another address is identical even in the 0xXXXXXX…XXXX table form":"Another address is identical in the short 0xXXXX…XXXX form used by the flow diagram and prose"}">ambiguous when shortened${r.collision==="table"?"":" (short form)"}</span>`:"";
+      body+=`<tr><td class="mono" ${warn}><span class="copyaddr" data-a="${r.addr}" title="Click to copy the full address" style="cursor:pointer;border-bottom:1px dotted currentColor">${r.addr}</span></td>`
+          +`<td ${warn}>${r.warn?"⚠ ":""}${r.role}${flag}</td>`
+          +`<td class="r mono"><a href="https://basescan.org/address/${r.addr}" target="_blank">basescan ↗</a></td></tr>`;
+    });
+  });
+  document.getElementById("regT").innerHTML=`<thead><tr><th>Address (full)</th><th>Role</th><th class="r">Explorer</th></tr></thead><tbody>${body}</tbody>`;
+  document.getElementById("regT").addEventListener("click",e=>{
+    const t=e.target.closest(".copyaddr"); if(!t)return;
+    navigator.clipboard.writeText(t.dataset.a).then(()=>{
+      const o=t.textContent; t.textContent="copied ✓"; setTimeout(()=>{t.textContent=o;},900);
+    });
+  });
+}else{const rc=document.getElementById("registryCard");if(rc)rc.style.display="none";}
 // ---- guided-view: insights, diagram numbers, register ----
 if(DATA.insights){for(const[k,v]of Object.entries(DATA.insights)){const el=document.getElementById("ins-"+k);if(el)el.innerHTML="&rarr; "+v;}}
 {const wA=F.windows[3];
