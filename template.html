@@ -135,7 +135,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
         <line x1="540" y1="224" x2="540" y2="190" stroke="var(--ink3)" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr)"/>
         <text x="550" y="212" font-size="11" fill="var(--ink2)">swap when MENTE empty</text>
         <path d="M 930 188 L 930 302 Q 930 310 922 310 L 158 310 Q 150 310 150 302 L 150 192" stroke="var(--c-in)" stroke-width="1.5" fill="none" stroke-dasharray="6 3" marker-end="url(#arrG)"/>
-        <text x="790" y="326" text-anchor="middle" font-size="11" fill="var(--c-in)">collected MENTE recycles into the treasury <tspan id="nRec" font-weight="700"></tspan></text>
+        <text x="790" y="326" text-anchor="middle" font-size="11" fill="var(--c-in)">collected MENTE recycled into the treasury <tspan id="nRec" font-weight="700"></tspan><tspan id="nRecEnd" font-weight="700" fill="var(--warn)"></tspan></text>
       </g>
     </svg></div>
     <details style="margin-top:6px"><summary class="showmore" style="display:block">how credits work, in words</summary>
@@ -317,7 +317,7 @@ document.getElementById("gen").textContent=SC.generated;
  const consPct=(F.cognition&&F.cognition.total_usd)?Math.round(F.cognition.total_usd/wA.out_usd*100):null;
  const floatD=DATA.infer.guard.runway_total;
  document.getElementById("plainStrip").innerHTML=
-  `<b>In one sentence:</b> since ${F.range.from} this wallet has distributed <b>$${wA.out_usd.toLocaleString(undefined,{maximumFractionDigits:0})}</b> of token credits and rewards into the Minds ecosystem${consPct?` — and <b>${consPct}%</b> of it has already been spent on actual cognition`:""}. The wallet holds ~<b>${floatD||"?"} days</b> of float and is refilled manually ($${(wA.in_recycled_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} of lifetime inflow is usage fees recycling back, $${(wA.in_external_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} manual funding) — if it empties, top-up fulfillment including Stripe stops. <a href="#registerCard" class="pill" style="border-color:var(--acc);color:var(--acc);font-weight:600">${openN} open item${openN===1?"":"s"} ↓</a>`;
+  `<b>In one sentence:</b> since ${F.range.from} this wallet has distributed <b>$${wA.out_usd.toLocaleString(undefined,{maximumFractionDigits:0})}</b> of token credits and rewards into the Minds ecosystem${consPct?` — and <b>${consPct}%</b> of it has already been spent on actual cognition`:""}. The wallet holds ~<b>${floatD||"?"} days</b> of float and is refilled manually ($${(wA.in_recycled_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} of lifetime inflow was usage fees recycling back${DATA.sink&&DATA.sink.recycle_last?` — that leg stopped ${DATA.sink.recycle_last}; collected credits now accumulate in a holding wallet instead`:""}, $${(wA.in_external_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} manual funding) — if it empties, top-up fulfillment including Stripe stops. <a href="#registerCard" class="pill" style="border-color:var(--acc);color:var(--acc);font-weight:600">${openN} open item${openN===1?"":"s"} ↓</a>`;
 }
 // scope + reconciliation
 const rec=Object.entries(F.recon).map(([s,r])=>{if(!r)return`${s} n/a`;
@@ -460,7 +460,7 @@ if(DATA.registry&&DATA.registry.length){
 if(DATA.insights){for(const[k,v]of Object.entries(DATA.insights)){const el=document.getElementById("ins-"+k);if(el)el.innerHTML="&rarr; "+v;}}
 {const wA=F.windows[3];
  const put=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=" · $"+v.toLocaleString(undefined,{maximumFractionDigits:0})+" lifetime";};
- put("nDist",wA.out_usd);put("nExt",wA.in_external_usd||0);put("nRec",wA.in_recycled_usd||0);
+ put("nDist",wA.out_usd);put("nExt",wA.in_external_usd||0);put("nRec",wA.in_recycled_usd||0);if(DATA.sink&&DATA.sink.recycle_last){const _e=document.getElementById("nRecEnd");if(_e)_e.textContent=" · ENDED "+DATA.sink.recycle_last;}
  if(F.cognition)put("nCons",F.cognition.total_usd);
  const fc=document.getElementById("flowCard"),fp=document.getElementById("flowPill");
  try{if(localStorage.getItem("flowOpen")==="0")fc.removeAttribute("open");}catch(e){}
