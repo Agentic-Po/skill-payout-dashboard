@@ -588,19 +588,23 @@ try:
                         "usd": round(BALANCE[sym] * RATE[sym], 0), "rsrc": RATE_SRC[sym],
                         "partial": True, **({"delta": None} if sym == "MENTE" else {})})
         series[sym] = pts
-    # recycle-signal scalars (MENTE)
+    # recycle-signal scalars (MENTE). Signed daily change: newest − 7d-ago.
+    # negative = draining, ~0 = frozen, positive = growing.
     _mente_in = sorted((f["ts"][:10] for f in inflows if f["tok"] == "MENTE"), reverse=True)
     _mente_rec = sorted((f["ts"][:10] for f in inflows if f["tok"] == "MENTE"
                          and f["from"].lower() == RECYCLE_SRC.lower()), reverse=True)
-    _mseries = series.get("MENTE", [])
-    _closed = [p for p in _mseries if not p.get("partial")]
-    _decl = None; _dtz = None
+    _mente_out_days = sorted((r["ts"][:10] for r in rows if r["tok"] == "MENTE"), reverse=True)
+    _closed = [p for p in series.get("MENTE", []) if not p.get("partial")]
+    _chg = None; _dtz = None; _status = None
     if len(_closed) >= 8:
-        _last7 = _closed[-7:]
-        _drain = (_closed[-8]["qty"] - _closed[-1]["qty"]) / 7.0     # mean daily change
-        _decl = round(_drain, 1)
-        if _drain < 0 and BALANCE.get("MENTE"):
-            _dtz = int(BALANCE["MENTE"] / -_drain)
+        _chg = round((_closed[-1]["qty"] - _closed[-8]["qty"]) / 7.0, 1)   # signed /day
+        _bnow = BALANCE.get("MENTE") or _closed[-1]["qty"]
+        if abs(_chg) < max(1.0, _bnow * 0.001):
+            _status = "frozen"
+        elif _chg < 0:
+            _status = "declining"; _dtz = int(_bnow / -_chg) if _chg else None
+        else:
+            _status = "growing"
     balance_series = {
         "tokens": [s for s in TOKENS if s in series],
         "series": series,
@@ -608,7 +612,9 @@ try:
         "burn_offset": (recon.get("MENTE") or {}).get("delta"),
         "last_mente_in": _mente_in[0] if _mente_in else None,
         "last_mente_recycle": _mente_rec[0] if _mente_rec else None,
-        "mente_decline_7d": _decl, "days_to_zero": _dtz,
+        "last_mente_out": _mente_out_days[0] if _mente_out_days else None,
+        "mente_change_7d": _chg, "mente_status": _status, "days_to_zero": _dtz,
+        "moca_ledger_from": (min((r["ts"][:10] for r in rows if r["tok"] == "MOCA"), default=None)),
         "recon": {s: recon.get(s) for s in TOKENS},
     }
 except Exception as _e:
