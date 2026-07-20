@@ -772,8 +772,64 @@ gaps = [
     {"missing": "Fireblocks wallet scope", "effect": "the $50K manual-support wallet is invisible to this dashboard", "unlocks": "whole-treasury view; no separate manual attestation needed"},
 ]
 guard["dist_pace"] = dist_pace
+
+# ================= ADDRESS REGISTRY =================
+# Every material participant in the loop, with the FULL address. The rest of the
+# page truncates to 0xXXXXXXXX…XXXX, which is unsafe here: the collector has a
+# poisoning mimic that is identical under that truncation. Built from the pinned
+# constants + KNOWN, then auto-extended with any high-volume counterparty that
+# has no label yet, so the panel stays complete as new wallets appear.
+def _reg(addr, role, group, warn=False):
+    return {"addr": addr, "role": role, "group": group, "warn": warn}
+
+registry = [
+    _reg(WALLET, "Treasury Distribution wallet — the subject of this dashboard", "Treasury"),
+    _reg(COLLECTOR, "Cognition Credits collector — minds pay MENTE here per request; recycles to treasury", "Collector"),
+    _reg(TOKENS["MENTE"]["addr"], "MENTE token contract — the current cognition credit", "Token contracts"),
+    _reg(TOKENS["MOCA"]["addr"], "MOCA token contract — counted by USD value, auto-swaps to MENTE", "Token contracts"),
+    _reg("0xea87169699dabd028a78d4b91544b4298086baf6", "SWARM token contract — generation-1 credit (Ethoswarm), migrated ~Apr 2026", "Token contracts"),
+    _reg(MARKET_POOLS["MENTE"][0][0], "MENTE price-oracle pool — base leg", "Liquidity"),
+    _reg(MARKET_POOLS["MOCA"][0][0], "MOCA/MENTE pool — LP'd by treasury; price oracle", "Liquidity"),
+    _reg("0x1c5ebb794335b72d773df2fd8f80f3d1afbb75dd", "Gas funder — sends ETH slivers so cognition spends are gasless for users", "Infrastructure"),
+    _reg("0x7b85e278a7446d8349b066e835d3057d895aecff", "Registration-era gas funder (historic)", "Infrastructure"),
+    _reg("0x8004a169fb4a3325136eb29fa0ceb6d2e539a432", "AgentIdentity registry — ERC-8004 era (historic, economically inert)", "Infrastructure"),
+    _reg("0x4d3021a52b31ffafde3c46450d02c72807c3a178", "Minds team Fireblocks wallet — manual MOCA top-ups", "Funding sources"),
+    _reg("0xf605dbb5626dfc1448cee33e2e1221103021468f", "Primary MENTE funder — OWNER UNCONFIRMED, identification open", "Funding sources"),
+    _reg("0xd8506866faadfdcfb9600479ba7dc652a203f111", "ADDRESS-POISONING MIMIC of the collector — never copy the collector from a transaction history", "Warnings", True),
+]
+_have = {r["addr"].lower() for r in registry}
+for _c in top_recip[:10]:                      # material outflow counterparties
+    if _c["addr"].lower() not in _have and not _c["label"]:
+        registry.append(_reg(_c["addr"], f"Top recipient — ${_c['usd']:,.0f} over {_c['n']} transfers · unlabeled", "Recipients"))
+        _have.add(_c["addr"].lower())
+for _c in in_sources[:10]:                     # material funding counterparties
+    if _c["addr"].lower() not in _have and not _c["label"]:
+        registry.append(_reg(_c["addr"], f"Inflow source — ${_c['usd']:,.0f} over {_c['n']} transfers · unlabeled", "Funding sources"))
+        _have.add(_c["addr"].lower())
+for _a, _l in KNOWN.items():                   # anything labeled but not yet surfaced
+    if _a not in _have and "(mind)" not in _l:
+        registry.append(_reg(_a, _l, "Other labeled"))
+        _have.add(_a)
+
+# Truncation-collision detection. The page shortens addresses two ways: tables
+# use 0x + 6 hex …4 (0xd85096…f111), the flow diagram and prose use 0x + 4 hex …4
+# (0xd850…f111). The collector and its mimic are distinguishable in the first
+# form but IDENTICAL in the second — which is the form a reader is most likely
+# to copy. Flag against the shortest form actually rendered.
+_all = [r["addr"] for r in registry] + [c["addr"] for c in top_recip] + [c["addr"] for c in in_sources]
+_short, _long = defaultdict(set), defaultdict(set)
+for _a in _all:
+    _short[_a[:6].lower() + _a[-4:].lower()].add(_a.lower())
+    _long[_a[:8].lower() + _a[-4:].lower()].add(_a.lower())
+for _r in registry:
+    _a = _r["addr"]
+    if len(_long[_a[:8].lower() + _a[-4:].lower()]) > 1:
+        _r["collision"] = "table"      # ambiguous even in the 0xXXXXXX…XXXX table form
+    elif len(_short[_a[:6].lower() + _a[-4:].lower()]) > 1:
+        _r["collision"] = "short"      # ambiguous in the 0xXXXX…XXXX diagram/prose form
+
 data = {"scope": scope, "facts": facts, "infer": infer, "server": server, "stripe_snap": stripe_snap,
-        "insights": insights, "open_items": open_items, "gaps": gaps}
+        "insights": insights, "open_items": open_items, "gaps": gaps, "registry": registry}
 
 json.dump(STATE, open(RATES_PATH, "w"), indent=0)
 
