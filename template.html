@@ -214,7 +214,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
   <div class="card" id="sinkCard" style="display:none;border-left:6px solid var(--warn)">
     <h2 id="sinkHead">Collected MENTE stopped coming back here</h2>
     <div id="sinkWho" style="font-size:13px;line-height:1.65;margin:2px 0 12px"></div>
-    <p class="note" id="sinkGov" style="border-left:3px solid var(--warn);padding-left:10px;margin:0 0 12px"><b>No on-chain rule enforces any of this.</b> The collector is a plain key-controlled wallet running a script — whoever holds the key can change the destination or the rate at any time, without notice. Every rate below is <b>observed behaviour, not policy</b>.</p>
+    <p class="note" id="sinkGov" style="border-left:3px solid var(--warn);padding-left:10px;margin:0 0 12px">The 40% is a <b>contractual term, enforced off-chain</b>. Nothing on-chain constrains it: the collector is a plain key-controlled wallet running a script, so whoever holds the key sets the destination and the rate. That makes the delivered share an <b>auditable question, not a given</b> — which is what the figures below measure.</p>
     <p class="insight" id="ins-sink"></p>
     <div id="sinkBody"></div>
     <p class="note" id="sinkFoot"></p>
@@ -416,7 +416,7 @@ if(DATA.sink&&DATA.sink.days){
   const f=n=>n.toLocaleString(undefined,{maximumFractionDigits:0});
   const usd=n=>"$"+(n*(S.rate||0)).toLocaleString(undefined,{maximumFractionDigits:0});
   const shortA=a=>a.slice(0,6)+"…"+a.slice(-4);
-  const SINK_NAME="DATops sweep wallet";
+  const SINK_NAME="DATops sweep wallet";const SINK_LONG="Digital Assets Team Operations (DATops)";
   const D=(a,t)=>`<a href="https://basescan.org/address/${a}" target="_blank" class="mono" title="${t}">${shortA(a)}</a>`;
   const COLL="0xd85096fAeC1aC03075667B4C1a1661F5623Bf111", TRE="0xBD956171F5B50936f0Ad1C4db80c022bd2442519";
 
@@ -426,7 +426,7 @@ if(DATA.sink&&DATA.sink.days){
   document.getElementById("sinkWho").innerHTML=
     `<div><b>Collector</b> ${D(COLL,COLL)} — where MENTE lands when a user makes a request; the demand-side sink.${S.collector_bal?` Holds <b>${f(S.collector_bal)} MENTE</b> (${usd(S.collector_bal)}).`:""}</div>
      <div><b>Minds Treasury Distribution</b> ${D(TRE,TRE)} — <b>the wallet this dashboard is about</b>; pays credits out to mind wallets.</div>
-     <div><b>${SINK_NAME}</b> ${D(S.addr,S.addr)} — receives the current daily sweep. <span style="color:var(--warn)">Attributed to DATops — not verified on-chain.</span> Zero outbound, ever.</div>`;
+     <div><b>${SINK_NAME}</b> ${D(S.addr,S.addr)} — receives the current daily sweep under the 40% contractual term. <b>${SINK_LONG}</b>, internal to Animoca Brands. Custody per treasury ops, not cryptographically proven on-chain. Zero outbound, ever.</div>`;
 
   // one continuous series across the boundary: intake area + the active route's bars
   let chart="";
@@ -450,7 +450,16 @@ if(DATA.sink&&DATA.sink.days){
   const idle=S.out_n===0;
   const perDay=S.total/S.days;
   document.getElementById("sinkBody").innerHTML=
-    `<p class="insight" style="border-color:var(--ink3)">&rarr; <b>The rate barely changed; the destination did.</b> About two-fifths of collector intake left under the old route, about a third under the new one. The other ~60% has never left the collector at all — under either route.</p>
+    `${S.contract?`<div style="border:1px solid var(--warn);border-radius:6px;padding:10px 12px;margin:10px 0">
+       <div class="sub" style="text-transform:uppercase;letter-spacing:.05em;color:var(--warn)">Contract audit — 40% of cognition spend</div>
+       <div style="margin-top:6px;line-height:1.7">Old route delivered <b class="mono">${S.contract.old_pct}%</b> — effectively on contract.
+       Current route has delivered <b class="mono" style="color:var(--warn)">${S.contract.new_pct}%</b> since ${S.first}:
+       <b>${f(S.contract.actual)} MENTE</b> transferred against <b>${f(S.contract.expected)} MENTE</b> due, a shortfall of
+       <b class="mono" style="color:var(--warn)">${f(Math.abs(S.contract.variance))} MENTE (${usd(Math.abs(S.contract.variance))})</b>.
+       ${S.contract.months.length>1?`The gap is closing: ${S.contract.months.map(m=>`${m.m} <b class="mono">${m.pct}%</b>`).join(" &rarr; ")}.`:""}</div>
+       <div class="sub" style="margin-top:6px">Measured against total collector intake. That denominator is validated by the old route landing on ${S.contract.old_pct}% of it across ~7 weeks — if the contractual base were narrower, the old route would not have matched either. Confirm the base with the counterparty before treating the shortfall as owed.</div>
+     </div>`:""}
+     <p class="insight" style="border-color:var(--ink3)">&rarr; <b>The rate barely changed; the destination did.</b> About two-fifths of collector intake left under the old route, about a third under the new one. The other ~60% has never left the collector at all — under either route.</p>
      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px;margin:12px 0 2px">
        <div><div class="sub">Old route — collector &rarr; Minds Treasury Distribution<br><i>stopped ${S.recycle_last}</i></div>
          <div class="mono" style="font-size:20px;color:var(--c-in)">+${f(S.recycle_total)} MENTE</div>
@@ -473,7 +482,7 @@ if(DATA.sink&&DATA.sink.days){
   document.getElementById("sinkFoot").innerHTML=
     `Amounts and timing are on-chain facts; <b>control is not</b>. The collector is an EOA with EIP-7702 delegation to a <i>stateless</i> delegator, so no on-chain rule constrains the split — it is a script, and the destination wallet's owner is unverified.
      Rates above are cumulative shares of collector intake, stated on the same basis for both routes. On a prior-day basis the current route's median is ${S.share_median}%; the sweep tracks prior-day intake far more tightly than same-day (σ ~10pp vs ~32pp), consistent with a nightly job.
-     The wallet is referred to internally as the “40% wallet”; measured behaviour is below that. No rate has been confirmed by the platform team.`;
+     The 40% is a contractual term; the percentages above are what the chain actually delivered against it. The contractual <i>base</i> has not been confirmed in writing by the counterparty — total collector intake is inferred from how closely the old route fits it.`;
 
   const ins=document.getElementById("ins-sink");
   if(ins)ins.innerHTML=`&rarr; On <b>${S.first}</b> the daily sweep out of the collector was redirected: same job, similar share, new destination. <b>${f(S.total)} MENTE</b> (${usd(S.total)}) has since accumulated at the ${SINK_NAME} and <b>none of it has ever moved</b>. Inflow to Minds Treasury Distribution from user spending is currently <b>zero</b>.`;
