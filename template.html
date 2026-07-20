@@ -412,7 +412,7 @@ if(F.balance_series&&F.balance_series.tokens&&F.balance_series.tokens.length){
   const st=B.mente_status, chg=B.mente_change_7d, dz=B.days_to_zero;
   const mNow=fmt0(qty("MENTE",latest));
   let line;
-  if(st==="frozen") line=`The MENTE pile is <b>frozen at ${mNow} MENTE</b>: no inflow since <b>${B.last_mente_in||"—"}</b>, no outflow since <b>${B.last_mente_out||"—"}</b>. It neither recycles back nor pays out — it just sits (recent MENTE outflows were swaps to MOCA, the token now being distributed).`;
+  if(st==="frozen") line=`The MENTE pile has been <b>frozen at ${mNow} MENTE for ${B.mente_flat_days||"several"} days</b>: no inflow since <b>${B.last_mente_in||"—"}</b>, no outflow since <b>${B.last_mente_out||"—"}</b>. It neither recycles back nor pays out — it just sits (the last MENTE outflows were swaps to MOCA, the token now being distributed).`;
   else if(st==="declining") line=`The Treasury's MENTE <b>only declines</b> — the slope below is the recycle gap. Trailing-7-day drain ~<b>${fmt0(-chg)} MENTE/day</b>${dz?`; ~<b>${dz} days</b> to zero with no top-up.`:"."}`;
   else line=`Treasury MENTE currently at <b>${mNow}</b>.`;
   document.getElementById("balRecycle").innerHTML=
