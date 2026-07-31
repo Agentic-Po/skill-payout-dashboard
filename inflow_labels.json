@@ -1,1 +1,14 @@
-{}
+{
+  "0xf605dbb5626dfc1448cee33e2e1221103021468f": {
+    "label": "DATops Fireblocks (MENTE funding)",
+    "note": "Confirmed via 'DAT top ups requested' sheet 2026-08-01: 13 of 14 transfers tie to logged requests (Jason Ong, Katherine Webb). The 2026-06-05 transfer of 381,774 MENTE is NOT on the sheet."
+  },
+  "0xbdcb95a80d4c770fa811b1faf0bb4cf204d310b5": {
+    "label": "DATops Fireblocks (early MENTE)",
+    "note": "Both transfers (2026-04-30, 2026-05-06) tie to DAT sheet requests by Jason Ong."
+  },
+  "0x4d3021a52b31ffafde3c46450d02c72807c3a178": {
+    "label": "Builder Fireblocks wallet",
+    "note": "Per treasury wallet-list sheet (MENTE/MOCA/USDC). Not on the DAT top-ups log."
+  }
+}
