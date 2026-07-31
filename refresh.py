@@ -507,14 +507,34 @@ top_recip = sorted(({"addr": k, "label": KNOWN.get(k.lower()), "n": v["n"], "usd
                     for k, v in recip.items()), key=lambda x: -x["usd"])[:25]
 
 # inflow sources (factual, labeled where known)
+# Hand-maintained labels for funding wallets live in inflow_labels.json
+# ({addr_lowercase: {"label": ..., "note": ...}}); edit the file and the next
+# refresh republishes with the labels applied. Falls back to the KNOWN map.
+_ilbl_path = os.path.join(HERE, "inflow_labels.json")
+INFLOW_LABELS = json.load(open(_ilbl_path)) if os.path.exists(_ilbl_path) else {}
+def in_label(addr):
+    e = INFLOW_LABELS.get(addr.lower()) or {}
+    return e.get("label") or KNOWN.get(addr.lower()), e.get("note", "")
+
 src = defaultdict(lambda: {"n": 0, "usd": 0.0, "first": "9999", "last": "0"})
 for f in inflows:
     a = src[f["from"]]
     a["n"] += 1; a["usd"] += f["usd"]
     a["first"] = min(a["first"], f["ts"]); a["last"] = max(a["last"], f["ts"])
-in_sources = sorted(({"addr": k, "label": KNOWN.get(k.lower()), "n": v["n"], "usd": round(v["usd"], 2),
+in_sources = sorted(({"addr": k, "label": in_label(k)[0], "note": in_label(k)[1],
+                      "n": v["n"], "usd": round(v["usd"], 2),
                       "first": v["first"][:10], "last": v["last"][:10]}
                      for k, v in src.items()), key=lambda x: -x["usd"])[:10]
+
+# inflow ledger: one row per day × source wallet × token, newest first — the
+# auditable record of exactly who funded the wallet, when, and with how much.
+_led = defaultdict(lambda: {"n": 0, "val": 0.0, "usd": 0.0})
+for f in inflows:
+    e = _led[(f["ts"][:10], f["from"], f["tok"])]
+    e["n"] += 1; e["val"] += f["val"]; e["usd"] += f["usd"]
+in_ledger = [{"day": d, "addr": a, "tok": t, "n": v["n"], "val": round(v["val"], 4),
+              "usd": round(v["usd"], 2), "label": in_label(a)[0], "note": in_label(a)[1]}
+             for (d, a, t), v in sorted(_led.items(), reverse=True)]
 
 byh = defaultdict(Counter)
 for r in rows:
@@ -641,7 +661,7 @@ except Exception as _e:
 
 facts = {"windows": windows, "prev24": prev24, "monthly": monthly, "daily": daily, "hourly": hourly,
          "balance_series": balance_series,
-         "top_recipients": top_recip, "in_sources": in_sources,
+         "top_recipients": top_recip, "in_sources": in_sources, "in_ledger": in_ledger,
          "wallets_all": len(wal_days), "wallets_repeat": repeat_wallets,
          "balance": {s: (round(BALANCE[s], 0) if BALANCE[s] is not None else None) for s in TOKENS},
          "balance_usd": {s: (round(BALANCE[s] * RATE[s], 0) if BALANCE[s] is not None else None) for s in TOKENS},

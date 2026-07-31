@@ -220,6 +220,9 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <p class="insight" id="ins-sources"></p>
     <p class="note">Where this wallet's funding comes from. Labels from the treasury ops map where confirmed; unlabeled sources are unidentified.</p>
     <div class="scroll"><table id="srcT"></table></div>
+    <h3 style="margin:18px 0 4px">Inflow ledger — every funding event</h3>
+    <p class="note">One row per UTC day × source wallet × token, newest first. Raw token amounts are exact; USD uses that day's oracle rate. Labels and notes are maintained by hand in <span class="mono">inflow_labels.json</span> — <b>unlabeled</b> means treasury ops hasn't identified the sender yet.</p>
+    <div class="scroll" style="max-height:420px;overflow-y:auto"><table id="inLedgerT"></table></div>
   </div>
 
   <div class="card" id="sinkCard" style="display:none;border-left:6px solid var(--warn)">
@@ -502,6 +505,8 @@ document.getElementById("recipT").innerHTML=`<thead><tr><th>#</th><th>Wallet</th
  F.top_recipients.map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${c.n.toLocaleString()}</td><td class="r mono">${c.days}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${c.usd.toLocaleString()}</td><td class="r mono">${c.share}%</td></tr>`).join("")+`</tbody>`;
 document.getElementById("srcT").innerHTML=`<thead><tr><th>Source wallet</th><th class="r">Transfers</th><th class="r">First → last</th><th class="r">USD</th></tr></thead><tbody>`+
  F.in_sources.map(c=>`<tr><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${c.n.toLocaleString()}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${c.usd.toLocaleString()}</td></tr>`).join("")+`</tbody>`;
+document.getElementById("inLedgerT").innerHTML=`<thead><tr><th>Day</th><th>From wallet</th><th>Token</th><th class="r">Amount</th><th class="r">USD</th><th>Label / note</th></tr></thead><tbody>`+
+ (F.in_ledger||[]).map(l=>`<tr><td class="mono">${l.day}</td><td class="mono"><a href="https://basescan.org/address/${l.addr}" target="_blank">${l.addr.slice(0,8)}…${l.addr.slice(-4)}</a></td><td class="mono">${l.tok}</td><td class="r mono">${l.val.toLocaleString()}${l.n>1?` <span style="opacity:.6">(${l.n} tx)</span>`:""}</td><td class="r mono">$${l.usd.toLocaleString()}</td><td>${l.label?`<span class="pill">${l.label}</span>`:`<span class="pill" style="opacity:.5">unlabeled</span>`}${l.note?` <span style="font-size:12px;opacity:.75">${l.note}</span>`:""}</td></tr>`).join("")+`</tbody>`;
 // ---- collector outflow: where collected MENTE goes ----
 if(DATA.sink&&DATA.sink.days){
   const S=DATA.sink; document.getElementById("sinkCard").style.display="";
