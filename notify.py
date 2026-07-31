@@ -2,11 +2,12 @@
 """Send a rich-format (HTML) Telegram status update with deltas.
 
 Usage: notify.py hourly|daily|weekly
-Deltas are computed directly from transfers.json timestamps, so they are
+Deltas are computed directly from the transfers/ shard timestamps, so they are
 exact from the very first message — no snapshot warm-up needed.
 Env vars: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID.
 """
 import json, os, sys, urllib.request, urllib.parse
+import shards
 from datetime import datetime, timezone, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -26,7 +27,7 @@ def classify(v):
     return "topup"                   # Stripe top-ups — revenue-backed passthrough
 
 rows = []
-for i in json.load(open(os.path.join(HERE, "transfers.json"))):
+for i in shards.load(os.path.join(HERE, "transfers")):
     if i["token"]["address_hash"].lower() != "0x2b11834ed1feaed4b4b3a86a6f571315e25a884d":
         continue
     v = int(i["total"]["value"]) / 1e18

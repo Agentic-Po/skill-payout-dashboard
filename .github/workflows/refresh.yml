@@ -22,11 +22,21 @@ jobs:
           POSTHOG_PROJECT_ID: "459477"
           POSTHOG_HOST: "https://us.posthog.com"
         run: python3 refresh.py
+      # Tripwire well below GitHub's 100 MB hard limit (transfers.json hit it
+      # on 2026-07-30) — a growing file should fail here, with a clear message,
+      # long before pushes start bouncing.
+      - name: Guard against oversized files
+        run: |
+          BIG=$(find . -path ./.git -prune -o -type f -size +50M -print)
+          if [ -n "$BIG" ]; then
+            echo "::error::File(s) over 50 MB — shard or slim them before they hit GitHub's 100 MB push limit: $BIG"
+            exit 1
+          fi
       - name: Commit and push
         run: |
           git config user.name "dashboard-bot"
           git config user.email "actions@github.com"
-          git add transfers.json transfers_in.json index.html legacy.html stats_history.json day_rates.json posthog_cache.json transfers_export.csv cognition_in.json
+          git add -A transfers transfers_in cognition_in index.html legacy.html stats_history.json day_rates.json posthog_cache.json transfers_export.csv
           git diff --cached --quiet || git commit -m "refresh $(date -u +'%Y-%m-%d %H:%M') UTC"
           git pull --rebase origin main
           git push

@@ -2,7 +2,8 @@
 """Refresh the Minds treasury wallet dashboard.
 
 Fetches token transfers (MENTE + MOCA) from Blockscout (Base) for the tracked
-wallet, merges them into transfers.json / transfers_in.json, recomputes the
+wallet, merges them into the transfers/ and transfers_in/ monthly shard
+caches (slimmed rows — see shards.py), recomputes the
 two-layer dataset (Layer 1: on-chain facts; Layer 2: AI-inferred interpretation),
 and renders index.html from template.html. Writes transfers_export.csv (per-tx,
 with rate provenance) so every displayed total ties back to transaction hashes.
@@ -13,6 +14,7 @@ the append-only audit trail of every published figure.
 """
 import csv, json, math, os, statistics, time, urllib.request
 import posthog_source
+import shards
 from datetime import datetime, timezone, timedelta
 from collections import Counter, defaultdict
 
@@ -78,8 +80,11 @@ def key(i):
 # --- incremental fetch: newest pages until we overlap the cache. If the page
 # cap is hit before overlap, the cache is NOT updated (a silent gap would
 # become permanent and invisible) — the run renders from the last good cache.
-def refresh_cache(base_url, path, pages=100):
-    old = json.load(open(path)) if os.path.exists(path) else []
+# Caches are monthly shard dirs of slimmed rows (see shards.py) so no file
+# can ever approach GitHub's 100 MB limit again.
+def refresh_cache(base_url, dir_path, pages=100):
+    shards.migrate_legacy(dir_path)
+    old = shards.load(dir_path)
     seen = {key(i) for i in old}
     newest = old[0]["timestamp"] if old else "2026-04-01"
     items, params, overlapped = [], "", False
@@ -94,15 +99,16 @@ def refresh_cache(base_url, path, pages=100):
         params = "&" + "&".join(f"{k}={v}" for k, v in d["next_page_params"].items())
         time.sleep(0.1)
     if not overlapped:
-        print(f"WARNING: page cap hit before overlap for {path} — keeping previous cache")
+        print(f"WARNING: page cap hit before overlap for {dir_path} — keeping previous cache")
         return old, 0, False
-    add = [i for i in items if key(i) not in seen]
+    add = [shards.slim(i) for i in items if key(i) not in seen]
     full = sorted(add + old, key=lambda i: i["timestamp"], reverse=True)
-    json.dump(full, open(path, "w"))
+    if add:
+        shards.save(dir_path, full, months={shards.month_of(r) for r in add})
     return full, len(add), True
 
-full, n_new, ok_out = refresh_cache(BASE, os.path.join(HERE, "transfers.json"))
-full_in, n_new_in, ok_in = refresh_cache(BASE.replace("filter=from", "filter=to"), os.path.join(HERE, "transfers_in.json"), pages=60)
+full, n_new, ok_out = refresh_cache(BASE, os.path.join(HERE, "transfers"))
+full_in, n_new_in, ok_in = refresh_cache(BASE.replace("filter=from", "filter=to"), os.path.join(HERE, "transfers_in"), pages=60)
 data_complete = ok_out and ok_in
 print(f"fetched {n_new} new OUT / {n_new_in} new IN, cache {len(full)} out / {len(full_in)} in, complete={data_complete}")
 
@@ -286,10 +292,11 @@ except Exception as e:
 
 # --- cognition consumption (collector wallet inbound = minds spending MENTE) ---
 COLLECTOR = "0xd85096fAeC1aC03075667B4C1a1661F5623Bf111"
-COG_PATH = os.path.join(HERE, "cognition_in.json")
+COG_DIR = os.path.join(HERE, "cognition_in")
+shards.migrate_legacy(COG_DIR, ts_key="ts", do_slim=False)
 cognition = None
-if os.path.exists(COG_PATH):
-    cog = json.load(open(COG_PATH))
+if os.path.isdir(COG_DIR):
+    cog = shards.load(COG_DIR, ts_key="ts")
     # incremental top-up: newest pages until overlap (same banking pattern)
     try:
         seen_c = {i["transaction_hash"] + ":" + str(i["log_index"]) for i in cog}
@@ -309,7 +316,7 @@ if os.path.exists(COG_PATH):
             time.sleep(0.1)
         if got_c:
             cog = sorted(got_c + cog, key=lambda i: i["ts"], reverse=True)
-            json.dump(cog, open(COG_PATH, "w"))
+            shards.save(COG_DIR, cog, months={shards.month_of(c, "ts") for c in got_c}, ts_key="ts")
     except Exception as e:
         print("cognition incremental fetch failed (using cache):", e)
     # exclude non-mind flows into the collector (e.g. from the treasury itself)
