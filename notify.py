@@ -75,9 +75,25 @@ F = _D["facts"]
 health = []
 w24 = F["windows"][0]
 bal_m, bal_e = F["balance"].get("MOCA"), F["balance"].get("MENTE")
-if bal_m is not None:
-    health.append("")
-    health.append(f"<b>Wallet:</b> <b>${G['bal_usd']:,.0f}</b> ({bal_m:,.0f} MOCA + {bal_e or 0:,.0f} MENTE)")
+# Wallet line is a hard contract of every message: if the live fetch failed
+# (balance null), fall back to the last non-null snapshot in stats_history
+# and mark it stale — never silently drop the line.
+stale_ts = None
+if bal_m is None or bal_e is None:
+    for snap in reversed(hist):
+        if snap.get("balance") is not None:
+            bal_m = bal_m if bal_m is not None else snap["balance"]
+            bal_e = bal_e if bal_e is not None else snap.get("mente_balance")
+            stale_ts = snap["ts"]
+            break
+r_m, r_e = F["rate"].get("MOCA") or RATE, F["rate"].get("MENTE") or 0
+usd_m = (bal_m or 0) * r_m
+usd_e = (bal_e or 0) * r_e
+stale = f" ⚠️ <i>(live fetch failed — last known {stale_ts} UTC)</i>" if stale_ts else ""
+health.append("")
+health.append(f"<b>Wallet balance:</b> <b>${usd_m + usd_e:,.0f}</b> total{stale}")
+health.append(f"  · MOCA: {bal_m or 0:,.0f} ≈ <b>${usd_m:,.2f}</b>")
+health.append(f"  · MENTE: {bal_e or 0:,.0f} ≈ <b>${usd_e:,.2f}</b>")
 health.append(f"<b>24h:</b> out ${w24['out_usd']:,.0f} · in ${w24['in_usd']:,.0f} · net {'+' if w24['net_usd']>=0 else ''}${w24['net_usd']:,.0f}")
 if mode in ("daily", "weekly"):
     health.append(f"<b>Pattern monitor:</b> {G['flagged_n']} of {G['monitored_n']} flagged · <b>at risk:</b> ${G['at_risk_usd']:,.2f} of ${G['ce_total_usd']:,.2f} <i>(heuristic, unconfirmed)</i>")

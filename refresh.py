@@ -154,13 +154,27 @@ for sym, t in TOKENS.items():
         except Exception as e:
             print(sym, "dexscreener fallback failed:", e)
 BALANCE = {}
+# Blockscout's eth-rpc endpoint rate-limits the shared Actions IP after the
+# page crawl above, so try public Base RPCs first and keep Blockscout last.
+RPC_ENDPOINTS = ["https://mainnet.base.org", "https://base.drpc.org",
+                 "https://base.blockscout.com/api/eth-rpc"]
 def balance_at(addr, sym, block="latest"):
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [
         {"to": addr, "data": "0x70a08231" + "0" * 24 + WALLET[2:].lower()}, block]}).encode()
-    req = urllib.request.Request("https://base.blockscout.com/api/eth-rpc", data=payload,
-        headers={"Content-Type": "application/json", "User-Agent": "curl/8.4.0"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return int(json.load(r)["result"], 16) / 10 ** DECIMALS[sym]
+    last_err = None
+    for url in RPC_ENDPOINTS:
+        try:
+            req = urllib.request.Request(url, data=payload,
+                headers={"Content-Type": "application/json", "User-Agent": "curl/8.4.0"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                res = json.load(r).get("result")
+            if res:
+                return int(res, 16) / 10 ** DECIMALS[sym]
+            last_err = Exception(f"{url}: empty result (rate-limited?)")
+        except Exception as e:
+            last_err = e
+        time.sleep(1)
+    raise last_err
 
 # Reconciliation values the balance AT a pinned block so transfers landing
 # after the fetch can't fake a drift signal. The pin is the MINIMUM of the two
@@ -774,15 +788,18 @@ def burn_di(cut, hi=None):
 def out_di(cut, hi=None):
     """Total factual outflow (every category incl. nonstandard/micro)."""
     return sum(r["usd"] for r in rows if r["ts"] > cut and (hi is None or r["ts"] <= hi))
+# when every balance fetch failed, bal_usd of 0 would fake a 0-day runway
+# (and fire the low-float alarm) — keep runway unknown instead
+bal_known = any(BALANCE[s] is not None for s in TOKENS)
 bal_usd = sum((BALANCE[s] or 0) * RATE[s] for s in TOKENS)
 burn24 = burn_di(cut24)
 burn_prev = burn_di(cut48, cut24)
 span_days = max(min(7.0, (now - datetime.fromisoformat(rows[-1]["ts"]).replace(tzinfo=timezone.utc)).total_seconds() / 86400), 1.0) if rows else 7.0
 burn7avg = burn_di(cut7) / span_days
 out7avg = out_di(cut7) / span_days
-runway24 = round(bal_usd / burn24, 1) if burn24 > 0 else None
-runway7 = round(bal_usd / burn7avg, 1) if burn7avg > 0 else None
-runway_total = round(bal_usd / out7avg, 1) if out7avg > 0 else None
+runway24 = round(bal_usd / burn24, 1) if bal_known and burn24 > 0 else None
+runway7 = round(bal_usd / burn7avg, 1) if bal_known and burn7avg > 0 else None
+runway_total = round(bal_usd / out7avg, 1) if bal_known and out7avg > 0 else None
 
 guard = {"flagged_n": len(flagged), "monitored_n": len(grows), "at_risk_usd": at_risk,
          "loop_n": len(loop_wallets), "loop_usd": loop_usd,
