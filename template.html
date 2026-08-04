@@ -146,6 +146,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
   <div class="scopebox" id="scope"></div>
 
   <p class="sect">Facts — observed on-chain</p>
+  <div id="bigin"></div>
   <div class="tiles" id="ftiles"></div>
 
   <div class="card">
@@ -347,6 +348,19 @@ document.getElementById("scope").innerHTML=
  (F.market_check&&Object.keys(F.market_check).length?`<span><b>Rate validation:</b> ${Object.entries(F.market_check).map(([k,v])=>`${k} ${v.within15}/${v.n} typically within ${v.median_dev??"?"}% of market price (${v.within15}/${v.n} days inside the 15% gate; worst day ${v.max_dev}%)`).join(" · ")} — each day priced at its own day's rate, cross-checked against the right trading pool for that period</span>`:"")+
  `<span><b>Balance reconciliation:</b> ${rec} — cache covers the wallet's full lifetime; balance valued at the newest cached block. The MENTE Δ (<b>≈$1,250 over the wallet's lifetime</b> — 88K tokens, ~1.2%) is an automatic burn by the token contract itself — expected platform behavior being confirmed with the team, <b>not missing funds</b>. (Technical: transfer logs verify exact vs raw chain, 36,715 = 36,715; the delta accrues in blocks with zero token events — the contract changes balances without emitting them.) Movement beyond this pattern flags in amber here</span>`+
  `<span><b>Note:</b> ${SC.note}</span>`;
+// large-inflow flag: any single transfer >= $10k, amber banner while recent (7d)
+const bigIn=F.large_inflows||[];
+if(bigIn.length){
+ const fresh=bigIn.some(l=>(Date.now()-Date.parse(l.ts+":00Z"))<7*864e5);
+ const rows=bigIn.slice(0,5).map(l=>`<tr><td class="mono">${l.ts.replace("T"," ")}</td><td class="r mono">${l.val.toLocaleString()} ${l.tok}</td><td class="r mono"><b>$${l.usd.toLocaleString()}</b></td><td class="mono"><a href="https://basescan.org/tx/${l.tx}" target="_blank">${l.addr.slice(0,8)}…${l.addr.slice(-4)}</a>${l.label?` <span class="pill">${l.label}</span>`:` <span class="pill" style="opacity:.5">unlabeled</span>`}</td></tr>`).join("");
+ const notes=[...new Set(bigIn.slice(0,5).filter(l=>l.note).map(l=>`<b>${l.label}:</b> ${l.note}`))].join("<br>");
+ document.getElementById("bigin").innerHTML=
+  `<div class="card" style="${fresh?"border:1.5px solid var(--warn);border-left:6px solid var(--warn);background:var(--warnbg)":""}">
+   <h2>${fresh?"🔔 ":""}Large inflows — single transfers ≥ $10,000${fresh?` <span style="font-size:12px;color:var(--warn);font-weight:700">NEW WITHIN 7 DAYS</span>`:""}</h2>
+   <div class="scroll"><table><thead><tr><th>When (UTC)</th><th class="r">Amount</th><th class="r">USD</th><th>Sender (tx link)</th></tr></thead><tbody>${rows}</tbody></table></div>
+   ${notes?`<p class="note" style="margin-top:8px">${notes}</p>`:""}
+  </div>`;
+}
 // fact tiles with deltas vs prev 24h
 const w24=F.windows[0], wall=F.windows[3], p24=F.prev24;
 const balUsd=(F.balance_usd.MENTE||0)+(F.balance_usd.MOCA||0);

@@ -673,7 +673,14 @@ try:
 except Exception as _e:
     print("balance_series failed:", _e)
 
+# large single inflows (>= $10k per transfer) — surfaced as a dashboard flag
+large_inflows = [{"ts": f["ts"][:16], "tok": f["tok"], "val": round(f["val"], 0),
+                  "usd": round(f["usd"], 0), "addr": f["from"], "tx": f["tx"],
+                  "label": in_label(f["from"])[0], "note": in_label(f["from"])[1]}
+                 for f in inflows if f["usd"] >= 10000]
+
 facts = {"windows": windows, "prev24": prev24, "monthly": monthly, "daily": daily, "hourly": hourly,
+         "large_inflows": large_inflows,
          "balance_series": balance_series,
          "top_recipients": top_recip, "in_sources": in_sources, "in_ledger": in_ledger,
          "wallets_all": len(wal_days), "wallets_repeat": repeat_wallets,
