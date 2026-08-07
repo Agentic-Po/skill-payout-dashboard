@@ -104,7 +104,7 @@
 },
 "last_accepted_rate": {
 "MOCA": 0.0077424,
-"MENTE": 0.01452
+"MENTE": 0.0146
 },
 "recon": {
 "MOCA": -11887.6,
@@ -116,7 +116,7 @@
 "open_day_rate": {
 "MOCA": {
 "d": "2026-08-07",
-"rate": 0.0075597618
+"rate": 0.0075586875
 }
 },
 "market_rates": {
