@@ -117,7 +117,7 @@
 "MENTE": 0.01485
 },
 "recon": {
-"MOCA": -13768.4,
+"MOCA": -13863.7,
 "MENTE": -88066.7
 },
 "pending_rate": {
@@ -126,7 +126,7 @@
 "open_day_rate": {
 "MOCA": {
 "d": "2026-08-17",
-"rate": 0.0073940707
+"rate": 0.0073865172
 }
 },
 "market_rates": {
