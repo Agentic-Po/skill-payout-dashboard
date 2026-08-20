@@ -196,7 +196,31 @@ def refresh_cache(base_url, dir_path, pages=100):
     if not overlapped:
         print(f"WARNING: page cap hit before overlap for {dir_path} — keeping previous cache")
         return old, 0, False
-    add = [shards.slim(i) for i in items if key(i) not in seen]
+    # Belt-and-braces cross-check: right after an outage Blockscout can serve
+    # from a still-backfilling index (observed 2026-08-20: one 6,665-MOCA
+    # transfer absent from v2's pages during recovery — the overlap check
+    # banked the hole permanently). Re-verify the trailing ~24h against raw
+    # chain logs every run and merge anything the crawl didn't return.
+    try:
+        got = {key(i) for i in items}
+        newest_blk = max([i.get("block_number", 0) for i in old] + [0])
+        if newest_blk:
+            direction = "to" if "filter=to" in base_url else "from"
+            xcheck = rpc_transfer_fallback(WALLET, direction,
+                                           [t["addr"] for t in TOKENS.values()],
+                                           max(newest_blk - 43200, 1))
+            extra = [i for i in xcheck if key(i) not in got and key(i) not in seen]
+            if extra:
+                print(f"cross-check recovered {len(extra)} transfer(s) missing from the crawl for {dir_path}")
+            items += extra
+    except Exception as e:
+        print(f"log cross-check skipped for {dir_path}: {e}")
+    add, _k = [], set()
+    for i in items:
+        k = key(i)
+        if k not in seen and k not in _k:
+            _k.add(k)
+            add.append(shards.slim(i))
     full = sorted(add + old, key=lambda i: i["timestamp"], reverse=True)
     if add:
         shards.save(dir_path, full, months={shards.month_of(r) for r in add})
@@ -416,12 +440,13 @@ if os.path.isdir(COG_DIR):
     # incremental top-up: newest pages until overlap (same banking pattern)
     def _cog_fallback(seen_c, newest_c):
         # cog rows carry no block number — estimate the resume block from the
-        # newest cached timestamp (Base ≈ 2s blocks) minus a 2h safety margin;
-        # dedup by tx:log_index absorbs the overlap.
+        # newest cached timestamp (Base ≈ 2s blocks) minus a 24h safety margin
+        # (also re-verifies the trailing day against a possibly hole-y v2
+        # index); dedup by tx:log_index absorbs the overlap.
         latest_blk = int(rpc("eth_blockNumber", []), 16)
         age_s = (datetime.now(timezone.utc)
                  - datetime.fromisoformat(newest_c).replace(tzinfo=timezone.utc)).total_seconds()
-        from_blk = max(1, latest_blk - int(age_s / 2) - 3600)
+        from_blk = max(1, latest_blk - int(age_s / 2) - 43200)
         items = rpc_transfer_fallback(COLLECTOR, "to", [TOKENS["MENTE"]["addr"]], from_blk)
         return [{"ts": i["timestamp"][:19], "val": int(i["total"]["value"]) / 10 ** DECIMALS["MENTE"],
                  "from": canon(i["from"]["hash"]), "tx": i["transaction_hash"],
@@ -444,6 +469,15 @@ if os.path.isdir(COG_DIR):
             if stop: break
             params = "&" + "&".join(f"{k}={v}" for k, v in dd["next_page_params"].items())
             time.sleep(0.1)
+        # cross-check the trailing day against raw chain logs (v2 recovery holes)
+        try:
+            _seen_now = seen_c | {c["transaction_hash"] + ":" + str(c["log_index"]) for c in got_c}
+            _extra = _cog_fallback(_seen_now, newest_c) if cog else []
+            if _extra:
+                print(f"cognition cross-check recovered {len(_extra)} row(s) missing from v2")
+                got_c += _extra
+        except Exception as e:
+            print("cognition log cross-check skipped:", e)
         if got_c:
             cog = sorted(got_c + cog, key=lambda i: i["ts"], reverse=True)
             shards.save(COG_DIR, cog, months={shards.month_of(c, "ts") for c in got_c}, ts_key="ts")
@@ -1101,6 +1135,36 @@ try:
         except Exception as _e2:
             print("collector balance fallback failed:", _e2)
 
+    # --- rebate-wallet monitor (Po, 2026-08-20): the sink is the Minds Rebate
+    # Fireblocks wallet. DATops is expected to swap its accumulated MENTE to
+    # MOCA roughly weekly — track both balances and the last swap (any MENTE
+    # outflow), and flag when the swap is overdue so DATops can be reminded.
+    def _erc20_bal(token_addr, holder):
+        res = rpc("eth_call", [{"to": token_addr,
+                                "data": "0x70a08231" + "0" * 24 + holder[2:].lower()}, "latest"])
+        return int(res, 16) / 10 ** 18
+    rebate = None
+    try:
+        _rb_mente = _erc20_bal(TOKENS["MENTE"]["addr"], SINK)
+        _rb_moca = _erc20_bal(TOKENS["MOCA"]["addr"], SINK)
+        _swaps = sorted({r["ts"][:10] for r in _out})
+        _last_swap = _swaps[-1] if _swaps else None
+        _days_since = ((datetime.now(timezone.utc).replace(tzinfo=None)
+                        - datetime.strptime(_last_swap, "%Y-%m-%d")).days
+                       if _last_swap else None)
+        _mrate0 = RATE.get("MENTE") or TOKENS["MENTE"]["fallback_rate"]
+        # overdue = no swap for >8 days (weekly cadence + 1 day slack) while a
+        # material MENTE pile (>= $500) sits unswapped
+        rebate = {"bal_mente": round(_rb_mente, 1), "bal_moca": round(_rb_moca, 1),
+                  "bal_mente_usd": round(_rb_mente * _mrate0, 0),
+                  "bal_moca_usd": round(_rb_moca * (RATE.get("MOCA") or TOKENS["MOCA"]["fallback_rate"]), 0),
+                  "swap_days": _swaps, "last_swap": _last_swap,
+                  "days_since_swap": _days_since,
+                  "overdue": bool((_days_since is None or _days_since > 8)
+                                  and _rb_mente * _mrate0 >= 500)}
+    except Exception as _e:
+        print("rebate balance fetch failed:", _e)
+
     _sdays, _rdays = sorted(_sd), sorted(_rd)
     if _sdays:
         # the sweep tracks the PRIOR day's intake far more tightly than same-day
@@ -1120,7 +1184,8 @@ try:
         _mrate = RATE.get("MENTE") or TOKENS["MENTE"]["fallback_rate"]
         _pre = [v for d, v in _ci.items() if _rdaily and _rdaily[0] <= d <= _rdaily[-1]]
         _post = [v for d, v in _ci.items() if d >= _sdays[0]]
-        sink = {"addr": SINK, "days": len(_sdays), "first": _sdays[0], "last": _sdays[-1],
+        sink = {"addr": SINK, "rebate": rebate,
+                "days": len(_sdays), "first": _sdays[0], "last": _sdays[-1],
                 "total": round(sum(_sd.values()), 2),
                 "daily": [{"d": d, "val": round(_sd[d], 2)} for d in _sdays],
                 "series": [{"d": d, "i": round(_ci.get(d, 0), 1),
@@ -1190,7 +1255,7 @@ registry = [
     _reg("0x8004a169fb4a3325136eb29fa0ceb6d2e539a432", "AgentIdentity registry — ERC-8004 era (historic, economically inert)", "Infrastructure"),
     _reg("0x4d3021a52b31ffafde3c46450d02c72807c3a178", "Minds team Fireblocks wallet — manual MOCA top-ups", "Funding sources"),
     _reg("0xf605dbb5626dfc1448cee33e2e1221103021468f", "Primary MENTE funder — OWNER UNCONFIRMED, identification open", "Funding sources"),
-    _reg(SINK, "Collector sweep destination — receives a daily MENTE sweep from the collector since 2026-06-19; has never sent anything out", "Collector"),
+    _reg(SINK, "Minds Rebate Fireblocks wallet — receives the daily 40% MENTE sweep from the collector since 2026-06-19; DATops swaps its MENTE to MOCA on a weekly cadence", "Collector"),
     _reg("0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B", "EIP-7702 delegator implementation the treasury EOA delegates to", "Infrastructure"),
     _reg("0x45d0cEAd7c0a2E1a0528C4131A2d95DE9a394839", "Early MENTE funder (Apr 2026) — unidentified; also spent 100k MENTE into the collector", "Funding sources"),
     _reg("0xbDCb95A80d4C770fa811B1FAF0bb4Cf204d310b5", "Early MENTE funder (Apr–May 2026) — unidentified", "Funding sources"),

@@ -134,8 +134,12 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
         <text x="540" y="266" text-anchor="middle" font-size="11" fill="var(--ink2)">MOCA→MENTE auto-swap</text>
         <line x1="540" y1="224" x2="540" y2="190" stroke="var(--ink3)" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr)"/>
         <text x="550" y="212" font-size="11" fill="var(--ink2)">swap when MENTE empty</text>
-        <path d="M 930 188 L 930 302 Q 930 310 922 310 L 158 310 Q 150 310 150 302 L 150 192" stroke="var(--c-in)" stroke-width="1.5" fill="none" stroke-dasharray="6 3" marker-end="url(#arrG)"/>
-        <text x="790" y="326" text-anchor="middle" font-size="11" fill="var(--c-in)">collected MENTE recycled into the treasury <tspan id="nRec" font-weight="700"></tspan><tspan id="nRecEnd" font-weight="700" fill="var(--warn)"></tspan></text>
+        <line x1="930" y1="188" x2="930" y2="234" stroke="var(--c-in)" stroke-width="1.5" marker-end="url(#arrG)"/>
+        <text x="922" y="212" text-anchor="end" font-size="11" fill="var(--c-in)">40% of collected MENTE · daily <tspan id="nSweep" font-weight="700"></tspan></text>
+        <rect x="820" y="240" width="220" height="64" rx="8" fill="none" stroke="var(--c-in)" stroke-width="1.5"/>
+        <text x="930" y="264" text-anchor="middle" font-weight="650">Minds Rebate Fireblocks</text>
+        <text x="930" y="282" text-anchor="middle" font-size="11" fill="var(--ink2)">0xf096…0f40 · MENTE→MOCA weekly</text>
+        <text x="930" y="322" text-anchor="middle" font-size="11" fill="var(--ink2)" id="nRebate"></text>
       </g>
     </svg></div>
     <details style="margin-top:6px"><summary class="showmore" style="display:block">how credits work, in words</summary>
@@ -527,7 +531,7 @@ if(DATA.sink&&DATA.sink.days){
   const f=n=>n.toLocaleString(undefined,{maximumFractionDigits:0});
   const usd=n=>"$"+(n*(S.rate||0)).toLocaleString(undefined,{maximumFractionDigits:0});
   const shortA=a=>a.slice(0,6)+"…"+a.slice(-4);
-  const SINK_NAME="DATops sweep wallet";const SINK_LONG="Digital Assets Team Operations (DATops)";
+  const SINK_NAME="Minds Rebate Fireblocks wallet";const SINK_LONG="Digital Assets Team Operations (DATops)";
   const D=(a,t)=>`<a href="https://basescan.org/address/${a}" target="_blank" class="mono" title="${t}">${shortA(a)}</a>`;
   const COLL="0xd85096fAeC1aC03075667B4C1a1661F5623Bf111", TRE="0xBD956171F5B50936f0Ad1C4db80c022bd2442519";
 
@@ -537,7 +541,7 @@ if(DATA.sink&&DATA.sink.days){
   document.getElementById("sinkWho").innerHTML=
     `<div><b>Collector</b> ${D(COLL,COLL)} — where MENTE lands when a user makes a request; the demand-side sink.${S.collector_bal?` Holds <b>${f(S.collector_bal)} MENTE</b> (${usd(S.collector_bal)}).`:""}</div>
      <div><b>Minds Treasury Distribution</b> ${D(TRE,TRE)} — <b>the wallet this dashboard is about</b>; pays credits out to mind wallets.</div>
-     <div><b>${SINK_NAME}</b> ${D(S.addr,S.addr)} — receives the current daily sweep under the 40% contractual term. <b>${SINK_LONG}</b>, internal to Animoca Brands. Custody per treasury ops, not cryptographically proven on-chain. Zero outbound, ever.</div>`;
+     <div><b>${SINK_NAME}</b> ${D(S.addr,S.addr)} — receives the current daily sweep under the 40% contractual term, then swaps the accumulated MENTE to MOCA on a weekly cadence. <b>${SINK_LONG}</b>, internal to Animoca Brands. Custody per treasury ops, not cryptographically proven on-chain.</div>`;
 
   // one continuous series across the boundary: intake area + the active route's bars
   let chart="";
@@ -584,9 +588,16 @@ if(DATA.sink&&DATA.sink.days){
      </div>
      ${chart}
      <div class="sub" style="margin-top:6px">Daily sweep to the ${SINK_NAME} ${shortA(S.addr)} · ${S.share_cum}% of collector intake since ${S.first}.${(S.intake_pre&&S.intake_post)?` Collector intake also fell <b>${Math.round((1-S.intake_post/S.intake_pre)*100)}%</b> across the boundary (${f(S.intake_pre)} → ${f(S.intake_post)} MENTE/day) — smaller bars reflect <b>lower usage</b>, not a lower sweep rate.`:""}</div>
+     ${S.rebate?`<div style="border:1px solid ${S.rebate.overdue?"var(--warn)":"var(--line)"};border-radius:6px;padding:10px 12px;margin:12px 0 2px">
+       <div class="sub" style="text-transform:uppercase;letter-spacing:.05em${S.rebate.overdue?";color:var(--warn)":""}">Rebate wallet monitor — weekly MENTE→MOCA swap</div>
+       <div style="margin-top:6px;line-height:1.7">Holds <b class="mono">${f(S.rebate.bal_mente)} MENTE</b> ($${f(S.rebate.bal_mente_usd)}) + <b class="mono">${f(S.rebate.bal_moca)} MOCA</b> ($${f(S.rebate.bal_moca_usd)}).
+       Last swap (MENTE out): <b>${S.rebate.last_swap||"never"}</b>${S.rebate.days_since_swap!=null?` — <b>${S.rebate.days_since_swap} day${S.rebate.days_since_swap===1?"":"s"} ago</b>`:""}.
+       ${S.rebate.overdue?`<span style="color:var(--warn);font-weight:700">⚠ Weekly swap overdue — remind DATops.</span>`:`<span style="color:var(--c-in);font-weight:600">✓ On cadence.</span>`}</div>
+       <div class="sub" style="margin-top:6px">DATops is expected to swap the accumulated MENTE to MOCA weekly. "Swap" here = any MENTE outflow from the rebate wallet; flagged when >8 days pass with a material (≥$500) MENTE pile sitting unswapped. The Telegram bot sends a reminder on the same rule.</div>
+     </div>`:""}
      <p class="note" style="margin-top:10px">
        <b>Nothing new started.</b> One existing daily transfer changed destination: the transfer into Minds Treasury Distribution stopped on <b>${S.recycle_last}</b>, and on <b>${S.first}</b> the same daily transfer restarted pointing at ${shortA(S.addr)}.
-       Outbound transactions from that wallet since ${S.first}: <b>${idle?"zero":S.out_n}</b>. Ownership is not verifiable on-chain, so treat the balance as <b>unreconciled</b> until the platform team confirms custody.
+       Outbound MENTE transactions from that wallet since ${S.first}: <b>${idle?"zero":S.out_n}</b> — these are the weekly MENTE→MOCA swaps tracked in the monitor above. Ownership is not verifiable on-chain, so treat the balance as <b>unreconciled</b> until the platform team confirms custody.
        At the current pace the sweep runs ~${f(perDay)} MENTE/day (~${usd(perDay)}/day) — a ceiling, not a forecast, since usage is falling.
        While this continues, Minds Treasury Distribution receives nothing back, and any “recycled inflow” figure elsewhere on this dashboard describes ${S.recycle_first}–${S.recycle_last} only.</p>`;
 
@@ -596,7 +607,7 @@ if(DATA.sink&&DATA.sink.days){
      The 40% is a contractual term; the percentages above are what the chain actually delivered against it. The contractual <i>base</i> has not been confirmed in writing by the counterparty — total collector intake is inferred from how closely the old route fits it.`;
 
   const ins=document.getElementById("ins-sink");
-  if(ins)ins.innerHTML=`&rarr; On <b>${S.first}</b> the daily sweep out of the collector was redirected: same job, similar share, new destination. <b>${f(S.total)} MENTE</b> (${usd(S.total)}) has since accumulated at the ${SINK_NAME} and <b>none of it has ever moved</b>. Inflow to Minds Treasury Distribution from user spending is currently <b>zero</b>.`;
+  if(ins)ins.innerHTML=`&rarr; On <b>${S.first}</b> the daily sweep out of the collector was redirected to the ${SINK_NAME}: same job, similar share, new destination. <b>${f(S.total)} MENTE</b> (${usd(S.total)}) has been swept there since${S.rebate?`; it holds <b>${f(S.rebate.bal_mente)} MENTE + ${f(S.rebate.bal_moca)} MOCA</b> (last MENTE→MOCA swap ${S.rebate.last_swap||"never"})`:""}. Inflow to Minds Treasury Distribution from user spending is currently <b>zero</b>.`;
 }
 
 // ---- address registry: full addresses, grouped, copy-on-click ----
@@ -626,7 +637,10 @@ if(DATA.registry&&DATA.registry.length){
 if(DATA.insights){for(const[k,v]of Object.entries(DATA.insights)){const el=document.getElementById("ins-"+k);if(el)el.innerHTML="&rarr; "+v;}}
 {const wA=F.windows[3];
  const put=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=" · $"+v.toLocaleString(undefined,{maximumFractionDigits:0})+" lifetime";};
- put("nDist",wA.out_usd);put("nExt",wA.in_external_usd||0);put("nRec",wA.in_recycled_usd||0);if(DATA.sink&&DATA.sink.recycle_last){const _e=document.getElementById("nRecEnd");if(_e)_e.textContent=" · ENDED "+DATA.sink.recycle_last;}
+ put("nDist",wA.out_usd);put("nExt",wA.in_external_usd||0);
+ if(DATA.sink&&DATA.sink.total)put("nSweep",Math.round(DATA.sink.total*(DATA.sink.rate||0)));
+ if(DATA.sink&&DATA.sink.rebate){const _r=DATA.sink.rebate,_e=document.getElementById("nRebate");
+   if(_e)_e.textContent=`holds ${Math.round(_r.bal_mente).toLocaleString()} MENTE + ${Math.round(_r.bal_moca).toLocaleString()} MOCA · last swap ${_r.last_swap||"never"}`;}
  if(F.cognition)put("nCons",F.cognition.total_usd);
  const fc=document.getElementById("flowCard"),fp=document.getElementById("flowPill");
  try{if(localStorage.getItem("flowOpen")==="0")fc.removeAttribute("open");}catch(e){}

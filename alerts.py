@@ -117,10 +117,27 @@ for d, rows in flows.items():
                       f"  · to {cp_s} — <i>{who}</i>",
                       "  · ❓ <b>Verify:</b> scheduled cognition distribution batch?"]
 
+# --- 3. rebate-wallet weekly MENTE→MOCA swap reminder (Po, 2026-08-20) ---
+# DATops should swap the rebate wallet's accumulated MENTE to MOCA weekly.
+# refresh.py computes the overdue flag (no MENTE outflow >8 days while >= $500
+# of MENTE sits there); remind at most once per 6 days while it stays true.
+_rebate = (DATA.get("sink") or {}).get("rebate")
+if _rebate and _rebate.get("overdue"):
+    _last_rem = state.get("rebate_swap_reminded")
+    if _last_rem is None or now - datetime.fromisoformat(_last_rem) >= timedelta(days=6):
+        state["rebate_swap_reminded"] = now.isoformat(timespec="minutes")
+        _sink_addr = (DATA.get("sink") or {}).get("addr", "")
+        lines += ["", "⏰ <b>Rebate wallet swap overdue</b> — remind DATops",
+                  f"  · Minds Rebate Fireblocks wallet {_sink_addr[:8]}…{_sink_addr[-4:]} holds "
+                  f"<b>{_rebate['bal_mente']:,.0f} MENTE</b> (≈${_rebate['bal_mente_usd']:,.0f}) unswapped",
+                  f"  · last MENTE→MOCA swap: <b>{_rebate.get('last_swap') or 'never'}</b>"
+                  + (f" ({_rebate['days_since_swap']} days ago)" if _rebate.get("days_since_swap") is not None else ""),
+                  "  · expected cadence: weekly"]
+
 # keep state bounded: only keys that can still re-trigger (last 48h of rows)
 recent = {r[5] for rows in flows.values() for r in rows
           if r[0] > now - timedelta(hours=48)}
-json.dump({"seen": sorted(seen & recent), "anomaly": anom}, open(STATE_PATH, "w"))
+json.dump({**state, "seen": sorted(seen & recent), "anomaly": anom}, open(STATE_PATH, "w"))
 
 if lines:
     msg = "\n".join(["🚨 <b>Flow alert</b> — <i>Skill Payout Dashboard</i>"] + lines)
