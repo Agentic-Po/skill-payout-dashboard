@@ -61,6 +61,7 @@ td.r,th.r{text-align:right}
 tr:last-child td{border-bottom:none}
 td a{color:var(--acc);text-decoration:none}
 .scroll{overflow-x:auto;max-height:70vh;overflow-y:auto}
+svg a{cursor:pointer}svg a:hover text{text-decoration:underline}svg a:hover rect{stroke-width:2.5}
 .scroll thead th{position:sticky;top:0;background:var(--surface);z-index:2}
 .mrow td{background:color-mix(in srgb,var(--ink) 5%,var(--surface));font-weight:650;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2)}
 .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);color:var(--ink2)}
@@ -111,20 +112,26 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
       <g font-size="13" fill="var(--ink)">
         <text x="150" y="26" text-anchor="middle" font-size="11" fill="var(--c-in)">value IN: Stripe fiat + treasury funding <tspan id="nExt" font-weight="700"></tspan></text>
         <line x1="150" y1="34" x2="150" y2="114" stroke="var(--c-in)" stroke-width="1.5" marker-end="url(#arrG)"/>
+        <a href="https://debank.com/profile/0x1c5ebb794335b72d773df2fd8f80f3d1afbb75dd/history?chain=base&amp;token=" target="_blank" rel="noopener">
         <rect x="430" y="18" width="220" height="54" rx="8" fill="none" stroke="var(--ink3)" stroke-width="1.5"/>
         <text x="540" y="40" text-anchor="middle" font-weight="650">Gas funder</text>
         <text x="540" y="56" text-anchor="middle" font-size="11" fill="var(--ink2)">0x1c5E…75dd · ETH slivers</text>
+        </a>
         <line x1="540" y1="72" x2="540" y2="114" stroke="var(--ink3)" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr)"/>
         <text x="550" y="98" font-size="11" fill="var(--ink2)">ETH sliver · same block (gasless UX)</text>
+        <a href="https://debank.com/profile/0xBD956171F5B50936f0Ad1C4db80c022bd2442519/history?chain=base&amp;token=" target="_blank" rel="noopener">
         <rect x="40"  y="120" width="220" height="64" rx="8" fill="none" stroke="var(--c-moca)"  stroke-width="1.5"/>
         <text x="150" y="146" text-anchor="middle" font-weight="650">Treasury Distribution</text>
         <text x="150" y="164" text-anchor="middle" font-size="11" fill="var(--ink2)">0xBD95…2519 · this dashboard</text>
+        </a>
         <rect x="430" y="120" width="220" height="64" rx="8" fill="none" stroke="var(--c-mente)" stroke-width="1.5"/>
         <text x="540" y="146" text-anchor="middle" font-weight="650">Mind wallet</text>
         <text x="540" y="164" text-anchor="middle" font-size="11" fill="var(--ink2)">credits = MENTE 1:1 + MOCA by value</text>
+        <a href="https://debank.com/profile/0xd85096fAeC1aC03075667B4C1a1661F5623Bf111/history?chain=base&amp;token=" target="_blank" rel="noopener">
         <rect x="820" y="120" width="220" height="64" rx="8" fill="none" stroke="var(--c-in)"    stroke-width="1.5"/>
         <text x="930" y="146" text-anchor="middle" font-weight="650">Cognition Collector</text>
         <text x="930" y="164" text-anchor="middle" font-size="11" fill="var(--ink2)">0xd850…f111 · consumption</text>
+        </a>
         <line x1="260" y1="152" x2="424" y2="152" stroke="var(--ink3)" stroke-width="1.5" marker-end="url(#arr)"/>
         <text x="342" y="140" text-anchor="middle" font-size="11" fill="var(--ink2)">credits &amp; top-ups <tspan id="nDist" font-weight="700" fill="var(--ink)"></tspan></text>
         <line x1="650" y1="152" x2="814" y2="152" stroke="var(--ink3)" stroke-width="1.5" marker-end="url(#arr)"/>
@@ -136,9 +143,11 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
         <text x="550" y="212" font-size="11" fill="var(--ink2)">swap when MENTE empty</text>
         <line x1="930" y1="188" x2="930" y2="234" stroke="var(--c-in)" stroke-width="1.5" marker-end="url(#arrG)"/>
         <text x="922" y="212" text-anchor="end" font-size="11" fill="var(--c-in)">40% of collected MENTE · daily <tspan id="nSweep" font-weight="700"></tspan></text>
+        <a href="https://debank.com/profile/0xf0961686bC71B8A1f42E7888bD8160e9B6240f40/history?chain=base&amp;token=" target="_blank" rel="noopener">
         <rect x="820" y="240" width="220" height="64" rx="8" fill="none" stroke="var(--c-in)" stroke-width="1.5"/>
         <text x="930" y="264" text-anchor="middle" font-weight="650">Minds Rebate Fireblocks</text>
         <text x="930" y="282" text-anchor="middle" font-size="11" fill="var(--ink2)">0xf096…0f40 · MENTE→MOCA weekly</text>
+        </a>
         <text x="930" y="322" text-anchor="middle" font-size="11" fill="var(--ink2)" id="nRebate"></text>
       </g>
     </svg></div>
