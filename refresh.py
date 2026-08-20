@@ -77,6 +77,83 @@ def get(url, tries=4):
 def key(i):
     return f"{i['transaction_hash']}:{i['log_index']}"
 
+# --- raw-RPC fallback (Blockscout v2 outage resilience, added 2026-08-20 after
+# a >14h platform-wide 500 on every /addresses/* endpoint broke hourly runs).
+# eth_getLogs returns the REAL log index, so cache keys stay identical to the
+# Blockscout rows and dedup/merge is safe across sources.
+# Blockscout's eth-rpc endpoint rate-limits the shared Actions IP after the
+# page crawl, so public Base RPCs come first and Blockscout stays last.
+RPC_ENDPOINTS = ["https://mainnet.base.org", "https://base.drpc.org",
+                 "https://base.blockscout.com/api/eth-rpc"]
+TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+
+def rpc(method, params, tries=3):
+    payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
+    last_err = None
+    for url in RPC_ENDPOINTS:
+        for a in range(tries):
+            try:
+                req = urllib.request.Request(url, data=payload,
+                    headers={"Content-Type": "application/json", "User-Agent": "curl/8.4.0"})
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    res = json.load(r)
+                if res.get("error"):
+                    last_err = Exception(f"{url}: {res['error']}")
+                    break  # rpc-level error (e.g. range too large) — next endpoint
+                if res.get("result") is not None:
+                    return res["result"]
+                last_err = Exception(f"{url}: empty result")
+                break
+            except Exception as e:
+                last_err = e
+                time.sleep(1)
+    raise last_err
+
+_block_ts_cache = {}
+def block_ts(bn):
+    if bn not in _block_ts_cache:
+        b = rpc("eth_getBlockByNumber", [hex(bn), False])
+        _block_ts_cache[bn] = datetime.fromtimestamp(
+            int(b["timestamp"], 16), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000000Z")
+    return _block_ts_cache[bn]
+
+def rpc_transfer_fallback(wallet, direction, token_addrs, from_block):
+    """Fetch Transfer logs via eth_getLogs and shape them like Blockscout v2
+    items (only the fields shards.slim keeps). Addresses come back lowercase —
+    canonicalized against cached casing downstream."""
+    topic_w = "0x" + "0" * 24 + wallet[2:].lower()
+    topics = ([TRANSFER_TOPIC, topic_w] if direction == "from"
+              else [TRANSFER_TOPIC, None, topic_w])
+    latest = int(rpc("eth_blockNumber", []), 16)
+    logs, start, chunk = [], from_block, 9000
+    while start <= latest:
+        end = min(start + chunk - 1, latest)
+        try:
+            logs += rpc("eth_getLogs", [{"fromBlock": hex(start), "toBlock": hex(end),
+                                         "address": token_addrs, "topics": topics}])
+        except Exception:
+            if chunk <= 500:
+                raise
+            chunk //= 2  # provider range/result cap — retry this span smaller
+            continue
+        start = end + 1
+        time.sleep(0.2)
+    items = []
+    for lg in logs:
+        if lg.get("removed") or len(lg.get("topics", [])) < 3:
+            continue
+        bn = int(lg["blockNumber"], 16)
+        items.append({"timestamp": block_ts(bn),
+                      "transaction_hash": lg["transactionHash"],
+                      "log_index": int(lg["logIndex"], 16),
+                      "block_number": bn,
+                      "from": {"hash": "0x" + lg["topics"][1][-40:]},
+                      "to": {"hash": "0x" + lg["topics"][2][-40:]},
+                      "token": {"address_hash": lg["address"].lower()},
+                      "total": {"value": str(int(lg["data"], 16)), "decimals": None}})
+    items.sort(key=lambda i: i["timestamp"], reverse=True)
+    return items
+
 # --- incremental fetch: newest pages until we overlap the cache. If the page
 # cap is hit before overlap, the cache is NOT updated (a silent gap would
 # become permanent and invisible) — the run renders from the last good cache.
@@ -88,16 +165,34 @@ def refresh_cache(base_url, dir_path, pages=100):
     seen = {key(i) for i in old}
     newest = old[0]["timestamp"] if old else "2026-04-01"
     items, params, overlapped = [], "", False
-    for _ in range(pages):
-        d = get(base_url + params)
-        b = d.get("items", [])
-        if not b or not d.get("next_page_params") or (old and b[-1]["timestamp"] < newest):
+    try:
+        for _ in range(pages):
+            d = get(base_url + params)
+            b = d.get("items", [])
+            if not b or not d.get("next_page_params") or (old and b[-1]["timestamp"] < newest):
+                items += b
+                overlapped = True
+                break
             items += b
+            params = "&" + "&".join(f"{k}={v}" for k, v in d["next_page_params"].items())
+            time.sleep(0.1)
+    except Exception as e:
+        # Blockscout v2 down — refetch the gap straight from the chain. Real
+        # log indexes keep keys compatible, so dedup against the cache is safe.
+        print(f"v2 crawl failed for {dir_path} ({e}) — trying eth_getLogs fallback")
+        newest_blk = max([i.get("block_number", 0) for i in old] + [0])
+        if not newest_blk:
+            print(f"WARNING: no cached block to resume from for {dir_path} — keeping previous cache")
+            return old, 0, False
+        try:
+            direction = "to" if "filter=to" in base_url else "from"
+            items = rpc_transfer_fallback(WALLET, direction,
+                                          [t["addr"] for t in TOKENS.values()], newest_blk)
             overlapped = True
-            break
-        items += b
-        params = "&" + "&".join(f"{k}={v}" for k, v in d["next_page_params"].items())
-        time.sleep(0.1)
+            print(f"fallback fetched {len(items)} logs for {dir_path} from block {newest_blk}")
+        except Exception as e2:
+            print(f"WARNING: fallback also failed for {dir_path} ({e2}) — keeping previous cache")
+            return old, 0, False
     if not overlapped:
         print(f"WARNING: page cap hit before overlap for {dir_path} — keeping previous cache")
         return old, 0, False
@@ -154,10 +249,6 @@ for sym, t in TOKENS.items():
         except Exception as e:
             print(sym, "dexscreener fallback failed:", e)
 BALANCE = {}
-# Blockscout's eth-rpc endpoint rate-limits the shared Actions IP after the
-# page crawl above, so try public Base RPCs first and keep Blockscout last.
-RPC_ENDPOINTS = ["https://mainnet.base.org", "https://base.drpc.org",
-                 "https://base.blockscout.com/api/eth-rpc"]
 def balance_at(addr, sym, block="latest"):
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [
         {"to": addr, "data": "0x70a08231" + "0" * 24 + WALLET[2:].lower()}, block]}).encode()
@@ -198,15 +289,26 @@ for sym, t in TOKENS.items():
         BALANCE_RECON[sym] = BALANCE[sym]
         RECON_DEGRADED.add(sym)
 
+# Canonical address casing: fallback rows carry lowercase addresses while
+# Blockscout rows are EIP-55 checksummed — aggregation keys on the exact
+# string, so map every address to the first mixed-case form seen in cache.
+ADDR_CASE = {}
+for _i in full + full_in:
+    for _h in (_i["from"]["hash"], _i["to"]["hash"]):
+        if _h != _h.lower():
+            ADDR_CASE.setdefault(_h.lower(), _h)
+def canon(addr):
+    return ADDR_CASE.get(addr.lower(), addr)
+
 def norm(i, extra_from=False):
     sym = ADDR2SYM.get(i["token"]["address_hash"].lower())
     if not sym:
         return None
     dec = int(i["total"].get("decimals") or DECIMALS[sym])
     r = {"ts": i["timestamp"][:19], "tok": sym, "val": int(i["total"]["value"]) / 10 ** dec,
-         "to": i["to"]["hash"], "tx": i["transaction_hash"], "blk": i.get("block_number", 0)}
+         "to": canon(i["to"]["hash"]), "tx": i["transaction_hash"], "blk": i.get("block_number", 0)}
     if extra_from:
-        r["from"] = i["from"]["hash"]
+        r["from"] = canon(i["from"]["hash"])
     return r
 
 rows = sorted(filter(None, (norm(i) for i in full)), key=lambda r: r["ts"], reverse=True)
@@ -312,6 +414,20 @@ cognition = None
 if os.path.isdir(COG_DIR):
     cog = shards.load(COG_DIR, ts_key="ts")
     # incremental top-up: newest pages until overlap (same banking pattern)
+    def _cog_fallback(seen_c, newest_c):
+        # cog rows carry no block number — estimate the resume block from the
+        # newest cached timestamp (Base ≈ 2s blocks) minus a 2h safety margin;
+        # dedup by tx:log_index absorbs the overlap.
+        latest_blk = int(rpc("eth_blockNumber", []), 16)
+        age_s = (datetime.now(timezone.utc)
+                 - datetime.fromisoformat(newest_c).replace(tzinfo=timezone.utc)).total_seconds()
+        from_blk = max(1, latest_blk - int(age_s / 2) - 3600)
+        items = rpc_transfer_fallback(COLLECTOR, "to", [TOKENS["MENTE"]["addr"]], from_blk)
+        return [{"ts": i["timestamp"][:19], "val": int(i["total"]["value"]) / 10 ** DECIMALS["MENTE"],
+                 "from": canon(i["from"]["hash"]), "tx": i["transaction_hash"],
+                 "log_index": i["log_index"], "transaction_hash": i["transaction_hash"]}
+                for i in items
+                if i["transaction_hash"] + ":" + str(i["log_index"]) not in seen_c]
     try:
         seen_c = {i["transaction_hash"] + ":" + str(i["log_index"]) for i in cog}
         newest_c = cog[0]["ts"] if cog else "2026-04-01"
@@ -332,7 +448,15 @@ if os.path.isdir(COG_DIR):
             cog = sorted(got_c + cog, key=lambda i: i["ts"], reverse=True)
             shards.save(COG_DIR, cog, months={shards.month_of(c, "ts") for c in got_c}, ts_key="ts")
     except Exception as e:
-        print("cognition incremental fetch failed (using cache):", e)
+        print("cognition v2 fetch failed:", e, "— trying eth_getLogs fallback")
+        try:
+            got_c = _cog_fallback(seen_c, newest_c) if cog else []
+            if got_c:
+                cog = sorted(got_c + cog, key=lambda i: i["ts"], reverse=True)
+                shards.save(COG_DIR, cog, months={shards.month_of(c, "ts") for c in got_c}, ts_key="ts")
+            print(f"cognition fallback added {len(got_c)} rows")
+        except Exception as e2:
+            print("cognition fallback failed (using cache):", e2)
     # exclude non-mind flows into the collector (e.g. from the treasury itself)
     treasury_l = WALLET.lower()
     _payout_recips = {r["to"].lower() for r in rows}
@@ -924,20 +1048,31 @@ guard["dist_pace"] = dist_pace
 SINK = "0xf0961686bC71B8A1f42E7888bD8160e9B6240f40"
 sink = None
 try:
+    SINK_GENESIS_BLOCK = 47_400_000  # 2026-06-16, safely before the sink's first sweep (Jun 19)
     def _sweep(direction):
         acc, params = [], ""
-        for _ in range(20):
-            dd = get(f"https://base.blockscout.com/api/v2/addresses/{SINK}/token-transfers?filter={direction}" + params)
-            b = dd.get("items", [])
-            acc += [{"ts": i["timestamp"][:19],
-                     "val": int(i["total"]["value"]) / 10 ** int(i["total"].get("decimals") or DECIMALS["MENTE"]),
-                     "cp": (i["from"] if direction == "to" else i["to"])["hash"]}
-                    for i in b if i["token"].get("address_hash", "").lower() == TOKENS["MENTE"]["addr"]]
-            if not b or not dd.get("next_page_params"):
-                break
-            params = "&" + "&".join(f"{k}={v}" for k, v in dd["next_page_params"].items())
-            time.sleep(0.1)
-        return acc
+        try:
+            for _ in range(20):
+                dd = get(f"https://base.blockscout.com/api/v2/addresses/{SINK}/token-transfers?filter={direction}" + params)
+                b = dd.get("items", [])
+                acc += [{"ts": i["timestamp"][:19],
+                         "val": int(i["total"]["value"]) / 10 ** int(i["total"].get("decimals") or DECIMALS["MENTE"]),
+                         "cp": (i["from"] if direction == "to" else i["to"])["hash"]}
+                        for i in b if i["token"].get("address_hash", "").lower() == TOKENS["MENTE"]["addr"]]
+                if not b or not dd.get("next_page_params"):
+                    break
+                params = "&" + "&".join(f"{k}={v}" for k, v in dd["next_page_params"].items())
+                time.sleep(0.1)
+            return acc
+        except Exception as _e:
+            # the sink has no cache (it's small: ~1 tx/day) — refetch its whole
+            # history from the chain when Blockscout v2 is down
+            print(f"sink v2 fetch failed ({_e}) — eth_getLogs fallback")
+            items = rpc_transfer_fallback(SINK, direction, [TOKENS["MENTE"]["addr"]], SINK_GENESIS_BLOCK)
+            return [{"ts": i["timestamp"][:19],
+                     "val": int(i["total"]["value"]) / 10 ** DECIMALS["MENTE"],
+                     "cp": canon((i["from"] if direction == "to" else i["to"])["hash"])}
+                    for i in items]
 
     _in, _out = _sweep("to"), _sweep("from")
     _sd = defaultdict(float)
@@ -958,7 +1093,13 @@ try:
             if (_b.get("token") or {}).get("address_hash", "").lower() == TOKENS["MENTE"]["addr"]:
                 _bal = int(_b["value"]) / 10 ** int(_b["token"]["decimals"])
     except Exception as _e:
-        print("collector balance fetch failed:", _e)
+        print("collector balance v2 fetch failed, trying eth_call:", _e)
+        try:
+            _res = rpc("eth_call", [{"to": TOKENS["MENTE"]["addr"],
+                                     "data": "0x70a08231" + "0" * 24 + COLLECTOR[2:].lower()}, "latest"])
+            _bal = int(_res, 16) / 10 ** DECIMALS["MENTE"]
+        except Exception as _e2:
+            print("collector balance fallback failed:", _e2)
 
     _sdays, _rdays = sorted(_sd), sorted(_rd)
     if _sdays:
