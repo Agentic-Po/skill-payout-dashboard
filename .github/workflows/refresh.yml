@@ -59,3 +59,33 @@ jobs:
           curl -s -o /dev/null "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             --data-urlencode text="🔴 Skill Payout Dashboard: hourly refresh FAILED. Check https://github.com/${{ github.repository }}/actions"
+      - name: Watch the ledger detector (cross-repo, non-blocking)
+        if: always()
+        continue-on-error: true
+        env:
+          LEDGER_BOT_TOKEN: ${{ secrets.LEDGER_BOT_TOKEN }}
+          LEDGER_CHAT_ID:   ${{ secrets.LEDGER_CHAT_ID }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, time, urllib.request, urllib.parse, datetime as dt
+          RAW = "https://raw.githubusercontent.com/Agentic-Po/moca-ledger/main/heartbeat.json"
+          def tg(msg):
+              tok, chat = os.environ.get("LEDGER_BOT_TOKEN"), os.environ.get("LEDGER_CHAT_ID")
+              if not (tok and chat): return
+              urllib.request.urlopen(urllib.request.Request(
+                  f"https://api.telegram.org/bot{tok}/sendMessage",
+                  data=urllib.parse.urlencode({"chat_id": chat, "text": msg, "parse_mode": "HTML"}).encode()), timeout=20)
+          try:
+              hb = json.load(urllib.request.urlopen(urllib.request.Request(RAW, headers={"User-Agent": "peer-watch"}), timeout=20))
+              ts = hb.get("run_ts")
+              age = (dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))).total_seconds() / 60 if ts else 1e9
+              lag = hb.get("lag_blocks") or 0
+              if age > 60 or lag > 900:
+                  tg(f"\u23f3 <b>ledger detector stale</b>\nlast run {age:.0f} min ago \u00b7 {lag} blocks behind tip\n(reported by the dashboard hourly job)")
+                  print("peer stale -> alerted")
+              else:
+                  print(f"ledger ok: {age:.0f} min old, lag {lag}")
+          except Exception as e:
+              tg(f"\u23f3 <b>ledger heartbeat unreadable</b>\n{str(e)[:100]}")
+              print("peer unreadable ->", e)
+          PYEOF
