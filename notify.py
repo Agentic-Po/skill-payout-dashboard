@@ -33,9 +33,20 @@ for i in shards.load(os.path.join(HERE, "transfers")):
     v = int(i["total"]["value"]) / 1e18
     rows.append((datetime.fromisoformat(i["timestamp"][:19]), classify(v), v, i["to"]["hash"]))
 
-def stats(cutoff):
-    """Cumulative figures counting only transfers at or before `cutoff`."""
-    rs = [r for r in rows if r[0] <= cutoff]
+MENTE_ADDR = "0x4cd9a847f39106e19a4e41aea8a232e915c82af5"
+mente_rows = []
+for i in shards.load(os.path.join(HERE, "transfers")):
+    if i["token"]["address_hash"].lower() == MENTE_ADDR:
+        mente_rows.append((datetime.fromisoformat(i["timestamp"][:19]),
+                           int(i["total"]["value"]) / 1e18))
+
+def win(hours=None):
+    """Activity inside the trailing window (None = all history).
+
+    Counts are payout transfers; creators are DISTINCT recipient wallets paid
+    an invoke- or equip-sized amount; moca_* are summed payout amounts.
+    """
+    rs = rows if hours is None else [r for r in rows if r[0] > now - timedelta(hours=hours)]
     return {
         "invoke": sum(1 for r in rs if r[1] == "invoke"),
         "equip": sum(1 for r in rs if r[1] == "equip"),
@@ -46,26 +57,23 @@ def stats(cutoff):
         "moca_topup": sum(r[2] for r in rs if r[1] == "topup"),
     }
 
-cur = stats(now)
-h1, h24, d7 = (stats(now - timedelta(hours=h)) for h in (1, 24, 24 * 7))
+w1, w24, w7d, cum = win(1), win(24), win(24 * 7), win()
+# the window the body reports on: 24h hourly/daily, 7d weekly
+W, WLAB = (w7d, "7d") if mode == "weekly" else (w24, "24h")
 
-def delta(key, ref):
-    d = cur[key] - ref[key]
-    return f"+{d:,.0f}" if d >= 0 else f"{d:,.0f}"
+COUNTS = [("invoke", "skill invokes"), ("equip", "skill equips"),
+          ("creators", "creator wallets paid"), ("incentive", "growth incentives")]
 
-def line(label, key):
-    if mode == "hourly":
-        return f"<b>{label}:</b> {cur[key]:,} <i>({delta(key, h1)} 1h · {delta(key, h24)} 24h)</i>"
-    if mode == "daily":
-        return f"<b>{label}:</b> {cur[key]:,} <i>({delta(key, h24)} 24h)</i>"
-    return f"<b>{label}:</b> {cur[key]:,} <i>({delta(key, d7)} 7d)</i>"
+def counts_line(w):
+    """'7 skill invokes / 2 growth incentives' — zero terms omitted entirely."""
+    return " · ".join(f"{w[k]:,} {lab}" for k, lab in COUNTS if w[k])
+
+def usd_line(label, key, w, note=""):
+    return f"<b>{label}:</b> {w[key]:,.0f} MOCA ≈ <b>${w[key] * RATE:,.2f}</b>{note}"
 
 head = {"hourly": "🟢 <b>Hourly refresh OK</b>",
         "daily": "📊 <b>Daily summary</b>",
         "weekly": "🗓 <b>Weekly summary</b>"}[mode]
-def usd_line(label, key, note=""):
-    u = cur[key] * RATE
-    return f"<b>{label}:</b> {cur[key]:,.0f} MOCA ≈ <b>${u:,.2f}</b>{note}"
 
 # guard summary from the freshly built page
 import re
@@ -73,7 +81,7 @@ _D = json.loads(re.search(r'const DATA = (\{.*\})\s*;\n', open(os.path.join(HERE
 G = _D["infer"]["guard"]
 F = _D["facts"]
 health = []
-w24 = F["windows"][0]
+w24_f = F["windows"][0]
 bal_m, bal_e = F["balance"].get("MOCA"), F["balance"].get("MENTE")
 # Wallet line is a hard contract of every message: if the live fetch failed
 # (balance null), fall back to the last non-null snapshot in stats_history
@@ -94,14 +102,17 @@ health.append("")
 health.append(f"<b>Wallet balance:</b> <b>${usd_m + usd_e:,.0f}</b> total{stale}")
 health.append(f"  · MOCA: {bal_m or 0:,.0f} ≈ <b>${usd_m:,.2f}</b>")
 health.append(f"  · MENTE: {bal_e or 0:,.0f} ≈ <b>${usd_e:,.2f}</b>")
-health.append(f"<b>24h:</b> out ${w24['out_usd']:,.0f} · in ${w24['in_usd']:,.0f} · net {'+' if w24['net_usd']>=0 else ''}${w24['net_usd']:,.0f}")
+out_1h = (sum(r[2] for r in rows if r[0] > now - timedelta(hours=1)) * RATE
+          + sum(v for t, v in mente_rows if t > now - timedelta(hours=1)) * (F["rate"].get("MENTE") or 0))
+_f1h = f"out ${out_1h:,.0f} 1h · $" if mode == "hourly" else "out $"
+health.append(f"<b>Flows:</b> {_f1h}{w24_f['out_usd']:,.0f} 24h · in ${w24_f['in_usd']:,.0f} 24h · net {'+' if w24_f['net_usd']>=0 else ''}${w24_f['net_usd']:,.0f} 24h")
 if mode in ("daily", "weekly"):
     health.append(f"<b>Pattern monitor:</b> {G['flagged_n']} of {G['monitored_n']} flagged · <b>at risk:</b> ${G['at_risk_usd']:,.2f} of ${G['ce_total_usd']:,.2f} <i>(heuristic, unconfirmed)</i>")
     if G.get("runway7") is not None:
         health.append(f"<b>Payout float:</b> ~{G['runway7']} days (7d-avg burn) · {G.get('runway24') or '?'}d at 24h pace — top-up cadence, not solvency")
 if mode == "weekly":
     health.append("")
-    health.append(f"<i>Paste-ready:</i> This week: {cur['invoke']:,} invokes across {cur['creators']} creators, ${cur['moca_ce']*RATE:,.2f} paid to creators — {G['flagged_n']} account(s) flagged for review, ${cur['moca_topup']*RATE:,.2f} of flows revenue-backed (Stripe-sized).")
+    health.append(f"<i>Paste-ready:</i> This week: {w7d['invoke']:,} invokes across {w7d['creators']:,} creator wallets, ${w7d['moca_ce']*RATE:,.2f} paid to creators — {G['flagged_n']} account(s) flagged for review, ${w7d['moca_topup']*RATE:,.2f} of flows revenue-backed (Stripe-sized).")
 for sym, r in (F.get("recon") or {}).items():
     if r and r.get("warn"):
         health.append(f"⚠️ <b>Reconciliation drift ({sym}):</b> Δ moved {r['drift']:+,.1f} since last run — possible missed transfers")
@@ -114,18 +125,23 @@ if rw < 7:
     if mode != "hourly" or crossed or now.hour % 6 == 0:
         health.append(f"🔴 <b>Low float:</b> ${G['burn24']}/24h burn → ~{rw}d left")
 
-msg = "\n".join([
-    f"{head} — <i>Skill Payout Dashboard</i>",
-    "",
-    line("Skill invokes", "invoke"),
-    line("Skill equips", "equip"),
-    line("Creators earning", "creators"),
-    line("Growth incentives", "incentive"),
-    "",
-    usd_line("Creator earnings", "moca_ce"),
-    usd_line("Incentive spend", "moca_incent", " <i>(credits + referrals)</i>"),
-    usd_line("Top-ups delivered", "moca_topup", " <i>(revenue-backed, Stripe)</i>"),
-] + health)
+fresh = counts_line(w1)
+body_lines = [f"{head} — <i>Skill Payout Dashboard</i>", ""]
+if mode == "hourly":
+    body_lines += [f"<b>New this hour:</b> {fresh}" if fresh
+                   else "<b>New this hour:</b> <i>nothing new</i>", ""]
+body_lines += [
+    f"<b>Last {WLAB}</b>",
+    f"  · payouts: {counts_line(W) or '<i>none</i>'}",
+    "  · " + usd_line("paid to creators", "moca_ce", W),
+    "  · " + usd_line("incentive spend", "moca_incent", W, " <i>($3 credits + $5 referrals)</i>"),
+    "  · " + usd_line("top-ups delivered", "moca_topup", W, " <i>(revenue-backed, Stripe)</i>"),
+]
+if mode in ("daily", "weekly"):
+    body_lines += ["", "<b>All time</b>",
+                   f"  · {cum['invoke']:,} invokes · {cum['equip']:,} equips · {cum['creators']:,} creator wallets paid",
+                   "  · " + usd_line("paid to creators", "moca_ce", cum)]
+msg = "\n".join(body_lines + health)
 
 body = urllib.parse.urlencode({
     "chat_id": os.environ["TELEGRAM_CHAT_ID"],
