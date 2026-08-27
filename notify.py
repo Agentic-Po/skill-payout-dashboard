@@ -18,20 +18,41 @@ hist = json.load(open(os.path.join(HERE, "stats_history.json")))
 RATE = hist[-1]["rate"]
 now = datetime.now(timezone.utc).replace(tzinfo=None)
 
+# Payout taxonomy. Sizes below are the DELIVERED value; Stripe top-ups arrive
+# net of ~6% processing (snapshot fee rate 7.2%), so a $10 pack lands as ~$9.4
+# — packs are matched on the grossed-up value. Anything above the incentive
+# band that matches no pack is "other" (swaps, treasury moves) and is kept OUT
+# of the top-up totals, which it would otherwise dominate.
+PACKS = (10, 20, 25, 50, 100)
+INCENT = ((3, "$3 credits"), (5, "$5 referrals"))
+NET_OF_FEES = 0.94
+TOL = 0.15
+
+def _snap(value, points, tol=TOL):
+    for p in points:
+        if abs(value - p) / p <= tol:
+            return p
+    return None
+
 def classify(v):
+    """-> (class, tier) where tier is the $ pack/incentive size, or None."""
     usd = v * RATE
-    if usd < 0.06: return "micro"
-    if usd < 0.4: return "invoke"
-    if usd < 2: return "equip"
-    if usd < 7: return "incentive"   # new-user credits ($3) + referrals ($5) — real spend
-    return "topup"                   # Stripe top-ups — revenue-backed passthrough
+    if usd < 0.06: return "micro", None
+    if usd < 0.4:  return "invoke", None
+    if usd < 2:    return "equip", None
+    tier = _snap(usd, [p for p, _ in INCENT])
+    if tier: return "incentive", tier
+    pack = _snap(usd / NET_OF_FEES, PACKS)
+    if pack: return "topup", pack
+    return "other", None
 
 rows = []
 for i in shards.load(os.path.join(HERE, "transfers")):
     if i["token"]["address_hash"].lower() != "0x2b11834ed1feaed4b4b3a86a6f571315e25a884d":
         continue
     v = int(i["total"]["value"]) / 1e18
-    rows.append((datetime.fromisoformat(i["timestamp"][:19]), classify(v), v, i["to"]["hash"]))
+    cls, tier = classify(v)
+    rows.append((datetime.fromisoformat(i["timestamp"][:19]), cls, v, i["to"]["hash"], tier))
 
 MENTE_ADDR = "0x4cd9a847f39106e19a4e41aea8a232e915c82af5"
 mente_rows = []
@@ -45,17 +66,37 @@ def win(hours=None):
 
     Counts are payout transfers; creators are DISTINCT recipient wallets paid
     an invoke- or equip-sized amount; moca_* are summed payout amounts.
+    tiers_* map $ size -> count, so the mix is visible, not just the total.
     """
     rs = rows if hours is None else [r for r in rows if r[0] > now - timedelta(hours=hours)]
+    def tiers(cls):
+        out = {}
+        for r in rs:
+            if r[1] == cls and r[4]:
+                out[r[4]] = out.get(r[4], 0) + 1
+        return dict(sorted(out.items()))
     return {
         "invoke": sum(1 for r in rs if r[1] == "invoke"),
         "equip": sum(1 for r in rs if r[1] == "equip"),
         "incentive": sum(1 for r in rs if r[1] == "incentive"),
+        "topup_n": sum(1 for r in rs if r[1] == "topup"),
         "creators": len({r[3] for r in rs if r[1] in ("invoke", "equip")}),
         "moca_ce": sum(r[2] for r in rs if r[1] in ("invoke", "equip")),
         "moca_incent": sum(r[2] for r in rs if r[1] in ("incentive", "micro")),
         "moca_topup": sum(r[2] for r in rs if r[1] == "topup"),
+        "tiers_incent": tiers("incentive"),
+        "tiers_topup": tiers("topup"),
+        "other_n": sum(1 for r in rs if r[1] == "other"),
+        "other_usd": sum(r[2] for r in rs if r[1] == "other") * RATE,
     }
+
+def mix(tiers, labels=None):
+    """'23 x $10 - 24 x $20' — biggest first, blank when empty."""
+    if not tiers: return ""
+    top = sorted(tiers.items(), key=lambda kv: -kv[1])
+    return " · ".join(f"{n:,} × {labels[p] if labels else '$%d' % p}" for p, n in top)
+
+INCENT_LABEL = dict(INCENT)
 
 w1, w24, w7d, cum = win(1), win(24), win(24 * 7), win()
 # the window the body reports on: 24h hourly/daily, 7d weekly
@@ -134,9 +175,15 @@ body_lines += [
     f"<b>Last {WLAB}</b>",
     f"  · payouts: {counts_line(W) or '<i>none</i>'}",
     "  · " + usd_line("paid to creators", "moca_ce", W),
-    "  · " + usd_line("incentive spend", "moca_incent", W, " <i>($3 credits + $5 referrals)</i>"),
-    "  · " + usd_line("top-ups delivered", "moca_topup", W, " <i>(revenue-backed, Stripe)</i>"),
+    "  · " + usd_line("incentive spend", "moca_incent", W,
+                      f" <i>({mix(W['tiers_incent'], INCENT_LABEL)})</i>" if W["tiers_incent"] else ""),
+    "  · " + usd_line("top-ups delivered", "moca_topup", W,
+                      f" <i>({W['topup_n']:,} paid: {mix(W['tiers_topup'])})</i>" if W["tiers_topup"]
+                      else " <i>(revenue-backed, Stripe)</i>"),
 ]
+if W["other_n"]:
+    body_lines.append(f"  · <i>excluded {W['other_n']:,} non-standard transfer(s) ≈ ${W['other_usd']:,.0f} "
+                      f"— swaps/treasury moves, not user top-ups</i>")
 if mode in ("daily", "weekly"):
     body_lines += ["", "<b>All time</b>",
                    f"  · {cum['invoke']:,} invokes · {cum['equip']:,} equips · {cum['creators']:,} creator wallets paid",
