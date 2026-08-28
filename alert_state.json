@@ -1,1 +1,1 @@
-{"seen": ["0x8156320e14f6cd957b1d883e625f125e7cb39b343c69d9d1477e866b86ea95eb:673", "0xc7a916d3ea102644b91b23466b03231298d62848fc763bfad99514eb879fdbc3:1770"], "anomaly": {"out": {"above": false, "last_alert": "2026-08-26T16:26"}}, "rebate_swap_reminded": "2026-08-20T09:51"}
+{"seen": [], "anomaly": {"out": {"above": false, "last_alert": "2026-08-26T16:26"}}, "rebate_swap_reminded": "2026-08-20T09:51"}
