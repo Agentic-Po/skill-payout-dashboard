@@ -1,7 +1,10 @@
 name: Refresh dashboard
 on:
   schedule:
-    - cron: "7 * * * *"   # hourly at :07 UTC
+    - cron: "3,18,33,48 * * * *"   # 4x/hour on off-peak minutes: GitHub's
+      # scheduler delivers best-effort (observed 8-85%% since 2026-08-26), so
+      # asking 4x yields ~hourly in practice; notify.py rate-limits the
+      # Telegram digest to one per ~hour regardless of how many runs land
   workflow_dispatch:
 permissions:
   contents: write
@@ -13,6 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main   # latest at checkout time, not the trigger-time SHA —
+                      # a queued run replaying onto a moved main caused the
+                      # 2026-08-29 14:19 rebase-conflict failure
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -59,8 +66,16 @@ jobs:
           # .gitignore keeps alert_state.json and scratch files out
           git add -A
           git diff --cached --quiet || git commit -m "refresh $(date -u +'%Y-%m-%d %H:%M') UTC"
-          git pull --rebase origin main
-          git push
+          # -X theirs: during rebase, "theirs" = this run's replayed commit,
+          # so the freshly generated artifacts win conflicting hunks while
+          # upstream code commits still apply cleanly. Bounded retry absorbs
+          # a concurrent run pushing mid-flight.
+          for i in 1 2 3; do
+            git pull --rebase -X theirs origin main && git push && break
+            git rebase --abort 2>/dev/null || true
+            [ "$i" = 3 ] && exit 1
+            sleep $((i*10))
+          done
       # External dead-man's switch: healthchecks.io expects this ping hourly
       # and alerts when it goes silent — the only leg that catches GitHub's
       # own scheduler stalling (2026-08-26: 8h account-wide cron stall).

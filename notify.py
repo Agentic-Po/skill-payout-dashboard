@@ -189,6 +189,17 @@ if mode in ("daily", "weekly"):
                    "  · " + usd_line("paid to creators", "moca_ce", cum)]
 msg = "\n".join(body_lines + health)
 
+# Rate-limit the hourly digest: the cron now fires 4x/hour (scheduler
+# starvation workaround), but Po wants at most ~one digest per hour. State
+# rides in alert_state.json (Actions cache). Daily/weekly always send.
+if mode == "hourly":
+    _sp = os.path.join(HERE, "alert_state.json")
+    _st = json.load(open(_sp)) if os.path.exists(_sp) else {}
+    _last = _st.get("last_hourly_digest")
+    if _last and (now - datetime.fromisoformat(_last)).total_seconds() < 50 * 60:
+        print(f"hourly digest sent {_last} — under 50 min ago, skipping")
+        raise SystemExit(0)
+
 body = urllib.parse.urlencode({
     "chat_id": os.environ["TELEGRAM_CHAT_ID"],
     "text": msg,
@@ -201,3 +212,10 @@ req = urllib.request.Request(
     data=body)
 with urllib.request.urlopen(req, timeout=30) as r:
     print("telegram:", r.status)
+# stamp AFTER the successful send — stamping first would let one failed send
+# silence the digest for 50 min (same class as the alerts.py QA finding)
+if mode == "hourly":
+    _sp = os.path.join(HERE, "alert_state.json")
+    _st = json.load(open(_sp)) if os.path.exists(_sp) else {}
+    _st["last_hourly_digest"] = now.isoformat(timespec="minutes")
+    json.dump(_st, open(_sp, "w"))
