@@ -30,7 +30,9 @@ jobs:
       - name: Restore alert state
         uses: actions/cache@v4
         with:
-          path: alert_state.json
+          path: |
+            alert_state.json
+            guard_private.json
           key: alert-state-${{ github.run_id }}
           restore-keys: alert-state-
       - name: Refresh data and rebuild page
@@ -42,6 +44,14 @@ jobs:
       # Tripwire well below GitHub's 100 MB hard limit (transfers.json hit it
       # on 2026-07-30) — a growing file should fail here, with a clear message,
       # long before pushes start bouncing.
+      # Leak tripwire (council 2026-08-30): per-wallet detector scores must
+      # never reach a public artifact again — fail the run before commit.
+      - name: Guard against detector-signal leaks
+        run: |
+          if grep -lE '"(ent|acf|burst)":' index.html legacy.html data.json 2>/dev/null; then
+            echo "::error::Per-wallet detector signals found in a public artifact — refusing to publish"
+            exit 1
+          fi
       - name: Guard against oversized files
         run: |
           BIG=$(find . -path ./.git -prune -o -type f -size +50M -print)

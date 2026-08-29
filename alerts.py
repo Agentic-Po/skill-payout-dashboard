@@ -27,13 +27,13 @@ URL = "https://agentic-po.github.io/skill-payout-dashboard/"
 BIG_USD = 5000
 STATE_PATH = os.path.join(HERE, "alert_state.json")
 
+# data.json is the versioned contract with refresh.py (schema_version 1) —
+# the index.html regex fallback is gone; fail loud instead of alerting on
+# stale state (alerts runs in the same job right after refresh.py).
 _dj = os.path.join(HERE, "data.json")
-if os.path.exists(_dj):
-    DATA = json.load(open(_dj))
-else:
-    print("WARN: data.json missing, falling back to index.html regex")
-    DATA = json.loads(re.search(r'const DATA = (\{.*\})\s*;\n',
-                                open(os.path.join(HERE, "index.html")).read()).group(1))
+if not os.path.exists(_dj):
+    raise SystemExit("FATAL: data.json missing — refresh.py must run first")
+DATA = json.load(open(_dj))
 RATE = DATA["facts"]["rate"]                      # {sym: usd}
 TOKENS = {a.lower(): s for s, a in DATA["scope"]["tokens"].items()}
 LABELS = {r["addr"].lower(): r["role"] for r in DATA.get("registry", [])}

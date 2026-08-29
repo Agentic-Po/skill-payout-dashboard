@@ -4,3 +4,5 @@ __pycache__/
 wallet_mind_map.csv
 # detector state — Actions cache only, never the public repo (timing oracle)
 alert_state.json
+guard_private.json
+data.json.tmp

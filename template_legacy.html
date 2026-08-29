@@ -212,13 +212,6 @@ if(G.runway_days!==null&&Math.min(G.runway_adj??99,G.runway_days)<14){
  rb.innerHTML=`⛽ <strong>Payout float reminder:</strong> ~<strong>${G.runway_adj??G.runway_days} days</strong> at projected burn (${G.runway_days}d at current pace) — ${fmt(G.balance)} MOCA in the wallet vs $${G.burn24}/24h unbacked spend${G.burn_prev>0&&G.burn24/G.burn_prev>2?" <strong>(accelerating)</strong>":""}. Operational top-up cadence, not solvency — plan the next refill.`;
 }
 document.getElementById("gtiles").innerHTML=gtiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
-document.getElementById("gN").textContent=G.rows.length+" creators monitored";
-document.getElementById("gT").innerHTML=`<thead><tr><th>Creator</th><th class="r">Invokes</th><th class="r">Span</th><th class="r">Rhythm variety</th><th class="r">Repeating pattern</th><th class="r">Rapid-fire</th><th class="r">MOCA</th><th>Status</th></tr></thead><tbody>`+
- G.rows.map(g=>{
-  const pill=g.status==="review"
-   ?`<span class="pill" style="border-color:var(--c-equip);color:var(--c-equip)">review suggested</span>`
-   :`<span class="pill" style="border-color:var(--c-growth);color:var(--c-growth)">organic</span>`;
-  const extra=[...g.flags,...g.tags].map(f=>`<span class="pill">${f}</span>`).join(" ");
-  return `<tr><td class="mono"><a href="https://basescan.org/address/${g.addr}" target="_blank">${g.addr.slice(0,8)}…${g.addr.slice(-4)}</a></td><td class="r">${g.n}</td><td class="r mono">${g.span_h}h</td><td class="r mono">${g.ent.toFixed(2)}</td><td class="r mono">${g.acf.toFixed(2)}</td><td class="r mono">${g.burst}%</td><td class="r mono">${fmt(g.moca)}</td><td>${pill} ${extra}</td></tr>`;
- }).join("")+`</tbody>`;
+document.getElementById("gN").textContent=(G.rows_private_n||0)+" creators monitored (detail now private)";
+document.getElementById("gT").innerHTML=`<tbody><tr><td style="padding:12px">Per-wallet monitor detail moved to a private reviewer file (calibration-oracle protection). See the main dashboard for aggregates.</td></tr></tbody>`;
 </script>

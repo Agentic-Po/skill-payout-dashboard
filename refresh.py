@@ -330,7 +330,8 @@ def norm(i, extra_from=False):
         return None
     dec = int(i["total"].get("decimals") or DECIMALS[sym])
     r = {"ts": i["timestamp"][:19], "tok": sym, "val": int(i["total"]["value"]) / 10 ** dec,
-         "to": canon(i["to"]["hash"]), "tx": i["transaction_hash"], "blk": i.get("block_number", 0)}
+         "to": canon(i["to"]["hash"]), "tx": i["transaction_hash"], "blk": i.get("block_number", 0),
+         "li": i.get("log_index", "")}
     if extra_from:
         r["from"] = canon(i["from"]["hash"])
     return r
@@ -727,9 +728,15 @@ for sym in TOKENS:
     drift = round(delta - prev, 1) if prev is not None and clean else None
     if clean:
         STATE["recon"][sym] = delta
+    # Interim symmetric per-token fences (council 2026-08-30): the old
+    # (>30 / <-150) pair was MENTE-era and asymmetric. MENTE is frozen, so any
+    # movement is signal; MOCA's only legitimate drift is a missed-transfer
+    # event (the Aug-19 outage showed ±1,094). Recalibrate from the recon
+    # series now being persisted into stats_history once ~2 weeks accumulate.
+    DRIFT_FENCE = {"MOCA": 100, "MENTE": 50}
     recon[sym] = {"net_cached": round(net, 1), "balance": round(BALANCE_RECON[sym], 1),
                   "delta": delta, "drift": drift, "degraded": sym in RECON_DEGRADED,
-                  "warn": bool(drift is not None and (drift > 30 or drift < -150))}
+                  "warn": bool(drift is not None and abs(drift) > DRIFT_FENCE.get(sym, 50))}
 
 # ================= DAILY BALANCE, RECONSTRUCTED =================
 # Walk BACKWARD from the block-pinned on-chain balance, subtracting each day's
@@ -953,7 +960,13 @@ guard = {"flagged_n": len(flagged), "monitored_n": len(grows), "at_risk_usd": at
          "ce_total_usd": ce_total,
          "runway24": runway24, "runway7": runway7, "runway_total": runway_total, "bal_usd": round(bal_usd, 0),
          "burn24": round(burn24, 2), "burn_prev": round(burn_prev, 2),
-         "burn7avg": round(burn7avg, 2), "rows": grows}
+         "burn7avg": round(burn7avg, 2)}
+# Per-wallet detector rows (addresses + ent/acf/burst signal values) are a
+# calibration oracle — the Q3 flagged-wallets lesson. They now go ONLY to a
+# git-ignored private file (rides the Actions cache for reviewer access),
+# never into the public DATA/index.html/data.json.
+json.dump({"generated": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "rows": grows},
+          open(os.path.join(HERE, "guard_private.json"), "w"))
 
 # permanent Stripe snapshot (verified server-side revenue reference)
 stripe_snap = None
@@ -1275,7 +1288,8 @@ for _r in registry:
     elif len(_short[_a[:6].lower() + _a[-4:].lower()]) > 1:
         _r["collision"] = "short"      # ambiguous in the 0xXXXX…XXXX diagram/prose form
 
-data = {"scope": scope, "facts": facts, "infer": infer, "server": server, "stripe_snap": stripe_snap,
+data = {"schema_version": 1,
+        "scope": scope, "facts": facts, "infer": infer, "server": server, "stripe_snap": stripe_snap,
         "insights": insights, "open_items": open_items, "gaps": gaps, "registry": registry, "sink": sink}
 
 # machine-readable copy of exactly what the page embeds — alerts.py/notify.py
@@ -1288,18 +1302,25 @@ json.dump(STATE, open(RATES_PATH, "w"), indent=0)
 # --- per-tx export with rate provenance ---
 with open(os.path.join(HERE, "transfers_export.csv"), "w", newline="") as fh:
     w = csv.writer(fh)
-    w.writerow(["timestamp_utc", "direction", "token", "amount", "rate_usd", "rate_source", "usd", "size_band", "counterparty", "counterparty_label", "tx_hash"])
+    # class_coarse/class_fine speak classify_usd's canonical vocabulary so an
+    # auditor can tie every CSV row to the page fine_table and the Telegram
+    # digest without re-implementing the taxonomy; log_index completes the
+    # (tx_hash, log_index) primary key for multi-transfer transactions.
+    w.writerow(["timestamp_utc", "direction", "token", "amount", "rate_usd", "rate_source", "usd", "size_band", "counterparty", "counterparty_label", "tx_hash", "log_index", "class_coarse", "class_fine"])
     for r in rows:
         w.writerow([r["ts"], "OUT", r["tok"], f"{r['val']:.6f}", f"{r['rate']:.8f}", r["rsrc"], f"{r['usd']:.4f}",
-                    BAND_LABEL[band(r["usd"])], r["to"], KNOWN.get(r["to"].lower(), ""), r["tx"]])
+                    BAND_LABEL[band(r["usd"])], r["to"], KNOWN.get(r["to"].lower(), ""), r["tx"],
+                    r.get("li", ""), r.get("cat", ""), r.get("fine", "")])
     for f in inflows:
         w.writerow([f["ts"], "IN", f["tok"], f"{f['val']:.6f}", f"{f['rate']:.8f}", f["rsrc"], f"{f['usd']:.4f}",
-                    "", f["from"], KNOWN.get(f["from"].lower(), ""), f["tx"]])
+                    "", f["from"], KNOWN.get(f["from"].lower(), ""), f["tx"], f.get("li", ""), "", ""])
 
 # --- snapshot history (append-only; git history is the immutable trail) ---
 hist_path = os.path.join(HERE, "stats_history.json")
 hist = json.load(open(hist_path)) if os.path.exists(hist_path) else []
 hist.append({"ts": now.strftime("%Y-%m-%dT%H:%M"),
+             "recon": {s: {"delta": recon[s]["delta"], "drift": recon[s]["drift"]}
+                       for s in TOKENS if recon.get(s)},
              "invoke": S["tot"]["invoke"]["n"], "equip": S["tot"]["equip"]["n"],
              "growth": S["tot"]["growth"]["n"],
              "moca": round(sum(r["val"] for r in rows if r["tok"] == "MOCA"), 1),
@@ -1392,7 +1413,7 @@ if mrows:
               "burn24": round(lburn24, 2), "burn_prev": round(lburn_prev, 2),
               "promised_usd": round(lprom, 2),
               "fx_drift_pct": round((lsett - lprom) / lprom * 100, 1) if lprom else 0,
-              "rows": lgrows}
+              "rows_private_n": len(lgrows)}
     def _lbucket(r):
         f = r["fine"]
         if f in ("stripe $10", "stripe $25", "stripe $50"): return "stripe"

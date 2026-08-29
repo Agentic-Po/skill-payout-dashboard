@@ -71,10 +71,10 @@ def win(hours=None):
         "topup_n": sum(1 for r in rs if r[1] == "topup"),
         "creators": len({r[3] for r in rs if r[1] in ("invoke", "equip")}),
         "moca_ce": sum(r[2] for r in rs if r[1] in ("invoke", "equip")),
-        "moca_incent": sum(r[2] for r in rs if r[1] in ("incentive", "micro")),
+        "moca_incent": sum(r[2] for r in rs if r[1] == "incentive"),
         "moca_topup": sum(r[2] for r in rs if r[1] == "topup"),
         "usd_ce": sum(r[5] for r in rs if r[1] in ("invoke", "equip")),
-        "usd_incent": sum(r[5] for r in rs if r[1] in ("incentive", "micro")),
+        "usd_incent": sum(r[5] for r in rs if r[1] == "incentive"),
         "usd_topup": sum(r[5] for r in rs if r[1] == "topup"),
         "tiers_incent": tiers("incentive"),
         "tiers_topup": tiers("topup"),
@@ -112,12 +112,16 @@ head = {"hourly": "🟢 <b>Hourly refresh OK</b>",
 
 # guard summary from the freshly built page
 import re
+# data.json is the versioned contract with refresh.py — no HTML scraping.
+# Fail LOUD on absence or staleness: a silent fallback to stale numbers is
+# how the wallet-balance line went dark for days in July.
 _dj = os.path.join(HERE, "data.json")
-if os.path.exists(_dj):
-    _D = json.load(open(_dj))
-else:
-    print("WARN: data.json missing, falling back to index.html regex")
-    _D = json.loads(re.search(r'const DATA = (\{.*\})\s*;\n', open(os.path.join(HERE, "index.html")).read()).group(1))
+if not os.path.exists(_dj):
+    raise SystemExit("FATAL: data.json missing — refresh.py must run first")
+_D = json.load(open(_dj))
+_gen = _D.get("scope", {}).get("generated_iso")
+if _gen and (now - datetime.fromisoformat(_gen.replace("Z", ""))).total_seconds() > 2 * 3600:
+    raise SystemExit(f"FATAL: data.json stale (generated {_gen}) — refusing to send outdated figures")
 G = _D["infer"]["guard"]
 F = _D["facts"]
 health = []
@@ -142,7 +146,7 @@ health.append("")
 health.append(f"<b>Wallet balance:</b> <b>${usd_m + usd_e:,.0f}</b> total{stale}")
 health.append(f"  · MOCA: {bal_m or 0:,.0f} ≈ <b>${usd_m:,.2f}</b>")
 health.append(f"  · MENTE: {bal_e or 0:,.0f} ≈ <b>${usd_e:,.2f}</b>")
-out_1h = (sum(r[2] for r in rows if r[0] > now - timedelta(hours=1)) * RATE
+out_1h = (sum(r[5] for r in rows if r[0] > now - timedelta(hours=1))
           + sum(v for t, v in mente_rows if t > now - timedelta(hours=1)) * (F["rate"].get("MENTE") or 0))
 _f1h = f"out ${out_1h:,.0f} 1h · $" if mode == "hourly" else "out $"
 health.append(f"<b>Flows:</b> {_f1h}{w24_f['out_usd']:,.0f} 24h · in ${w24_f['in_usd']:,.0f} 24h · net {'+' if w24_f['net_usd']>=0 else ''}${w24_f['net_usd']:,.0f} 24h")
@@ -152,7 +156,10 @@ if mode in ("daily", "weekly"):
         health.append(f"<b>Payout float:</b> ~{G['runway7']} days (7d-avg burn) · {G.get('runway24') or '?'}d at 24h pace — top-up cadence, not solvency")
 if mode == "weekly":
     health.append("")
-    health.append(f"<i>Paste-ready:</i> This week: {w7d['invoke']:,} invokes across {w7d['creators']:,} creator wallets, ${w7d['usd_ce']:,.2f} paid to creators — {G['flagged_n']} account(s) flagged for review, ${w7d['usd_topup']:,.2f} of flows revenue-backed (Stripe-sized).")
+    _ss = _D.get("stripe_snap") or {}
+    _ver = (f" Verified Stripe net: ${_ss.get('net_usd', 0):,.0f} ({_ss['period'][0]}→{_ss['period'][1]}, one-time snapshot)."
+            if _ss.get("net_usd") and _ss.get("period") else "")
+    health.append(f"<i>Paste-ready:</i> This week: {w7d['invoke']:,} invokes across {w7d['creators']:,} creator wallets, ${w7d['usd_ce']:,.2f} paid to creators — {G['flagged_n']} account(s) flagged for review. ${w7d['usd_topup']:,.2f} of flows were Stripe-pack-sized deliveries (size-inferred; may include coupon-delivered credits — not verified revenue).{_ver}")
 for sym, r in (F.get("recon") or {}).items():
     if r and r.get("warn"):
         health.append(f"⚠️ <b>Reconciliation drift ({sym}):</b> Δ moved {r['drift']:+,.1f} since last run — possible missed transfers")

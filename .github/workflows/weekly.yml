@@ -32,20 +32,34 @@ jobs:
           else
             echo "status=UNHEALTHY" >> $GITHUB_OUTPUT
           fi
-      - name: Commit heartbeat (keeps Actions cron alive)
-        run: |
-          date -u +"last heartbeat: %Y-%m-%d %H:%M UTC" > HEARTBEAT.md
-          git config user.name "dashboard-bot"
-          git config user.email "actions@github.com"
-          git add HEARTBEAT.md && git commit -m "weekly heartbeat" && git push
-      - name: Weekly Telegram status (dead-man's switch — silence means broken)
+      - name: Weekly Telegram digest
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 notify.py weekly
+      # Separate always() step: a notify.py failure (e.g. stale-data
+      # fail-hard) must never silence the health alert — council 2026-08-30.
+      - name: Health alert (dead-man's switch — silence means broken)
+        if: always()
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python3 notify.py weekly
           if [ "${{ steps.health.outputs.status }}" != "healthy" ]; then
             curl -s -o /dev/null "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
               -d chat_id="$TELEGRAM_CHAT_ID" \
               --data-urlencode text="🔴 Health check: last refresh run=${{ steps.health.outputs.conclusion }}, page age ${{ steps.health.outputs.age_h }}h — needs a look."
           fi
+      - name: Commit heartbeat (keeps Actions cron alive)
+        if: always()
+        run: |
+          date -u +"last heartbeat: %Y-%m-%d %H:%M UTC" > HEARTBEAT.md
+          git config user.name "dashboard-bot"
+          git config user.email "actions@github.com"
+          git add HEARTBEAT.md && git commit -m "weekly heartbeat" || exit 0
+          for i in 1 2 3; do
+            git pull --rebase -X theirs origin main && git push && break
+            git rebase --abort 2>/dev/null || true
+            [ "$i" = 3 ] && exit 1
+            sleep $((i*10))
+          done

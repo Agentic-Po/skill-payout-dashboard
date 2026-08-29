@@ -816,19 +816,15 @@ document.getElementById("fineT").innerHTML=`<thead><tr><th>Inferred type</th><th
 document.getElementById("creatT").innerHTML=`<thead><tr><th>#</th><th>Creator wallet</th><th class="r">Invokes</th><th class="r">Equips</th><th class="r">USD</th><th class="r">Share</th></tr></thead><tbody>`+
  I.creators.slice(0,15).map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r">${c.invoke.toLocaleString()}</td><td class="r">${c.equip}</td><td class="r mono">$${c.usd.toLocaleString()}</td><td class="r mono">${(c.usd/I.ce_total*100).toFixed(1)}%</td></tr>`).join("")+`</tbody>`;
 document.getElementById("patSum").innerHTML=`<span class="aibadge">AI-inferred</span>Payout pattern monitor <span class="pill" style="${G.flagged_n?"border-color:var(--warn);color:var(--warn)":""}">${G.flagged_n?G.flagged_n+" flagged · $"+G.at_risk_usd.toLocaleString():"no flags"}</span><span class="pill">${G.monitored_n} monitored</span>`;
-const gShown=G.rows.filter(g=>g.status==="review").concat(G.rows.filter(g=>g.status!=="review").slice(0,25));
-let gAll=false;
-function renderMonitor(){
-const list=gAll?G.rows:gShown;
-document.getElementById("gT").innerHTML=`<thead><tr><th>Creator</th><th class="r">Invokes</th><th class="r">Span</th><th class="r">Rhythm variety</th><th class="r">Repeating pattern</th><th class="r">Rapid-fire</th><th class="r">USD</th><th>Status</th></tr></thead><tbody>`+
- list.map(g=>{
-  const pill=g.status==="review"
-   ?`<span class="pill" style="border-color:var(--warn);color:var(--warn)">review suggested</span>`
-   :`<span class="pill" style="border-color:var(--c-in);color:var(--c-in)">no flags</span>`;
-  const extra=[...g.flags,...g.tags].map(f=>`<span class="pill">${f}</span>`).join(" ");
-  return `<tr><td class="mono"><a href="https://basescan.org/address/${g.addr}" target="_blank">${g.addr.slice(0,8)}…${g.addr.slice(-4)}</a>${g.label?` <span class="pill">${g.label}</span>`:""}</td><td class="r">${g.n.toLocaleString()}</td><td class="r mono">${g.span_h}h</td><td class="r mono">${g.ent.toFixed(2)}</td><td class="r mono">${g.acf.toFixed(2)}</td><td class="r mono">${g.burst}%</td><td class="r mono">$${g.usd.toLocaleString()}</td><td>${pill} ${extra}</td></tr>`;
- }).join("")+(gAll||G.rows.length<=gShown.length?"":`<tr><td colspan="8"><button class="showmore" id="gMore">Show all ${G.rows.length} monitored wallets ▾</button></td></tr>`)+`</tbody>`;
-const b=document.getElementById("gMore"); if(b)b.addEventListener("click",()=>{gAll=true;renderMonitor();});
+// Per-wallet monitor rows are no longer published (calibration-oracle
+// lesson): the public page shows aggregates only; the row-level detail
+// lives in a private reviewer file on the CI runner.
+document.getElementById("gT").innerHTML=`<tbody><tr><td style="padding:14px;color:var(--ink2)">
+ Per-wallet signal detail is <b>reviewed privately</b> — publishing wallet-level detector scores would hand
+ anyone gaming payouts a calibration oracle. This page reports the aggregates:
+ <b>${G.monitored_n}</b> wallets monitored · <b>${G.flagged_n}</b> flagged ·
+ <b>$${G.at_risk_usd.toLocaleString()}</b> (${(G.at_risk_usd/G.ce_total_usd*100).toFixed(1)}% of creator earnings) under review — heuristic, unconfirmed.
+</td></tr></tbody>`;});
 }
 renderMonitor();
 </script>
