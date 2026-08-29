@@ -6,9 +6,10 @@ Spec (Po, 2026-08-05):
   separately, zero-filled for quiet hours):
     baseline  = median          (primary)
     mean      = secondary reference, shown for context
-    sigma     = std of the 25th-75th percentile subset only (IQR-trimmed,
-                so past spikes can't inflate the yardstick)
-  Flag when the trailing-1h flow exceeds median + 3*sigma.
+    IQR       = interquartile range of the zero-filled hourly series
+  Flag when the trailing-1h flow exceeds median + 3*IQR (Tukey fence —
+  revised with Po 2026-08-05 after median+3*sigma backtested at a 22%
+  fire rate; sigma is still computed and shown for context only).
 - Any single transfer >= $5,000 is flagged:
     inflow  -> ask to confirm it's the requested funding arrival
     outflow -> ask to confirm it's a scheduled cognition distribution batch
@@ -41,17 +42,32 @@ WALLET = DATA["scope"]["wallet"].lower()
 now = datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+from classify import RETIRED, pin_rate
+_dr_state = json.load(open(os.path.join(HERE, "day_rates.json")))
+_day_rates = {s: dict(v) for s, v in _dr_state["day_rates"].items()}
+for _s, _od in (_dr_state.get("open_day_rate") or {}).items():
+    # today's provisional rate — same basis the page/CSV/digest use
+    _day_rates.setdefault(_s, {}).setdefault(_od["d"], _od["rate"])
+
+
 def usd_rows(dir_name, counterparty_key):
-    """(ts, usd, sym, qty, counterparty) for every tracked-token transfer."""
+    """(ts, usd_live, sym, qty, counterparty, key, usd_pinned) per transfer.
+
+    Index 1 stays LIVE-priced on purpose: the $5k single-transfer rule cares
+    about current value. Index 6 is DAY-PINNED (pin_rate carry-forward) — the
+    anomaly baseline uses it, so a MENTE crash today can't reprice the whole
+    history and silently move the outflow threshold.
+    """
     out = []
     for i in shards.load(os.path.join(HERE, dir_name)):
         sym = TOKENS.get(i["token"]["address_hash"].lower())
         if not sym:
             continue
         qty = int(i["total"]["value"]) / 1e18
-        out.append((datetime.fromisoformat(i["timestamp"][:19]), qty * RATE[sym],
-                    sym, qty, i[counterparty_key]["hash"],
-                    f'{i["transaction_hash"]}:{i["log_index"]}'))
+        ts = datetime.fromisoformat(i["timestamp"][:19])
+        out.append((ts, qty * RATE[sym], sym, qty, i[counterparty_key]["hash"],
+                    f'{i["transaction_hash"]}:{i["log_index"]}',
+                    qty * pin_rate(_day_rates.get(sym, {}), i["timestamp"][:10], RATE[sym])))
     return out
 
 flows = {"out": usd_rows("transfers", "to"), "in": usd_rows("transfers_in", "from")}
@@ -62,7 +78,7 @@ def baseline(rows):
     if not rows:
         return None
     bucket = {}
-    for ts, usd, *_ in rows:
+    for ts, _live, _s, _q, _c, _k, usd in rows:
         bucket[ts.replace(minute=0, second=0, microsecond=0)] = \
             bucket.get(ts.replace(minute=0, second=0, microsecond=0), 0) + usd
     h0, h1 = min(bucket), now.replace(minute=0, second=0, microsecond=0)
@@ -93,7 +109,7 @@ lines = []
 b = baseline(flows["out"])
 if b and b["iqr"] > 0:
     threshold = b["median"] + 3 * b["iqr"]
-    last_h = sum(usd for ts, usd, *_ in flows["out"] if ts > now - timedelta(hours=1))
+    last_h = sum(r[6] for r in flows["out"] if r[0] > now - timedelta(hours=1))
     above = last_h > threshold
     st = anom.get("out", {})
     last_fire = datetime.fromisoformat(st["last_alert"]) if st.get("last_alert") else None
@@ -109,7 +125,7 @@ if b and b["iqr"] > 0:
 
 # --- 2. single transfers >= $5,000 (last 24h, deduped) ---
 for d, rows in flows.items():
-    for ts, usd, sym, qty, cp, key in rows:
+    for ts, usd, sym, qty, cp, key, _pinned in rows:
         if usd < BIG_USD or ts <= now - timedelta(hours=24) or key in seen:
             continue
         seen.add(key)
@@ -151,17 +167,10 @@ if _rebate and _rebate.get("overdue"):
 # a wider ±15% band around the retired category's nominal size, because a
 # few percent of oracle-vs-execution rate drift must not hide a leak (the
 # known stragglers land at $0.89-0.95 against a $1 nominal).
-from classify import RETIRED, pin_rate   # shared with refresh.py's chain ledger
-_dr_state = json.load(open(os.path.join(HERE, "day_rates.json")))
-_day_rates = {s: dict(v) for s, v in _dr_state["day_rates"].items()}
-for _s, _od in (_dr_state.get("open_day_rate") or {}).items():
-    # today's provisional rate — same basis the page/CSV/digest use, so a
-    # straggler banked this hour can't be priced differently an hour later
-    _day_rates.setdefault(_s, {}).setdefault(_od["d"], _od["rate"])
 retired_seen = state.setdefault("retired_seen", {})
 _new_retired = []
 _CANDIDATE_CUT = now - timedelta(days=30)
-for ts, usd_live, sym, qty, cp, key in flows["out"]:
+for ts, usd_live, sym, qty, cp, key, usd_pinned in flows["out"]:
     # candidate window: rows older than 30d never (re-)alert — running totals
     # come from the chain-recomputed ledger, so old state entries are trimmed
     # without losing the audit trail
@@ -172,15 +181,13 @@ for ts, usd_live, sym, qty, cp, key in flows["out"]:
     for cat, rule in RETIRED.items():
         if ts.strftime("%Y-%m-%d") <= rule["cutoff"] or key in retired_seen:
             continue
-        usd_pinned = qty * pin_rate(_day_rates.get(sym, {}),
-                                    ts.strftime("%Y-%m-%d"), RATE[sym])
         if abs(usd_pinned - rule["point"]) / rule["point"] <= rule["tol"]:
             retired_seen[key] = {"usd": round(usd_pinned, 2), "d": ts.strftime("%Y-%m-%d"),
                                  "cat": cat, "to": cp}
             _new_retired.append((cat, usd_pinned, cp, key))
 # trim dedup state to the candidate window; reconcile vs the chain ledger
 retired_seen = {k: v for k, v in retired_seen.items()
-                if v.get("d", "9999") > _CANDIDATE_CUT.strftime("%Y-%m-%d")}
+                if v.get("d", "0000-00-00") > _CANDIDATE_CUT.strftime("%Y-%m-%d")}
 state["retired_seen"] = retired_seen
 _ledger = {}
 _gp = os.path.join(HERE, "guard_private.json")

@@ -15,6 +15,8 @@ the append-only audit trail of every published figure.
 import csv, json, math, os, statistics, time, urllib.request
 import posthog_source
 import shards
+# taxonomy lives in classify.py — the ONE classifier shared with notify/alerts
+from classify import band, classify_usd, BAND_LABEL, BAND_KEYS, STRIPE_FINE
 from datetime import datetime, timezone, timedelta
 from collections import Counter, defaultdict
 
@@ -382,6 +384,9 @@ def day_rate(sym, ts):
 for r in rows:
     r["rate"], r["rsrc"] = day_rate(r["tok"], r["ts"])
     r["usd"] = r["val"] * r["rate"]
+    # classify HERE (not in Layer 2) so facts_window's economy/ops split can
+    # see r["cat"] — adversary-caught ordering bug in council loop 3
+    r["cat"], r["fine"], _ = classify_usd(r["usd"])
 for f in inflows:
     f["rate"], f["rsrc"] = day_rate(f["tok"], f["ts"])
     f["usd"] = f["val"] * f["rate"]
@@ -597,16 +602,19 @@ cut48 = (now - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M:%S")
 cut7 = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
 cut30 = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
 
-# taxonomy lives in classify.py — the ONE classifier shared with notify/alerts
-from classify import band, classify_usd, BAND_LABEL, BAND_KEYS, STRIPE_FINE
 
 RECYCLE_SRC = "0xd85096faec1ac03075667b4c1a1661f5623bf111"
 def facts_window(rs, ins, label):
     out_usd = sum(r["usd"] for r in rs)
     in_usd = sum(f["usd"] for f in ins)
     in_recycled = sum(f["usd"] for f in ins if f["from"].lower() == RECYCLE_SRC)
+    # economy = classified payouts; ops = the residual (swaps/treasury moves),
+    # computed as out - economy so the two ALWAYS sum to the total exactly
+    economy_out = sum(r["usd"] for r in rs if r["cat"] != "nonstandard")
     return {"label": label,
             "out_usd": round(out_usd, 2), "in_usd": round(in_usd, 2),
+            "economy_out_usd": round(economy_out, 2),
+            "ops_out_usd": round(out_usd - economy_out, 2),
             "in_recycled_usd": round(in_recycled, 2),
             "in_external_usd": round(in_usd - in_recycled, 2),
             "net_usd": round(in_usd - out_usd, 2),
@@ -849,8 +857,7 @@ facts = {"windows": windows, "prev24": prev24, "monthly": monthly, "daily": dail
          "range": {"from": range_from, "to": rows[0]["ts"][:19] if rows else None}}
 
 # ======================= LAYER 2 — INTERPRETATION =======================
-for r in rows:
-    r["cat"], r["fine"], _ = classify_usd(r["usd"])
+# (rows were classified up in Layer 1, right after pricing)
 
 CATS = ["invoke", "equip", "growth", "nonstandard", "micro"]
 S = {"tot": {c: {"n": sum(1 for r in rows if r["cat"] == c),
@@ -972,7 +979,8 @@ guard = {"flagged_n": len(flagged), "monitored_n": len(grows), "at_risk_usd": at
 from classify import RETIRED
 retired_ledger = {}
 for _cat, _rule in RETIRED.items():
-    _hits = [{"ts": r0["ts"], "to": r0["to"], "tx": r0["tx"], "usd": round(r0["usd"], 2)}
+    _hits = [{"ts": r0["ts"], "to": r0["to"], "tx": r0["tx"], "li": r0.get("li", ""),
+              "usd": round(r0["usd"], 2)}
              for r0 in rows if r0["ts"][:10] > _rule["cutoff"]
              and abs(r0["usd"] - _rule["point"]) / _rule["point"] <= _rule["tol"]]
     retired_ledger[_cat] = {"cutoff": _rule["cutoff"], "n": len(_hits),

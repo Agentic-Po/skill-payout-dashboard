@@ -6,25 +6,25 @@
   --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#6f6e69;
   --line:#e6e5e0; --acc:#1a5fb0;
   --c-mente:#7c5cd6; --c-moca:#2a78d6; --c-in:#008300; --warn:#9a5800; --warnbg:#fdf6ec;
-  --band1:#00907c; --band2:#4f8fdd; --band3:#3f3fb8; --band4:#a855d6; --band5:#8f1770; --band6:#e0447a; --band7:#a35400; --band8:#8a8984; --band9:#c6c5bf;
+  --band1:#00907c; --band2:#4f8fdd; --band3:#3f3fb8; --band4:#a855d6; --band5:#8f1770; --band6:#e0447a; --band7:#a35400; --band8:#8a8984; --band9:#c6c5bf; --band10:#0b6bab; --band11:#5e5a00;
 }
 @media (prefers-color-scheme: dark){:root{
   --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#9d9c96;
   --line:#2e2e2b; --acc:#3987e5;
   --c-mente:#9b83e8; --c-moca:#3987e5; --c-in:#3fa93f; --warn:#e8a44a; --warnbg:#241c10;
-  --band1:#12a389; --band2:#3d63d6; --band3:#8f7bea; --band4:#8f3ec4; --band5:#d557b3; --band6:#c33556; --band7:#c87f26; --band8:#888782; --band9:#4e4e49;
+  --band1:#12a389; --band2:#3d63d6; --band3:#8f7bea; --band4:#8f3ec4; --band5:#d557b3; --band6:#c33556; --band7:#c87f26; --band8:#888782; --band9:#4e4e49; --band10:#3f9bd9; --band11:#b3ac33;
 }}
 :root[data-theme="dark"]{
   --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#9d9c96;
   --line:#2e2e2b; --acc:#3987e5;
   --c-mente:#9b83e8; --c-moca:#3987e5; --c-in:#3fa93f; --warn:#e8a44a; --warnbg:#241c10;
-  --band1:#12a389; --band2:#3d63d6; --band3:#8f7bea; --band4:#8f3ec4; --band5:#d557b3; --band6:#c33556; --band7:#c87f26; --band8:#888782; --band9:#4e4e49;
+  --band1:#12a389; --band2:#3d63d6; --band3:#8f7bea; --band4:#8f3ec4; --band5:#d557b3; --band6:#c33556; --band7:#c87f26; --band8:#888782; --band9:#4e4e49; --band10:#3f9bd9; --band11:#b3ac33;
 }
 :root[data-theme="light"]{
   --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#6f6e69;
   --line:#e6e5e0; --acc:#1a5fb0;
   --c-mente:#7c5cd6; --c-moca:#2a78d6; --c-in:#008300; --warn:#9a5800; --warnbg:#fdf6ec;
-  --band1:#00907c; --band2:#4f8fdd; --band3:#3f3fb8; --band4:#a855d6; --band5:#8f1770; --band6:#e0447a; --band7:#a35400; --band8:#8a8984; --band9:#c6c5bf;
+  --band1:#00907c; --band2:#4f8fdd; --band3:#3f3fb8; --band4:#a855d6; --band5:#8f1770; --band6:#e0447a; --band7:#a35400; --band8:#8a8984; --band9:#c6c5bf; --band10:#0b6bab; --band11:#5e5a00;
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -368,7 +368,7 @@ document.getElementById("gen").textContent=SC.generated;
  const consPct=(F.cognition&&F.cognition.total_usd)?Math.round(F.cognition.total_usd/wA.out_usd*100):null;
  const floatD=DATA.infer.guard.runway_total;
  document.getElementById("plainStrip").innerHTML=
-  `<b>In one sentence:</b> since ${F.range.from} this wallet has distributed <b>$${wA.out_usd.toLocaleString(undefined,{maximumFractionDigits:0})}</b> of token credits and rewards into the Minds ecosystem${consPct?` — and <b>${consPct}%</b> of it has already been spent on actual cognition`:""}. The wallet holds ~<b>${floatD||"?"} days</b> of float and is refilled manually ($${(wA.in_recycled_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} of lifetime inflow was usage fees recycling back${DATA.sink&&DATA.sink.recycle_last?` — that leg stopped ${DATA.sink.recycle_last}; collected credits now accumulate in a holding wallet instead`:""}, $${(wA.in_external_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} manual funding) — if it empties, top-up fulfillment including Stripe stops. <a href="#registerCard" class="pill" style="border-color:var(--acc);color:var(--acc);font-weight:600">${openN} open item${openN===1?"":"s"} ↓</a>`;
+  `<b>In one sentence:</b> since ${F.range.from} this wallet has distributed <b>$${(wA.economy_out_usd??wA.out_usd).toLocaleString(undefined,{maximumFractionDigits:0})}</b> of token credits and rewards into the Minds ecosystem${wA.ops_out_usd?` (plus $${wA.ops_out_usd.toLocaleString(undefined,{maximumFractionDigits:0})} of treasury swaps/ops moves, excluded here — together they equal the $${wA.out_usd.toLocaleString(undefined,{maximumFractionDigits:0})} total outflow)`:""}${consPct?` — and <b>${consPct}%</b> of it has already been spent on actual cognition`:""}. The wallet holds ~<b>${floatD||"?"} days</b> of float and is refilled manually ($${(wA.in_recycled_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} of lifetime inflow was usage fees recycling back${DATA.sink&&DATA.sink.recycle_last?` — that leg stopped ${DATA.sink.recycle_last}; collected credits now accumulate in a holding wallet instead`:""}, $${(wA.in_external_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} manual funding) — if it empties, top-up fulfillment including Stripe stops. <a href="#registerCard" class="pill" style="border-color:var(--acc);color:var(--acc);font-weight:600">${openN} open item${openN===1?"":"s"} ↓</a>`;
 }
 // scope + reconciliation
 const rec=Object.entries(F.recon).map(([s,r])=>{if(!r)return`${s} n/a`;
@@ -404,7 +404,7 @@ const ftiles=[
  ["Outflow — 24h", usd(w24.out_usd), w24.out_tx+" tx · "+w24.out_wallets+" wallets"+delta(w24.out_usd,p24.out_usd)],
  ["Inflow — 24h", usd(w24.in_usd), w24.in_tx+" transfer"+(w24.in_tx===1?"":"s")+" · "+w24.in_sources+" source"+(w24.in_sources===1?"":"s")],
  ["Distribution pace — 7d", "$"+Math.round(F.windows[1].out_usd/7).toLocaleString()+"/day", "avg daily distribution — the operative treasury number"],
- ["Outflow — all history", usd(wall.out_usd), wall.out_tx.toLocaleString()+" tx since "+F.range.from],
+ ["Outflow — all history", usd(wall.out_usd), wall.out_tx.toLocaleString()+" tx since "+F.range.from+(wall.economy_out_usd!=null?` · economy ${usd(wall.economy_out_usd)} + ops ${usd(wall.ops_out_usd)}`:"")],
  ["Recipient wallets", fmt0(F.wallets_all), fmt0(F.wallets_repeat)+" received on 2+ days"],
 ];
 const stale=SC.complete?"":`<div style="font-size:11px;color:var(--warn);margin-top:4px">⚠ as of last complete fetch</div>`;
@@ -419,7 +419,7 @@ document.getElementById("monT").innerHTML=flowHead+`<tbody>`+flowRows(F.monthly)
 bindTips(document.getElementById("winT"));bindTips(document.getElementById("monT"));
 // daily table — compact with band mix bar + tooltip
 const BK=F.band_keys;
-const BC={micro:"var(--band9)",b010:"var(--band1)",b1:"var(--band2)",b3:"var(--band3)",b5:"var(--band4)",b10:"var(--band5)",b25:"var(--band6)",b50:"var(--band7)",other:"var(--band8)"};
+const BC={micro:"var(--band9)",b010:"var(--band1)",b1:"var(--band2)",b3:"var(--band3)",b5:"var(--band4)",b10:"var(--band5)",b20:"var(--band10)",b25:"var(--band6)",b50:"var(--band7)",b100:"var(--band11)",other:"var(--band8)"};
 document.getElementById("bleg").innerHTML=BK.map(k=>`<span class="bandchip" style="background:${BC[k]}${(k==="micro"||k==="other")?";color:var(--ink)":""}">${F.band_labels[k]}</span>`).join(" ");
 document.getElementById("d0").textContent=F.range.from;
 function buildRows(list){

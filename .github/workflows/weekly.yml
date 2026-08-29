@@ -13,6 +13,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # Same cache as refresh.yml (path list kept identical so restore-keys
+      # prefix hits share entries cleanly): without it, notify.py's state
+      # (one-time restatement stamp, hourly-digest gate) resets to {} here
+      # and one-time notices would fire in EVERY daily/weekly digest.
+      - name: Restore alert state
+        uses: actions/cache@v4
+        with:
+          path: |
+            alert_state.json
+            guard_private.json
+          key: alert-state-${{ github.run_id }}
+          restore-keys: alert-state-
       - name: Health check on last refresh
         id: health
         env:
