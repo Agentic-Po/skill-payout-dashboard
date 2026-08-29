@@ -13,7 +13,8 @@ Spec (Po, 2026-08-05):
     inflow  -> ask to confirm it's the requested funding arrival
     outflow -> ask to confirm it's a scheduled cognition distribution batch
 - Sends ONE message per run, only when something is flagged. Dedup for
-  large transfers lives in alert_state.json (committed by the workflow).
+  large transfers lives in alert_state.json (persisted via the Actions
+  cache — deliberately NOT committed to the public repo).
 Env vars: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID.
 """
 import json, os, re, statistics, urllib.request, urllib.parse
@@ -183,10 +184,15 @@ elif _src_ok and not _was_ok:
     lines += ["", "🟢 <b>Data source recovered:</b> chain fetch complete again"]
 state["source_ok"] = _src_ok
 
-# keep state bounded: only keys that can still re-trigger (last 48h of rows)
-recent = {r[5] for rows in flows.values() for r in rows
-          if r[0] > now - timedelta(hours=48)}
-json.dump({**state, "seen": sorted(seen & recent), "anomaly": anom}, open(STATE_PATH, "w"))
+# Persist state only AFTER a successful send (QA finding, 2026-08-29):
+# persisting first meant a failed Telegram call permanently suppressed every
+# alert of the run. Now a failed send leaves state untouched, so the next run
+# re-alerts — the worst case is a duplicate, never silence.
+def persist_state():
+    # keep 'seen' bounded: only keys that can still re-trigger (last 48h)
+    recent = {r[5] for rows_ in flows.values() for r in rows_
+              if r[0] > now - timedelta(hours=48)}
+    json.dump({**state, "seen": sorted(seen & recent), "anomaly": anom}, open(STATE_PATH, "w"))
 
 if lines:
     msg = "\n".join(["🚨 <b>Flow alert</b> — <i>Skill Payout Dashboard</i>"] + lines)
@@ -199,5 +205,7 @@ if lines:
         f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage", data=body)
     with urllib.request.urlopen(req, timeout=30) as r:
         print("alert sent:", r.status)
+    persist_state()
 else:
+    persist_state()
     print("no alerts")

@@ -35,6 +35,9 @@ BAND_LABEL = {"micro": "< $0.06", "b010": "≈ $0.10", "b1": "≈ $1", "b3": "�
 BAND_KEYS = list(BAND_LABEL)
 
 
+# NOTE: pack bands overlap at ±15% (e.g. a $21 delivery is inside both the
+# $20 and $25 windows); _snap resolves by PACKS order, so the smaller pack
+# wins deterministically.
 def _snap(value, points, tol):
     for p in points:
         if abs(value - p) / p <= tol:

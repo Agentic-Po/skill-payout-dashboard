@@ -1373,6 +1373,8 @@ if mrows:
     lgf = min(lburn24 / lburn_prev, 2) if lburn_prev > 0 else 1
     lrun = round(lbal * LRATE / lburn24, 1) if lbal and lburn24 > 0 else None
     lrun_adj = round(lbal * LRATE / (lburn24 * lgf), 1) if lbal and lburn24 > 0 else None
+    # legacy view is intentionally FROZEN on the old taxonomy (no $20/$100
+    # packs) — it exists to match what Minh originally saw; do not extend.
     UNIT_L = {"invoke": 0.10, "equip": 1, "$3 credit": 3, "referral $5": 5,
               "stripe $10": 10, "stripe $25": 25, "stripe $50": 50}
     lprom = sum(UNIT_L.get(r["fine"], r["val"] * LRATE) for r in mrows)

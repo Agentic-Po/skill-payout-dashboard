@@ -339,7 +339,7 @@ const DATA = /*__DATA__*/;
   }
   if(SC.complete===false) banner("⚠ Data incomplete: this refresh rendered from a cached/partial chain fetch — recent transfers may be missing.","var(--warn)");
   if(DATA.server&&DATA.server.complete===false) banner("PostHog tier degraded this run — server-recorded figures are from cache.","var(--ink3)");
-  if(box.children.length){const main=document.body.firstElementChild;document.body.insertBefore(box,document.body.firstChild);}
+  if(box.children.length)document.body.insertBefore(box,document.body.firstChild);
 })();
 const F=DATA.facts, I=DATA.infer, SC=DATA.scope, G=I.guard;
 const fmt=n=>n.toLocaleString("en-US",{maximumFractionDigits:1});
