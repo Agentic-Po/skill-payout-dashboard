@@ -6,3 +6,4 @@ wallet_mind_map.csv
 alert_state.json
 guard_private.json
 data.json.tmp
+*.tmp

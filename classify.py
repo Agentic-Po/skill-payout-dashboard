@@ -79,3 +79,18 @@ def classify_usd(usd):
 # auditable ledger): band key -> {cutoff date, nominal $ size, recall
 # tolerance}. Detection wants recall (±15%), wider than the page's ±8%.
 RETIRED = {"equip": {"cutoff": "2026-08-21", "point": 1.0, "tol": 0.15}}
+
+
+def pin_rate(day_rates, day, fallback):
+    """Day-pinned rate with carry-forward/back semantics (mirrors refresh.py
+    day_rate()) — the ONE pricing rule for day-level classification, so the
+    page ledger, the digest and the tripwire can never price a row apart."""
+    if day in day_rates:
+        return day_rates[day]
+    prior = [k for k in sorted(day_rates) if k <= day]
+    if prior:
+        return day_rates[prior[-1]]
+    later = [k for k in sorted(day_rates) if k > day]
+    if later:
+        return day_rates[later[0]]
+    return fallback

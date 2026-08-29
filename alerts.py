@@ -151,7 +151,7 @@ if _rebate and _rebate.get("overdue"):
 # a wider ±15% band around the retired category's nominal size, because a
 # few percent of oracle-vs-execution rate drift must not hide a leak (the
 # known stragglers land at $0.89-0.95 against a $1 nominal).
-from classify import RETIRED   # shared with refresh.py's chain ledger
+from classify import RETIRED, pin_rate   # shared with refresh.py's chain ledger
 _dr_state = json.load(open(os.path.join(HERE, "day_rates.json")))
 _day_rates = {s: dict(v) for s, v in _dr_state["day_rates"].items()}
 for _s, _od in (_dr_state.get("open_day_rate") or {}).items():
@@ -165,13 +165,15 @@ for ts, usd_live, sym, qty, cp, key in flows["out"]:
     # candidate window: rows older than 30d never (re-)alert — running totals
     # come from the chain-recomputed ledger, so old state entries are trimmed
     # without losing the audit trail
-    if ts <= _CANDIDATE_CUT:
+    # date-based on BOTH sides (banking and trim) so a boundary-day row can
+    # never be trimmed and re-banked in a loop (QA finding, loop 3)
+    if ts.strftime("%Y-%m-%d") <= _CANDIDATE_CUT.strftime("%Y-%m-%d"):
         continue
     for cat, rule in RETIRED.items():
         if ts.strftime("%Y-%m-%d") <= rule["cutoff"] or key in retired_seen:
             continue
-        day_rate = _day_rates.get(sym, {}).get(ts.strftime("%Y-%m-%d"))
-        usd_pinned = qty * (day_rate if day_rate else RATE[sym])
+        usd_pinned = qty * pin_rate(_day_rates.get(sym, {}),
+                                    ts.strftime("%Y-%m-%d"), RATE[sym])
         if abs(usd_pinned - rule["point"]) / rule["point"] <= rule["tol"]:
             retired_seen[key] = {"usd": round(usd_pinned, 2), "d": ts.strftime("%Y-%m-%d"),
                                  "cat": cat, "to": cp}

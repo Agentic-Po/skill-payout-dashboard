@@ -38,29 +38,15 @@ RATE = F["rate"].get("MOCA") or hist[-1]["rate"]
 # page (refresh.py) and alerts.py. Rows are priced at the DAY-PINNED rate per
 # token (day_rates.json, incl. today's provisional open_day_rate) so history
 # can't reprice with the market; the live per-token rate is the last resort.
-from classify import classify_usd, INCENT
+from classify import classify_usd, INCENT, pin_rate
 _dr_state = json.load(open(os.path.join(HERE, "day_rates.json")))
 _DAY_RATES = {sym: dict(_dr_state["day_rates"].get(sym, {})) for sym in TOKENS.values()}
 for sym, od in (_dr_state.get("open_day_rate") or {}).items():
     _DAY_RATES.setdefault(sym, {}).setdefault(od["d"], od["rate"])
 
-def _pin_rate(sym, day):
-    """Day-pinned rate with the page's carry-forward/back semantics (mirrors
-    refresh.py day_rate()) so edge-of-band rows classify identically."""
-    dr = _DAY_RATES.get(sym, {})
-    if day in dr:
-        return dr[day]
-    prior = [k for k in sorted(dr) if k <= day]
-    if prior:
-        return dr[prior[-1]]
-    later = [k for k in sorted(dr) if k > day]
-    if later:
-        return dr[later[0]]
-    return F["rate"].get(sym) or 0
-
 def classify(day, sym, v):
     """-> (class, usd, tier) in the digest's local vocabulary."""
-    usd = v * _pin_rate(sym, day)
+    usd = v * pin_rate(_DAY_RATES.get(sym, {}), day, F["rate"].get(sym) or 0)
     coarse, fine, tier = classify_usd(usd)
     if coarse == "growth":
         return ("topup" if fine.startswith("stripe") else "incentive"), usd, tier

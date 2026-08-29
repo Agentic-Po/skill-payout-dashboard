@@ -98,9 +98,9 @@ jobs:
         run: |
           if [ -n "$HC_URL" ]; then curl -fsS -m 10 --retry 3 "$HC_URL" >/dev/null && echo "ping ok"; else echo "HEALTHCHECK_URL not set — skipping"; fi
       - name: Hourly Telegram update
-        continue-on-error: true   # a Telegram outage must not fail the job —
-                                  # that would skip the cache post-save and
-                                  # resurrect already-sent alerts next run
+        continue-on-error: true   # keep the job green through a Telegram
+                                  # outage (cache post-save runs regardless
+                                  # of job outcome)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
