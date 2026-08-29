@@ -46,7 +46,10 @@ for sym, od in (_dr_state.get("open_day_rate") or {}).items():
 
 def classify(day, sym, v):
     """-> (class, usd, tier) in the digest's local vocabulary."""
-    usd = v * pin_rate(_DAY_RATES.get(sym, {}), day, F["rate"].get(sym) or 0)
+    _fb = F["rate"].get(sym)
+    if not _fb and not _DAY_RATES.get(sym):
+        raise SystemExit(f"FATAL: no rate available for {sym} — refusing to price rows at $0")
+    usd = v * pin_rate(_DAY_RATES.get(sym, {}), day, _fb or 0)
     coarse, fine, tier = classify_usd(usd)
     if coarse == "growth":
         return ("topup" if fine.startswith("stripe") else "incentive"), usd, tier

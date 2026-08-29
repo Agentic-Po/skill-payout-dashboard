@@ -58,6 +58,12 @@ fields ever appear in a public artifact, and `alert_state.json` /
 `guard_private.json` / `*.tmp` are gitignored so `git add -A` cannot stage
 them.
 
+Residual exposure, stated honestly: (a) pre-2026-08-29 git history still
+contains old committed state files (stale, but retrievable) — removing them
+needs a history rewrite, open item 2 below; (b) the Actions cache holding
+guard_private.json is branch-scoped and not downloadable by outsiders, but it
+is a broader surface than repo secrets — treat its contents accordingly.
+
 ## Alerting
 
 - **Anomaly**: trailing-1h outflow > median + 3×IQR of the full day-pinned

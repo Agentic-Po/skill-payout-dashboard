@@ -1057,7 +1057,9 @@ scope = {"wallet": WALLET, "tokens": {s: TOKENS[s]["addr"] for s in TOKENS},
          "note": "This wallet only. Other Minds wallets (e.g. Fireblocks) are out of scope."}
 
 # ---- computed guided-view layer: insights, open items, gaps (panel-designed) ----
-dist_pace = round(out_di(cut7) / span_days + sum(r["usd"] for r in rows if r["ts"] > cut7 and r["cat"] in ("nonstandard", "micro")) / span_days, 2)
+# out_di already covers every category — the old formula re-added
+# nonstandard/micro on top and published an inflated pace (QA, loop 3)
+dist_pace = round(out_di(cut7) / span_days, 2)
 _cons_ratio = round(cognition["total_usd"] / facts["windows"][3]["out_usd"] * 100) if cognition else None
 _rec_share = round(facts["windows"][3]["in_recycled_usd"] / facts["windows"][3]["in_usd"] * 100) if facts["windows"][3]["in_usd"] else 0
 insights = {
