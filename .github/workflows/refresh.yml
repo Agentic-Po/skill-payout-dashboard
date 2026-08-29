@@ -48,7 +48,7 @@ jobs:
       # never reach a public artifact again — fail the run before commit.
       - name: Guard against detector-signal leaks
         run: |
-          if grep -lE '"(ent|acf|burst)":' index.html legacy.html data.json 2>/dev/null; then
+          if grep -lE '"(ent|acf|burst)":' index.html legacy.html data.json stats_history.json transfers_export.csv 2>/dev/null; then
             echo "::error::Per-wallet detector signals found in a public artifact — refusing to publish"
             exit 1
           fi
@@ -59,8 +59,9 @@ jobs:
             echo "::error::File(s) over 50 MB — shard or slim them before they hit GitHub's 100 MB push limit: $BIG"
             exit 1
           fi
-      # Runs before the commit step so alert_state.json (large-transfer dedup)
-      # is persisted; a Telegram hiccup here must not kill the refresh.
+      # State (alert_state.json) persists via the Actions cache post-step, not
+      # commits; ordering here just keeps a Telegram hiccup from killing the
+      # refresh (continue-on-error) while the data still publishes.
       - name: Anomaly & large-flow alerts
         continue-on-error: true
         env:
@@ -97,6 +98,9 @@ jobs:
         run: |
           if [ -n "$HC_URL" ]; then curl -fsS -m 10 --retry 3 "$HC_URL" >/dev/null && echo "ping ok"; else echo "HEALTHCHECK_URL not set — skipping"; fi
       - name: Hourly Telegram update
+        continue-on-error: true   # a Telegram outage must not fail the job —
+                                  # that would skip the cache post-save and
+                                  # resurrect already-sent alerts next run
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

@@ -23,7 +23,11 @@ now = datetime.now(timezone.utc).replace(tzinfo=None)
 # Rows are priced at the DAY-PINNED rate (day_rates.json) so historical counts
 # can't drift with the live market; today falls back to the live rate.
 from classify import classify_usd, INCENT
-_DAY_RATES = json.load(open(os.path.join(HERE, "day_rates.json")))["day_rates"].get("MOCA", {})
+_dr_state = json.load(open(os.path.join(HERE, "day_rates.json")))
+_DAY_RATES = dict(_dr_state["day_rates"].get("MOCA", {}))
+_od = _dr_state.get("open_day_rate", {}).get("MOCA")
+if _od:  # today's provisional rate — same source the page/CSV price today with
+    _DAY_RATES.setdefault(_od["d"], _od["rate"])
 
 def classify(day, v):
     """-> (class, usd, tier) in the digest's local vocabulary."""
@@ -111,7 +115,6 @@ head = {"hourly": "🟢 <b>Hourly refresh OK</b>",
         "weekly": "🗓 <b>Weekly summary</b>"}[mode]
 
 # guard summary from the freshly built page
-import re
 # data.json is the versioned contract with refresh.py — no HTML scraping.
 # Fail LOUD on absence or staleness: a silent fallback to stale numbers is
 # how the wallet-balance line went dark for days in July.
@@ -120,7 +123,9 @@ if not os.path.exists(_dj):
     raise SystemExit("FATAL: data.json missing — refresh.py must run first")
 _D = json.load(open(_dj))
 _gen = _D.get("scope", {}).get("generated_iso")
-if _gen and (now - datetime.fromisoformat(_gen.replace("Z", ""))).total_seconds() > 2 * 3600:
+if not _gen:
+    raise SystemExit("FATAL: data.json has no generated_iso — pre-contract file, refusing to send")
+if (now - datetime.fromisoformat(_gen.replace("Z", ""))).total_seconds() > 2 * 3600:
     raise SystemExit(f"FATAL: data.json stale (generated {_gen}) — refusing to send outdated figures")
 G = _D["infer"]["guard"]
 F = _D["facts"]

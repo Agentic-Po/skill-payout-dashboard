@@ -17,7 +17,7 @@ Spec (Po, 2026-08-05):
   cache — deliberately NOT committed to the public repo).
 Env vars: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID.
 """
-import json, os, re, statistics, urllib.request, urllib.parse
+import json, os, statistics, urllib.request, urllib.parse
 from datetime import datetime, timezone, timedelta
 
 import shards
