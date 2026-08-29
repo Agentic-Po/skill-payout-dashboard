@@ -73,3 +73,9 @@ def classify_usd(usd):
     if pack is not None:
         return "growth", f"stripe ${pack}", pack
     return "nonstandard", ("nonstandard (small)" if usd < 0.5 else "nonstandard (large)"), None
+
+
+# Retired payout categories (shared by alerts.py tripwire and refresh.py's
+# auditable ledger): band key -> {cutoff date, nominal $ size, recall
+# tolerance}. Detection wants recall (±15%), wider than the page's ±8%.
+RETIRED = {"equip": {"cutoff": "2026-08-21", "point": 1.0, "tol": 0.15}}

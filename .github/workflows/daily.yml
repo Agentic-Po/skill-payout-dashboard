@@ -8,6 +8,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # In-band staleness check (council loop 3): while HEALTHCHECK_URL is
+      # unset there is no external dead-man — this at least turns "the hourly
+      # refresh silently stopped" into a daily red alert instead of silence.
+      - name: Data freshness check
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.parse
+          from datetime import datetime, timezone
+          gen = json.load(open("data.json"))["scope"]["generated_iso"]
+          age_h = (datetime.now(timezone.utc).replace(tzinfo=None)
+                   - datetime.fromisoformat(gen.replace("Z", ""))).total_seconds() / 3600
+          print(f"data.json age: {age_h:.1f}h")
+          if age_h > 3:
+              urllib.request.urlopen(urllib.request.Request(
+                  f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage",
+                  data=urllib.parse.urlencode({"chat_id": os.environ["TELEGRAM_CHAT_ID"],
+                      "text": f"🔴 data.json is {age_h:.0f}h stale — the hourly refresh has not published. Check the Actions scheduler."}).encode()), timeout=20)
+              raise SystemExit(1)
+          PY
       - name: Daily Telegram summary
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

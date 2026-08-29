@@ -965,7 +965,20 @@ guard = {"flagged_n": len(flagged), "monitored_n": len(grows), "at_risk_usd": at
 # calibration oracle — the Q3 flagged-wallets lesson. They now go ONLY to a
 # git-ignored private file (rides the Actions cache for reviewer access),
 # never into the public DATA/index.html/data.json.
-json.dump({"generated": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "rows": grows},
+# Auditable retired-straggler ledger, recomputed deterministically from the
+# chain every run (council loop 3): the tripwire's alert_state copy rides an
+# evictable cache; THIS is the ledger of record, tying every straggler to a
+# tx hash. Private file — the member list is band-derived (oracle class).
+from classify import RETIRED
+retired_ledger = {}
+for _cat, _rule in RETIRED.items():
+    _hits = [{"ts": r0["ts"], "to": r0["to"], "tx": r0["tx"], "usd": round(r0["usd"], 2)}
+             for r0 in rows if r0["ts"][:10] > _rule["cutoff"]
+             and abs(r0["usd"] - _rule["point"]) / _rule["point"] <= _rule["tol"]]
+    retired_ledger[_cat] = {"cutoff": _rule["cutoff"], "n": len(_hits),
+                            "usd": round(sum(h["usd"] for h in _hits), 2), "entries": _hits}
+json.dump({"generated": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "rows": grows,
+           "retired_ledger": retired_ledger},
           open(os.path.join(HERE, "guard_private.json"), "w"))
 
 # permanent Stripe snapshot (verified server-side revenue reference)

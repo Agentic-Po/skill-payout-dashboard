@@ -282,7 +282,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <details class="aiwrap">
       <summary><span class="aibadge">AI-inferred</span>Payout type classification — invokes, equips, credits, Stripe</summary>
       <div class="inner">
-        <p class="method"><b>Method:</b> each transfer is snapped to the platform's known price points ($0.10 invoke, $1 equip, $3 credit, $5 referral, $10/25/50 Stripe) by its USD value at that day's token price, ±8% — the same tolerance as the factual size bands above, so band counts and type counts always agree. This is inference from size, not ground truth: a per-transfer memo from the payout contract (requested) would make it exact. The $3 bucket mixes new-user credits and internal top-ups — the internal top-ups sheet is the authoritative split. Stripe-sized transfers are deliveries of fiat purchases (revenue-backed); confirming them requires the Stripe ledger, which this page does not read yet.</p>
+        <p class="method"><b>Method:</b> each transfer is classified by its USD value at that day's token price: $0.10 invoke, $1 equip, $3 credit, $5 referral at ±8%; Stripe packs $10/$20/$25/$50/$100 matched on the fee-adjusted value (÷0.94, ±15% — deliveries land ~6% short of the pack price after processing). One shared classifier (classify.py) produces this table, the Telegram digest and the CSV export, so the three always agree. This is inference from size, not ground truth: a per-transfer memo from the payout contract (requested) would make it exact. The $3 bucket mixes new-user credits and internal top-ups — the internal top-ups sheet is the authoritative split. Pack-sized transfers are size-inferred and may include coupon-delivered credits — not verified revenue (this page does not read the Stripe ledger)</p>
         <div class="tiles" id="itiles"></div>
         <div class="scroll"><table id="fineT"></table></div>
       </div>
@@ -798,7 +798,7 @@ if(SV){
 // ---- AI zone ----
 const gtiles=[
  ["Distribution float", G.runway_total?(`<span style="${G.runway_total<5?"color:#d33;font-weight:800":(G.runway_total<14?"color:var(--warn)":"")}">~`+G.runway_total+" days"+(G.runway_total<5?" — fulfillment at risk, top-up required":"")+"</span>"):"n/a", "balance ÷ 7-day avg total distribution — projection, not a countdown: treasury refills on approval (see inflow sources). Proposed policy: standing replenishment reviewed against the subsidy-ratio and loop-closure trend"],
- ["Unbacked distribution — 24h", "$"+G.burn24.toLocaleString(), "invokes+equips+credits+referrals (Stripe-sized deliveries excluded — revenue-backed) at that day's token price · prev 24h: $"+G.burn_prev.toLocaleString()],
+ ["Unbacked distribution — 24h", "$"+G.burn24.toLocaleString(), "invokes+equips+credits+referrals (Stripe-pack-sized deliveries excluded — size-inferred fiat purchases) at that day's token price · prev 24h: $"+G.burn_prev.toLocaleString()],
  ["Wallets flagged for review", G.flagged_n+" of "+G.monitored_n, "$"+G.at_risk_usd.toLocaleString()+" ("+(G.at_risk_usd/G.ce_total_usd*100).toFixed(1)+"% of creator earnings) show unusual timing — under review, none confirmed"],
  ["Loop closure — earn + receive", G.loop_n!==undefined?G.loop_n:"n/a", "credited wallets that later earned creator fees ($"+(G.loop_usd||0).toLocaleString()+" total · "+(G.loop_gt10||0)+" earned >$10, "+(G.loop_gt50||0)+" >$50) — user→creator flywheel, early-stage"],
 ];

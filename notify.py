@@ -15,23 +15,52 @@ URL = "https://agentic-po.github.io/skill-payout-dashboard/"
 mode = sys.argv[1] if len(sys.argv) > 1 else "hourly"
 
 hist = json.load(open(os.path.join(HERE, "stats_history.json")))
-RATE = hist[-1]["rate"]
 now = datetime.now(timezone.utc).replace(tzinfo=None)
 
+# data.json is the versioned contract with refresh.py — no HTML scraping.
+# Fail LOUD on absence or staleness: a silent fallback to stale numbers is
+# how the wallet-balance line went dark for days in July.
+_dj = os.path.join(HERE, "data.json")
+if not os.path.exists(_dj):
+    raise SystemExit("FATAL: data.json missing — refresh.py must run first")
+_D = json.load(open(_dj))
+_gen = _D.get("scope", {}).get("generated_iso")
+if not _gen:
+    raise SystemExit("FATAL: data.json has no generated_iso — pre-contract file, refusing to send")
+if (now - datetime.fromisoformat(_gen.replace("Z", ""))).total_seconds() > 2 * 3600:
+    raise SystemExit(f"FATAL: data.json stale (generated {_gen}) — refusing to send outdated figures")
+F = _D["facts"]
+G = _D["infer"]["guard"]
+TOKENS = {a.lower(): s for s, a in _D["scope"]["tokens"].items()}   # addr -> sym
+RATE = F["rate"].get("MOCA") or hist[-1]["rate"]
+
 # Payout taxonomy lives in classify.py — the ONE classifier shared with the
-# page (refresh.py) and alerts.py since the 2026-08-28 council refactor.
-# Rows are priced at the DAY-PINNED rate (day_rates.json) so historical counts
-# can't drift with the live market; today falls back to the live rate.
+# page (refresh.py) and alerts.py. Rows are priced at the DAY-PINNED rate per
+# token (day_rates.json, incl. today's provisional open_day_rate) so history
+# can't reprice with the market; the live per-token rate is the last resort.
 from classify import classify_usd, INCENT
 _dr_state = json.load(open(os.path.join(HERE, "day_rates.json")))
-_DAY_RATES = dict(_dr_state["day_rates"].get("MOCA", {}))
-_od = _dr_state.get("open_day_rate", {}).get("MOCA")
-if _od:  # today's provisional rate — same source the page/CSV price today with
-    _DAY_RATES.setdefault(_od["d"], _od["rate"])
+_DAY_RATES = {sym: dict(_dr_state["day_rates"].get(sym, {})) for sym in TOKENS.values()}
+for sym, od in (_dr_state.get("open_day_rate") or {}).items():
+    _DAY_RATES.setdefault(sym, {}).setdefault(od["d"], od["rate"])
 
-def classify(day, v):
+def _pin_rate(sym, day):
+    """Day-pinned rate with the page's carry-forward/back semantics (mirrors
+    refresh.py day_rate()) so edge-of-band rows classify identically."""
+    dr = _DAY_RATES.get(sym, {})
+    if day in dr:
+        return dr[day]
+    prior = [k for k in sorted(dr) if k <= day]
+    if prior:
+        return dr[prior[-1]]
+    later = [k for k in sorted(dr) if k > day]
+    if later:
+        return dr[later[0]]
+    return F["rate"].get(sym) or 0
+
+def classify(day, sym, v):
     """-> (class, usd, tier) in the digest's local vocabulary."""
-    usd = v * (_DAY_RATES.get(day) or RATE)
+    usd = v * _pin_rate(sym, day)
     coarse, fine, tier = classify_usd(usd)
     if coarse == "growth":
         return ("topup" if fine.startswith("stripe") else "incentive"), usd, tier
@@ -39,20 +68,17 @@ def classify(day, v):
         return "other", usd, None
     return coarse, usd, None
 
-rows = []          # (ts, cls, moca_qty, wallet, tier, usd_day_pinned)
+# ALL tracked tokens (council loop 3: the digest previously classified only
+# MOCA, silently excluding the entire MENTE era from the all-time figures
+# while the page counted both — the one-figure-everywhere failure).
+rows = []          # (ts, cls, qty, wallet, tier, usd_day_pinned, sym)
 for i in shards.load(os.path.join(HERE, "transfers")):
-    if i["token"]["address_hash"].lower() != "0x2b11834ed1feaed4b4b3a86a6f571315e25a884d":
+    sym = TOKENS.get(i["token"]["address_hash"].lower())
+    if not sym:
         continue
     v = int(i["total"]["value"]) / 1e18
-    cls, usd, tier = classify(i["timestamp"][:10], v)
-    rows.append((datetime.fromisoformat(i["timestamp"][:19]), cls, v, i["to"]["hash"], tier, usd))
-
-MENTE_ADDR = "0x4cd9a847f39106e19a4e41aea8a232e915c82af5"
-mente_rows = []
-for i in shards.load(os.path.join(HERE, "transfers")):
-    if i["token"]["address_hash"].lower() == MENTE_ADDR:
-        mente_rows.append((datetime.fromisoformat(i["timestamp"][:19]),
-                           int(i["total"]["value"]) / 1e18))
+    cls, usd, tier = classify(i["timestamp"][:10], sym, v)
+    rows.append((datetime.fromisoformat(i["timestamp"][:19]), cls, v, i["to"]["hash"], tier, usd, sym))
 
 def win(hours=None):
     """Activity inside the trailing window (None = all history).
@@ -62,6 +88,12 @@ def win(hours=None):
     tiers_* map $ size -> count, so the mix is visible, not just the total.
     """
     rs = rows if hours is None else [r for r in rows if r[0] > now - timedelta(hours=hours)]
+    def _qty(rs_, groups):
+        q = {}
+        for r in rs_:
+            if r[1] in groups:
+                q[r[6]] = q.get(r[6], 0) + r[2]
+        return q
     def tiers(cls):
         out = {}
         for r in rs:
@@ -74,9 +106,9 @@ def win(hours=None):
         "incentive": sum(1 for r in rs if r[1] == "incentive"),
         "topup_n": sum(1 for r in rs if r[1] == "topup"),
         "creators": len({r[3] for r in rs if r[1] in ("invoke", "equip")}),
-        "moca_ce": sum(r[2] for r in rs if r[1] in ("invoke", "equip")),
-        "moca_incent": sum(r[2] for r in rs if r[1] == "incentive"),
-        "moca_topup": sum(r[2] for r in rs if r[1] == "topup"),
+        "qty_ce": _qty(rs, ("invoke", "equip")),
+        "qty_incent": _qty(rs, ("incentive",)),
+        "qty_topup": _qty(rs, ("topup",)),
         "usd_ce": sum(r[5] for r in rs if r[1] in ("invoke", "equip")),
         "usd_incent": sum(r[5] for r in rs if r[1] == "incentive"),
         "usd_topup": sum(r[5] for r in rs if r[1] == "topup"),
@@ -106,29 +138,16 @@ def counts_line(w):
     return " · ".join(f"{w[k]:,} {lab}" for k, lab in COUNTS if w[k])
 
 def usd_line(label, key, w, note=""):
-    # $ figure is the sum of day-pinned per-row USD — same basis as the page
-    u = w[key.replace("moca_", "usd_")]
-    return f"<b>{label}:</b> {w[key]:,.0f} MOCA ≈ <b>${u:,.2f}</b>{note}"
+    # $ figure is the sum of day-pinned per-row USD — same basis as the page.
+    # Raw amounts render per token (MENTE-era rows are now included).
+    u = w[key.replace("qty_", "usd_")]
+    qty = " + ".join(f"{q:,.0f} {s}" for s, q in sorted(w[key].items(), key=lambda kv: -kv[1]) if q) or "0"
+    return f"<b>{label}:</b> {qty} ≈ <b>${u:,.2f}</b>{note}"
 
 head = {"hourly": "🟢 <b>Hourly refresh OK</b>",
         "daily": "📊 <b>Daily summary</b>",
         "weekly": "🗓 <b>Weekly summary</b>"}[mode]
 
-# guard summary from the freshly built page
-# data.json is the versioned contract with refresh.py — no HTML scraping.
-# Fail LOUD on absence or staleness: a silent fallback to stale numbers is
-# how the wallet-balance line went dark for days in July.
-_dj = os.path.join(HERE, "data.json")
-if not os.path.exists(_dj):
-    raise SystemExit("FATAL: data.json missing — refresh.py must run first")
-_D = json.load(open(_dj))
-_gen = _D.get("scope", {}).get("generated_iso")
-if not _gen:
-    raise SystemExit("FATAL: data.json has no generated_iso — pre-contract file, refusing to send")
-if (now - datetime.fromisoformat(_gen.replace("Z", ""))).total_seconds() > 2 * 3600:
-    raise SystemExit(f"FATAL: data.json stale (generated {_gen}) — refusing to send outdated figures")
-G = _D["infer"]["guard"]
-F = _D["facts"]
 health = []
 w24_f = F["windows"][0]
 bal_m, bal_e = F["balance"].get("MOCA"), F["balance"].get("MENTE")
@@ -148,13 +167,22 @@ usd_m = (bal_m or 0) * r_m
 usd_e = (bal_e or 0) * r_e
 stale = f" ⚠️ <i>(live fetch failed — last known {stale_ts} UTC)</i>" if stale_ts else ""
 health.append("")
+health.append("🔧 <b>Ops health</b>")
 health.append(f"<b>Wallet balance:</b> <b>${usd_m + usd_e:,.0f}</b> total{stale}")
 health.append(f"  · MOCA: {bal_m or 0:,.0f} ≈ <b>${usd_m:,.2f}</b>")
 health.append(f"  · MENTE: {bal_e or 0:,.0f} ≈ <b>${usd_e:,.2f}</b>")
-out_1h = (sum(r[5] for r in rows if r[0] > now - timedelta(hours=1))
-          + sum(v for t, v in mente_rows if t > now - timedelta(hours=1)) * (F["rate"].get("MENTE") or 0))
+out_1h = sum(r[5] for r in rows if r[0] > now - timedelta(hours=1))
 _f1h = f"out ${out_1h:,.0f} 1h · $" if mode == "hourly" else "out $"
-health.append(f"<b>Flows:</b> {_f1h}{w24_f['out_usd']:,.0f} 24h · in ${w24_f['in_usd']:,.0f} 24h · net {'+' if w24_f['net_usd']>=0 else ''}${w24_f['net_usd']:,.0f} 24h")
+# Economy vs ops split (council loop 3): the payout lines above exclude
+# swaps/treasury logistics, so a raw Flows total never visibly reconciled
+# with them. economy = classified payout USD in the window; ops = the
+# RESIDUAL (guaranteed to close on the message itself). A negative residual
+# is a basis mismatch and is flagged, never printed as a negative dollar.
+_eco24 = sum(r[5] for r in rows if r[0] > now - timedelta(hours=24) and r[1] != "other")
+_ops24 = w24_f["out_usd"] - _eco24
+_ops_s = (f"ops out ${_ops24:,.0f} <i>(swaps/treasury)</i>" if _ops24 >= 0
+          else f"ops out $0 <i>(⚠ basis mismatch ${_ops24:,.0f})</i>")
+health.append(f"<b>Flows:</b> {_f1h}{w24_f['out_usd']:,.0f} 24h = economy ${_eco24:,.0f} + {_ops_s} · in ${w24_f['in_usd']:,.0f} 24h · net {'+' if w24_f['net_usd']>=0 else ''}${w24_f['net_usd']:,.0f}")
 if mode in ("daily", "weekly"):
     health.append(f"<b>Pattern monitor:</b> {G['flagged_n']} of {G['monitored_n']} flagged · <b>at risk:</b> ${G['at_risk_usd']:,.2f} of ${G['ce_total_usd']:,.2f} <i>(heuristic, unconfirmed)</i>")
     if G.get("runway7") is not None:
@@ -178,36 +206,39 @@ if rw < 7:
         health.append(f"🔴 <b>Low float:</b> ${G['burn24']}/24h burn → ~{rw}d left")
 
 fresh = counts_line(w1)
-body_lines = [f"{head} — <i>Skill Payout Dashboard</i>", ""]
+body_lines = [f"{head} — <i>Skill Payout Dashboard</i>", "", "📈 <b>Economy</b>"]
 if mode == "hourly":
     body_lines += [f"<b>New this hour:</b> {fresh}" if fresh
                    else "<b>New this hour:</b> <i>nothing new</i>", ""]
 body_lines += [
     f"<b>Last {WLAB}</b>",
     f"  · payouts: {counts_line(W) or '<i>none</i>'}",
-    "  · " + usd_line("paid to creators", "moca_ce", W),
-    "  · " + usd_line("incentive spend", "moca_incent", W,
+    "  · " + usd_line("paid to creators", "qty_ce", W),
+    "  · " + usd_line("incentive spend", "qty_incent", W,
                       f" <i>({mix(W['tiers_incent'], INCENT_LABEL)})</i>" if W["tiers_incent"] else ""),
-    "  · " + usd_line("top-ups delivered", "moca_topup", W,
+    "  · " + usd_line("top-ups delivered", "qty_topup", W,
                       f" <i>({W['topup_n']:,} paid: {mix(W['tiers_topup'])})</i>" if W["tiers_topup"]
-                      else " <i>(revenue-backed, Stripe)</i>"),
+                      else " <i>(Stripe-pack-sized, size-inferred)</i>"),
 ]
 if W["other_n"]:
     body_lines.append(f"  · <i>excluded {W['other_n']:,} non-standard transfer(s) ≈ ${W['other_usd']:,.0f} "
                       f"— swaps/treasury moves, not user top-ups</i>")
+import state as _state
+_restated = _state.load().get("mente_restated_v1")
+if mode in ("daily", "weekly") and not _restated:
+    body_lines += ["", "ℹ️ <i>All-time figures restated: the digest now includes the MENTE era "
+                   "(the page always did) — cumulative lines move up once; windows are unaffected.</i>"]
 if mode in ("daily", "weekly"):
     body_lines += ["", "<b>All time</b>",
                    f"  · {cum['invoke']:,} invokes · {cum['equip']:,} equips · {cum['creators']:,} creator wallets paid",
-                   "  · " + usd_line("paid to creators", "moca_ce", cum)]
+                   "  · " + usd_line("paid to creators", "qty_ce", cum)]
 msg = "\n".join(body_lines + health)
 
 # Rate-limit the hourly digest: the cron now fires 4x/hour (scheduler
 # starvation workaround), but Po wants at most ~one digest per hour. State
 # rides in alert_state.json (Actions cache). Daily/weekly always send.
 if mode == "hourly":
-    _sp = os.path.join(HERE, "alert_state.json")
-    _st = json.load(open(_sp)) if os.path.exists(_sp) else {}
-    _last = _st.get("last_hourly_digest")
+    _last = _state.load().get("last_hourly_digest")
     if _last and (now - datetime.fromisoformat(_last)).total_seconds() < 50 * 60:
         print(f"hourly digest sent {_last} — under 50 min ago, skipping")
         raise SystemExit(0)
@@ -227,7 +258,6 @@ with urllib.request.urlopen(req, timeout=30) as r:
 # stamp AFTER the successful send — stamping first would let one failed send
 # silence the digest for 50 min (same class as the alerts.py QA finding)
 if mode == "hourly":
-    _sp = os.path.join(HERE, "alert_state.json")
-    _st = json.load(open(_sp)) if os.path.exists(_sp) else {}
-    _st["last_hourly_digest"] = now.isoformat(timespec="minutes")
-    json.dump(_st, open(_sp, "w"))
+    _state.update({"last_hourly_digest": now.isoformat(timespec="minutes")})
+elif not _restated:
+    _state.update({"mente_restated_v1": now.isoformat(timespec="minutes")})

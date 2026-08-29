@@ -117,47 +117,4 @@ jobs:
         env:
           LEDGER_BOT_TOKEN: ${{ secrets.LEDGER_BOT_TOKEN }}
           LEDGER_CHAT_ID:   ${{ secrets.LEDGER_CHAT_ID }}
-        run: |
-          python3 - <<'PYEOF'
-          import json, os, time, urllib.request, urllib.parse, datetime as dt
-          RAW = "https://raw.githubusercontent.com/Agentic-Po/moca-ledger/main/heartbeat.json"
-          def tg(msg):
-              tok, chat = os.environ.get("LEDGER_BOT_TOKEN"), os.environ.get("LEDGER_CHAT_ID")
-              if not (tok and chat): return
-              urllib.request.urlopen(urllib.request.Request(
-                  f"https://api.telegram.org/bot{tok}/sendMessage",
-                  data=urllib.parse.urlencode({"chat_id": chat, "text": msg, "parse_mode": "HTML"}).encode()), timeout=20)
-          try:
-              hb = json.load(urllib.request.urlopen(urllib.request.Request(RAW, headers={"User-Agent": "peer-watch"}), timeout=20))
-              ts = hb.get("run_ts")
-              age = (dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))).total_seconds() / 60 if ts else 1e9
-              lag = hb.get("lag_blocks") or 0
-              if age > 90 or lag > 900:
-                  import os.path
-                  mark = "/tmp/ledger_stale_last"
-                  last = 0.0
-                  try:
-                      last = float(open(mark).read().strip())
-                  except Exception:
-                      try:
-                          last = float(json.load(open("alert_state.json")).get("ledger_stale_last", 0))
-                      except Exception:
-                          last = 0.0
-                  if time.time() - last > 6 * 3600:          # dedupe: at most one every 6 h
-                      tg(f"\u23f3 <b>ledger detector stale</b>\nlast run {age:.0f} min ago \u00b7 {lag} blocks behind tip\n(reported by the dashboard hourly job)")
-                      try:
-                          st = json.load(open("alert_state.json"))
-                      except Exception:
-                          st = {}
-                      st["ledger_stale_last"] = time.time()
-                      json.dump(st, open("alert_state.json", "w"), indent=1)
-                      open(mark, "w").write(str(time.time()))
-                      print("peer stale -> alerted")
-                  else:
-                      print("peer stale -> deduped")
-              else:
-                  print(f"ledger ok: {age:.0f} min old, lag {lag}")
-          except Exception as e:
-              tg(f"\u23f3 <b>ledger heartbeat unreadable</b>\n{str(e)[:100]}")
-              print("peer unreadable ->", e)
-          PYEOF
+        run: python3 ledger_watch.py

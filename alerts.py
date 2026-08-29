@@ -79,7 +79,8 @@ def baseline(rows):
             "iqr": q3 - q1, "hours": n}
 
 
-state = json.load(open(STATE_PATH)) if os.path.exists(STATE_PATH) else {}
+import state as _statemod
+state = _statemod.load()
 seen = set(state.get("seen", []))
 anom = state.get("anomaly", {})
 lines = []
@@ -150,11 +151,22 @@ if _rebate and _rebate.get("overdue"):
 # a wider ±15% band around the retired category's nominal size, because a
 # few percent of oracle-vs-execution rate drift must not hide a leak (the
 # known stragglers land at $0.89-0.95 against a $1 nominal).
-RETIRED = {"equip": {"cutoff": "2026-08-21", "point": 1.0, "tol": 0.15}}
-_day_rates = json.load(open(os.path.join(HERE, "day_rates.json")))["day_rates"]
+from classify import RETIRED   # shared with refresh.py's chain ledger
+_dr_state = json.load(open(os.path.join(HERE, "day_rates.json")))
+_day_rates = {s: dict(v) for s, v in _dr_state["day_rates"].items()}
+for _s, _od in (_dr_state.get("open_day_rate") or {}).items():
+    # today's provisional rate — same basis the page/CSV/digest use, so a
+    # straggler banked this hour can't be priced differently an hour later
+    _day_rates.setdefault(_s, {}).setdefault(_od["d"], _od["rate"])
 retired_seen = state.setdefault("retired_seen", {})
 _new_retired = []
+_CANDIDATE_CUT = now - timedelta(days=30)
 for ts, usd_live, sym, qty, cp, key in flows["out"]:
+    # candidate window: rows older than 30d never (re-)alert — running totals
+    # come from the chain-recomputed ledger, so old state entries are trimmed
+    # without losing the audit trail
+    if ts <= _CANDIDATE_CUT:
+        continue
     for cat, rule in RETIRED.items():
         if ts.strftime("%Y-%m-%d") <= rule["cutoff"] or key in retired_seen:
             continue
@@ -164,14 +176,27 @@ for ts, usd_live, sym, qty, cp, key in flows["out"]:
             retired_seen[key] = {"usd": round(usd_pinned, 2), "d": ts.strftime("%Y-%m-%d"),
                                  "cat": cat, "to": cp}
             _new_retired.append((cat, usd_pinned, cp, key))
+# trim dedup state to the candidate window; reconcile vs the chain ledger
+retired_seen = {k: v for k, v in retired_seen.items()
+                if v.get("d", "9999") > _CANDIDATE_CUT.strftime("%Y-%m-%d")}
+state["retired_seen"] = retired_seen
+_ledger = {}
+_gp = os.path.join(HERE, "guard_private.json")
+if os.path.exists(_gp):
+    _ledger = (json.load(open(_gp)).get("retired_ledger") or {})
 if _new_retired:
-    _tot_n = len(retired_seen)
-    _tot_usd = sum(v["usd"] for v in retired_seen.values())
+    _tot_n = sum(L.get("n", 0) for L in _ledger.values()) or len(retired_seen)
+    _tot_usd = sum(L.get("usd", 0) for L in _ledger.values()) or sum(v["usd"] for v in retired_seen.values())
     _cats = ", ".join(sorted({c for c, *_ in _new_retired}))
     lines += ["", f"🧟 <b>Retired payout category fired:</b> {len(_new_retired)} new <i>{_cats}</i>-sized transfer(s)",
               *[f"  · ${u:,.2f} → {cp[:8]}…{cp[-4:]} · <code>{k.split(':')[0]}</code>"
                 for _c, u, cp, k in _new_retired[:5]],
-              f"  · running total since retirement: <b>{_tot_n} transfers ≈ ${_tot_usd:,.2f}</b> — mis-configured job still live?"]
+              f"  · running total since retirement (chain-recomputed): <b>{_tot_n} transfers ≈ ${_tot_usd:,.2f}</b> — mis-configured job still live?"]
+if _ledger and not _new_retired:
+    _led_recent = sum(1 for L in _ledger.values() for e in L.get("entries", [])
+                      if e["ts"][:10] > _CANDIDATE_CUT.strftime("%Y-%m-%d"))
+    if _led_recent != len(retired_seen):
+        lines += ["", f"⚠️ <b>Retired-ledger mismatch:</b> chain ledger has {_led_recent} straggler(s) in the last 30d, tripwire state has {len(retired_seen)} — check guard_private.json"]
 
 # --- 5. data-source degradation edge alert (council item 4b) ---
 # complete=False means the run rendered from a stale/partial cache. The page
@@ -192,7 +217,7 @@ def persist_state():
     # keep 'seen' bounded: only keys that can still re-trigger (last 48h)
     recent = {r[5] for rows_ in flows.values() for r in rows_
               if r[0] > now - timedelta(hours=48)}
-    json.dump({**state, "seen": sorted(seen & recent), "anomaly": anom}, open(STATE_PATH, "w"))
+    _statemod.update({**state, "seen": sorted(seen & recent), "anomaly": anom})
 
 if lines:
     msg = "\n".join(["🚨 <b>Flow alert</b> — <i>Skill Payout Dashboard</i>"] + lines)
