@@ -596,16 +596,8 @@ cut48 = (now - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M:%S")
 cut7 = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
 cut30 = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
 
-GRID_POINTS = [(0.10, "b010"), (1, "b1"), (3, "b3"), (5, "b5"), (10, "b10"), (25, "b25"), (50, "b50")]
-def band(usd):
-    if usd < 0.06: return "micro"
-    for p, k in GRID_POINTS:
-        if abs(usd - p) / p <= 0.08:
-            return k
-    return "other"
-BAND_LABEL = {"micro": "< $0.06", "b010": "≈ $0.10", "b1": "≈ $1", "b3": "≈ $3", "b5": "≈ $5",
-              "b10": "≈ $10", "b25": "≈ $25", "b50": "≈ $50", "other": "other size"}
-BAND_KEYS = list(BAND_LABEL)
+# taxonomy lives in classify.py — the ONE classifier shared with notify/alerts
+from classify import band, classify_usd, BAND_LABEL, BAND_KEYS, STRIPE_FINE
 
 RECYCLE_SRC = "0xd85096faec1ac03075667b4c1a1661f5623bf111"
 def facts_window(rs, ins, label):
@@ -850,19 +842,8 @@ facts = {"windows": windows, "prev24": prev24, "monthly": monthly, "daily": dail
          "range": {"from": range_from, "to": rows[0]["ts"][:19] if rows else None}}
 
 # ======================= LAYER 2 — INTERPRETATION =======================
-FINE = {"b010": "invoke", "b1": "equip", "b3": "$3 credit", "b5": "referral $5",
-        "b10": "stripe $10", "b25": "stripe $25", "b50": "stripe $50", "micro": "test"}
-COARSE = {"invoke": "invoke", "equip": "equip", "test": "micro"}
-def classify(r):
-    fine = FINE.get(band(r["usd"]))
-    if fine is None:
-        # off-grid transfers are NOT folded into invoke/growth — they stay a
-        # separate, visible category so classified totals only contain snapped rows
-        return "nonstandard", ("nonstandard (small)" if r["usd"] < 0.5 else "nonstandard (large)")
-    return COARSE.get(fine, "growth"), fine
-
 for r in rows:
-    r["cat"], r["fine"] = classify(r)
+    r["cat"], r["fine"], _ = classify_usd(r["usd"])
 
 CATS = ["invoke", "equip", "growth", "nonstandard", "micro"]
 S = {"tot": {c: {"n": sum(1 for r in rows if r["cat"] == c),
@@ -944,7 +925,6 @@ at_risk = round(sum(g["usd"] for g in flagged), 2)
 # facts layer (out_di equals the factual outflow; unbacked burn_di is a strict
 # subset of it); the balance side is valued at the live rate — bases stated on
 # the tiles.
-STRIPE_FINE = ("stripe $10", "stripe $25", "stripe $50")
 def burn_di(cut, hi=None):
     """Unbacked classified burn: invoke/equip/credits/referrals, excluding
     Stripe-sized deliveries (fiat-purchase-backed)."""
@@ -1037,6 +1017,7 @@ if _ph and _ph.get("daily"):
 
 scope = {"wallet": WALLET, "tokens": {s: TOKENS[s]["addr"] for s in TOKENS},
          "generated": now.strftime("%Y-%m-%d %H:%M"),
+         "generated_iso": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
          "source": "Blockscout (Base) token-transfer API; balances via eth_call; live prices via Blockscout exchange_rate (validated); historical USD via persisted day-implied payout rates",
          "complete": data_complete, "excluded_in_tx": excluded_in,
          "note": "This wallet only. Other Minds wallets (e.g. Fireblocks) are out of scope."}
@@ -1296,6 +1277,11 @@ for _r in registry:
 
 data = {"scope": scope, "facts": facts, "infer": infer, "server": server, "stripe_snap": stripe_snap,
         "insights": insights, "open_items": open_items, "gaps": gaps, "registry": registry, "sink": sink}
+
+# machine-readable copy of exactly what the page embeds — alerts.py/notify.py
+# read this instead of regex-scraping index.html (council item 3, 2026-08-28).
+# Strict subset of the public page, so it exposes nothing new.
+json.dump(data, open(os.path.join(HERE, "data.json"), "w"), default=str)
 
 json.dump(STATE, open(RATES_PATH, "w"), indent=0)
 

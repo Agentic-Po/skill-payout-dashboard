@@ -320,6 +320,27 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
 <div class="tip" id="tip"></div>
 <script>
 const DATA = /*__DATA__*/;
+// ---- freshness & degradation banners (council 2026-08-28): visible even
+// when the pipeline is fully dead, because this runs in the viewer's browser.
+(function(){
+  const SC=DATA.scope||{};
+  const box=document.createElement("div");
+  box.style.cssText="max-width:1080px;margin:0 auto 14px;display:flex;flex-direction:column;gap:8px";
+  function banner(txt,color){const d=document.createElement("div");
+    d.style.cssText="border:1.5px solid "+color+";color:"+color+";border-radius:8px;padding:10px 14px;font-weight:650;font-size:13.5px;background:var(--surface)";
+    d.textContent=txt;box.appendChild(d);}
+  // Safari-safe: generated_iso is "YYYY-MM-DDTHH:MM:SSZ"; fall back to the
+  // legacy space-separated stamp by converting it to ISO.
+  const stamp=SC.generated_iso||((SC.generated||"").replace(" ","T")+":00Z");
+  const t=Date.parse(stamp);
+  if(!isNaN(t)){
+    const ageH=(Date.now()-t)/3.6e6;
+    if(ageH>2.5) banner("⚠ Data is "+(ageH<48?Math.round(ageH)+" hours":Math.round(ageH/24)+" days")+" old — the refresh pipeline has not published since "+(SC.generated||stamp)+" UTC. Treat all figures as stale.","var(--warn)");
+  }
+  if(SC.complete===false) banner("⚠ Data incomplete: this refresh rendered from a cached/partial chain fetch — recent transfers may be missing.","var(--warn)");
+  if(DATA.server&&DATA.server.complete===false) banner("PostHog tier degraded this run — server-recorded figures are from cache.","var(--ink3)");
+  if(box.children.length){const main=document.body.firstElementChild;document.body.insertBefore(box,document.body.firstChild);}
+})();
 const F=DATA.facts, I=DATA.infer, SC=DATA.scope, G=I.guard;
 const fmt=n=>n.toLocaleString("en-US",{maximumFractionDigits:1});
 const fmt0=n=>n.toLocaleString("en-US",{maximumFractionDigits:0});

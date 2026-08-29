@@ -26,8 +26,13 @@ URL = "https://agentic-po.github.io/skill-payout-dashboard/"
 BIG_USD = 5000
 STATE_PATH = os.path.join(HERE, "alert_state.json")
 
-DATA = json.loads(re.search(r'const DATA = (\{.*\})\s*;\n',
-                            open(os.path.join(HERE, "index.html")).read()).group(1))
+_dj = os.path.join(HERE, "data.json")
+if os.path.exists(_dj):
+    DATA = json.load(open(_dj))
+else:
+    print("WARN: data.json missing, falling back to index.html regex")
+    DATA = json.loads(re.search(r'const DATA = (\{.*\})\s*;\n',
+                                open(os.path.join(HERE, "index.html")).read()).group(1))
 RATE = DATA["facts"]["rate"]                      # {sym: usd}
 TOKENS = {a.lower(): s for s, a in DATA["scope"]["tokens"].items()}
 LABELS = {r["addr"].lower(): r["role"] for r in DATA.get("registry", [])}
@@ -133,6 +138,50 @@ if _rebate and _rebate.get("overdue"):
                   f"  · last MENTE→MOCA swap: <b>{_rebate.get('last_swap') or 'never'}</b>"
                   + (f" ({_rebate['days_since_swap']} days ago)" if _rebate.get("days_since_swap") is not None else ""),
                   "  · expected cadence: weekly"]
+
+# --- 4. retired-payout tripwire (Po, 2026-08-28 council) ---
+# A payout category that was officially switched off must never fire again.
+# $1 equip rewards were retired 2026-08-21, yet stragglers keep leaking.
+# Rows are classified ONCE at first sight with the day-pinned rate and banked
+# in state (adversary amendment: live-rate reclassification would make counts
+# drift with the market). Config stays in code, never in the public DATA.
+# Detection wants RECALL, the page wants precision: the tripwire matches on
+# a wider ±15% band around the retired category's nominal size, because a
+# few percent of oracle-vs-execution rate drift must not hide a leak (the
+# known stragglers land at $0.89-0.95 against a $1 nominal).
+RETIRED = {"equip": {"cutoff": "2026-08-21", "point": 1.0, "tol": 0.15}}
+_day_rates = json.load(open(os.path.join(HERE, "day_rates.json")))["day_rates"]
+retired_seen = state.setdefault("retired_seen", {})
+_new_retired = []
+for ts, usd_live, sym, qty, cp, key in flows["out"]:
+    for cat, rule in RETIRED.items():
+        if ts.strftime("%Y-%m-%d") <= rule["cutoff"] or key in retired_seen:
+            continue
+        day_rate = _day_rates.get(sym, {}).get(ts.strftime("%Y-%m-%d"))
+        usd_pinned = qty * (day_rate if day_rate else RATE[sym])
+        if abs(usd_pinned - rule["point"]) / rule["point"] <= rule["tol"]:
+            retired_seen[key] = {"usd": round(usd_pinned, 2), "d": ts.strftime("%Y-%m-%d"),
+                                 "cat": cat, "to": cp}
+            _new_retired.append((cat, usd_pinned, cp, key))
+if _new_retired:
+    _tot_n = len(retired_seen)
+    _tot_usd = sum(v["usd"] for v in retired_seen.values())
+    _cats = ", ".join(sorted({c for c, *_ in _new_retired}))
+    lines += ["", f"🧟 <b>Retired payout category fired:</b> {len(_new_retired)} new <i>{_cats}</i>-sized transfer(s)",
+              *[f"  · ${u:,.2f} → {cp[:8]}…{cp[-4:]} · <code>{k.split(':')[0]}</code>"
+                for _c, u, cp, k in _new_retired[:5]],
+              f"  · running total since retirement: <b>{_tot_n} transfers ≈ ${_tot_usd:,.2f}</b> — mis-configured job still live?"]
+
+# --- 5. data-source degradation edge alert (council item 4b) ---
+# complete=False means the run rendered from a stale/partial cache. The page
+# shows it quietly; Telegram gets ONE line on the flip and one on recovery.
+_src_ok = bool(DATA["scope"].get("complete", True))
+_was_ok = state.get("source_ok", True)
+if _was_ok and not _src_ok:
+    lines += ["", "🟠 <b>Data source degraded:</b> this refresh rendered with incomplete chain data (cache fallback) — figures may lag until the source recovers"]
+elif _src_ok and not _was_ok:
+    lines += ["", "🟢 <b>Data source recovered:</b> chain fetch complete again"]
+state["source_ok"] = _src_ok
 
 # keep state bounded: only keys that can still re-trigger (last 48h of rows)
 recent = {r[5] for rows in flows.values() for r in rows

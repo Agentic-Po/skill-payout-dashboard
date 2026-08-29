@@ -16,6 +16,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # Detector state lives in the Actions cache, NOT the public repo —
+      # committing alert_state.json published armed/cooling detector state
+      # hourly (timing oracle; same class as the Q3 flagged-wallets leak).
+      # Worst case on cache miss: one duplicate Telegram alert, never silence.
+      - name: Restore alert state
+        uses: actions/cache@v4
+        with:
+          path: alert_state.json
+          key: alert-state-${{ github.run_id }}
+          restore-keys: alert-state-
       - name: Refresh data and rebuild page
         env:
           POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
@@ -44,10 +54,23 @@ jobs:
         run: |
           git config user.name "dashboard-bot"
           git config user.email "actions@github.com"
-          git add -A transfers transfers_in cognition_in index.html legacy.html stats_history.json day_rates.json posthog_cache.json transfers_export.csv alert_state.json
+          # add -A closes the new-state-file outage class (cognition_in.json,
+          # 2026-07-19: an unstaged new file broke every push for 7h);
+          # .gitignore keeps alert_state.json and scratch files out
+          git add -A
           git diff --cached --quiet || git commit -m "refresh $(date -u +'%Y-%m-%d %H:%M') UTC"
           git pull --rebase origin main
           git push
+      # External dead-man's switch: healthchecks.io expects this ping hourly
+      # and alerts when it goes silent — the only leg that catches GitHub's
+      # own scheduler stalling (2026-08-26: 8h account-wide cron stall).
+      # No-op until the HEALTHCHECK_URL secret is configured.
+      - name: Dead-man ping
+        continue-on-error: true
+        env:
+          HC_URL: ${{ secrets.HEALTHCHECK_URL }}
+        run: |
+          if [ -n "$HC_URL" ]; then curl -fsS -m 10 --retry 3 "$HC_URL" >/dev/null && echo "ping ok"; else echo "HEALTHCHECK_URL not set — skipping"; fi
       - name: Hourly Telegram update
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

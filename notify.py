@@ -18,41 +18,30 @@ hist = json.load(open(os.path.join(HERE, "stats_history.json")))
 RATE = hist[-1]["rate"]
 now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-# Payout taxonomy. Sizes below are the DELIVERED value; Stripe top-ups arrive
-# net of ~6% processing (snapshot fee rate 7.2%), so a $10 pack lands as ~$9.4
-# — packs are matched on the grossed-up value. Anything above the incentive
-# band that matches no pack is "other" (swaps, treasury moves) and is kept OUT
-# of the top-up totals, which it would otherwise dominate.
-PACKS = (10, 20, 25, 50, 100)
-INCENT = ((3, "$3 credits"), (5, "$5 referrals"))
-NET_OF_FEES = 0.94
-TOL = 0.15
+# Payout taxonomy lives in classify.py — the ONE classifier shared with the
+# page (refresh.py) and alerts.py since the 2026-08-28 council refactor.
+# Rows are priced at the DAY-PINNED rate (day_rates.json) so historical counts
+# can't drift with the live market; today falls back to the live rate.
+from classify import classify_usd, INCENT
+_DAY_RATES = json.load(open(os.path.join(HERE, "day_rates.json")))["day_rates"].get("MOCA", {})
 
-def _snap(value, points, tol=TOL):
-    for p in points:
-        if abs(value - p) / p <= tol:
-            return p
-    return None
+def classify(day, v):
+    """-> (class, usd, tier) in the digest's local vocabulary."""
+    usd = v * (_DAY_RATES.get(day) or RATE)
+    coarse, fine, tier = classify_usd(usd)
+    if coarse == "growth":
+        return ("topup" if fine.startswith("stripe") else "incentive"), usd, tier
+    if coarse == "nonstandard":
+        return "other", usd, None
+    return coarse, usd, None
 
-def classify(v):
-    """-> (class, tier) where tier is the $ pack/incentive size, or None."""
-    usd = v * RATE
-    if usd < 0.06: return "micro", None
-    if usd < 0.4:  return "invoke", None
-    if usd < 2:    return "equip", None
-    tier = _snap(usd, [p for p, _ in INCENT])
-    if tier: return "incentive", tier
-    pack = _snap(usd / NET_OF_FEES, PACKS)
-    if pack: return "topup", pack
-    return "other", None
-
-rows = []
+rows = []          # (ts, cls, moca_qty, wallet, tier, usd_day_pinned)
 for i in shards.load(os.path.join(HERE, "transfers")):
     if i["token"]["address_hash"].lower() != "0x2b11834ed1feaed4b4b3a86a6f571315e25a884d":
         continue
     v = int(i["total"]["value"]) / 1e18
-    cls, tier = classify(v)
-    rows.append((datetime.fromisoformat(i["timestamp"][:19]), cls, v, i["to"]["hash"], tier))
+    cls, usd, tier = classify(i["timestamp"][:10], v)
+    rows.append((datetime.fromisoformat(i["timestamp"][:19]), cls, v, i["to"]["hash"], tier, usd))
 
 MENTE_ADDR = "0x4cd9a847f39106e19a4e41aea8a232e915c82af5"
 mente_rows = []
@@ -84,10 +73,13 @@ def win(hours=None):
         "moca_ce": sum(r[2] for r in rs if r[1] in ("invoke", "equip")),
         "moca_incent": sum(r[2] for r in rs if r[1] in ("incentive", "micro")),
         "moca_topup": sum(r[2] for r in rs if r[1] == "topup"),
+        "usd_ce": sum(r[5] for r in rs if r[1] in ("invoke", "equip")),
+        "usd_incent": sum(r[5] for r in rs if r[1] in ("incentive", "micro")),
+        "usd_topup": sum(r[5] for r in rs if r[1] == "topup"),
         "tiers_incent": tiers("incentive"),
         "tiers_topup": tiers("topup"),
         "other_n": sum(1 for r in rs if r[1] == "other"),
-        "other_usd": sum(r[2] for r in rs if r[1] == "other") * RATE,
+        "other_usd": sum(r[5] for r in rs if r[1] == "other"),
     }
 
 def mix(tiers, labels=None):
@@ -110,7 +102,9 @@ def counts_line(w):
     return " · ".join(f"{w[k]:,} {lab}" for k, lab in COUNTS if w[k])
 
 def usd_line(label, key, w, note=""):
-    return f"<b>{label}:</b> {w[key]:,.0f} MOCA ≈ <b>${w[key] * RATE:,.2f}</b>{note}"
+    # $ figure is the sum of day-pinned per-row USD — same basis as the page
+    u = w[key.replace("moca_", "usd_")]
+    return f"<b>{label}:</b> {w[key]:,.0f} MOCA ≈ <b>${u:,.2f}</b>{note}"
 
 head = {"hourly": "🟢 <b>Hourly refresh OK</b>",
         "daily": "📊 <b>Daily summary</b>",
@@ -118,7 +112,12 @@ head = {"hourly": "🟢 <b>Hourly refresh OK</b>",
 
 # guard summary from the freshly built page
 import re
-_D = json.loads(re.search(r'const DATA = (\{.*\})\s*;\n', open(os.path.join(HERE, "index.html")).read()).group(1))
+_dj = os.path.join(HERE, "data.json")
+if os.path.exists(_dj):
+    _D = json.load(open(_dj))
+else:
+    print("WARN: data.json missing, falling back to index.html regex")
+    _D = json.loads(re.search(r'const DATA = (\{.*\})\s*;\n', open(os.path.join(HERE, "index.html")).read()).group(1))
 G = _D["infer"]["guard"]
 F = _D["facts"]
 health = []
@@ -153,7 +152,7 @@ if mode in ("daily", "weekly"):
         health.append(f"<b>Payout float:</b> ~{G['runway7']} days (7d-avg burn) · {G.get('runway24') or '?'}d at 24h pace — top-up cadence, not solvency")
 if mode == "weekly":
     health.append("")
-    health.append(f"<i>Paste-ready:</i> This week: {w7d['invoke']:,} invokes across {w7d['creators']:,} creator wallets, ${w7d['moca_ce']*RATE:,.2f} paid to creators — {G['flagged_n']} account(s) flagged for review, ${w7d['moca_topup']*RATE:,.2f} of flows revenue-backed (Stripe-sized).")
+    health.append(f"<i>Paste-ready:</i> This week: {w7d['invoke']:,} invokes across {w7d['creators']:,} creator wallets, ${w7d['usd_ce']:,.2f} paid to creators — {G['flagged_n']} account(s) flagged for review, ${w7d['usd_topup']:,.2f} of flows revenue-backed (Stripe-sized).")
 for sym, r in (F.get("recon") or {}).items():
     if r and r.get("warn"):
         health.append(f"⚠️ <b>Reconciliation drift ({sym}):</b> Δ moved {r['drift']:+,.1f} since last run — possible missed transfers")
