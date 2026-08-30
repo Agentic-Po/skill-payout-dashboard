@@ -174,9 +174,43 @@ Cross-crawler agreement is tested weekly by
 this repo's Blockscout-sourced outbound rows against moca-ledger's
 `eth_getLogs`-sourced rows for the last three closed days.
 
+## Dead-man checks — which check watches which pipeline
+
+Two healthchecks.io checks, one per pipeline. Never one shared check: a shared
+check cannot tell you which pipeline died. Full detail in
+[`RUNBOOK-deadman.md`](RUNBOOK-deadman.md).
+
+| Check name | Pipeline | Period | Grace | Secret |
+|---|---|---|---|---|
+| `moca-ledger detection floor` | moca-ledger `crawl.yml` / `selftest.yml` | 1 h | **2 h (INTERIM — revisit 2026-09-13)** | `HC_PING_URL` (moca-ledger) |
+| `skill-payout-dashboard refresh` | this repo's `refresh.yml` | 1 h | 3 h | `HEALTHCHECK_URL` (this repo) |
+
+- `moca-ledger detection floor` was previously named "My First Check"; period
+  and ping URL are unchanged.
+- **The 2 h detection-floor grace is interim, not a target.** It accommodates
+  GitHub cron starvation rather than fixing it; the real fix is an external
+  trigger on the `workflow_dispatch` endpoint, after which grace returns to
+  ~45 min. **Revisit 2026-09-13** — recorded here, not only in the decision
+  notes, so "temporary" does not become permanent.
+- **The dashboard's 1 h/3 h numbers are dashboard-only.** They tolerate ~4 h of
+  silence, which is fine for a refresh pipeline and must **never** be copied to
+  the detection floor check.
+- A `/fail` ping bypasses grace and alerts immediately — verify this in the
+  healthchecks UI rather than assuming it; `selftest.yml` depends on it.
+- **The healthchecks.io UI is the source of truth** for names, schedules and
+  ping URLs. The dotfile `~/.moca-ledger/healthchecks_dashboard_ping_url`
+  (mode 0600) is only a **cache** of the dashboard ping URL — after any
+  rotation in the UI, rewrite the dotfile and re-run
+  `gh secret set HEALTHCHECK_URL -R Agentic-Po/skill-payout-dashboard < ~/.moca-ledger/healthchecks_dashboard_ping_url`.
+- moca-ledger's redundant no-op `HEALTHCHECK_URL` dead-man step was removed
+  from its `crawl.yml` on 2026-08-30; that secret is deliberately **not**
+  backfilled there.
+
 ## Open items owned by Po
 
-1. `HEALTHCHECK_URL` secret (external dead-man; weekly digest nags until set)
+1. `HEALTHCHECK_URL` secret for the `skill-payout-dashboard refresh` check
+   (external dead-man; weekly digest nags until set) — ingest via the dotfile,
+   see the table above
 2. Whether to rewrite public git history (pre-2026-08-29 commits contain old
    state files; content is stale but recoverable)
 3. transfers_export.csv monthly sharding before it nears the 50 MB tripwire
