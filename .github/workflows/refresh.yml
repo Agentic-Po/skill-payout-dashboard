@@ -56,6 +56,8 @@ jobs:
         run: |
           python3 tests/test_parity.py
           python3 tests/test_reconcile.py
+      - name: Render parse gate
+        run: python3 tests/test_render.py
       - name: Guard against oversized files
         run: |
           BIG=$(find . -path ./.git -prune -o -type f -size +50M -print)

@@ -29,7 +29,11 @@ jobs:
         run: python3 catalog.py --check
       - name: Publish leak tripwire
         run: python3 check_publish.py --scan
+      - name: Redaction gate (identities never publish)
+        run: python3 tests/test_redact.py
       - name: Publish allowlist regression
         run: python3 tests/test_stage.py
       - name: Digest/page parity
         run: python3 tests/test_parity.py
+      - name: Render parse gate
+        run: python3 tests/test_render.py

@@ -18,9 +18,16 @@ last count — the LIVE numbers are always each repo's machine-generated
    a $32K swap once became "revenue".
 4. **Respect freshness**: call `rows.require_fresh(catalog, dataset, max_age_h)`
    before publishing anything derived; it raises on stale data.
-5. **Snapshot feeds**: `data.json` (schema_version 1) is the dashboard's full
+5. **Snapshot feeds**: `data.json` (schema_version 2) is the dashboard's full
    rendered dataset — same URL pattern as catalog.json. `transfers_export.csv`
    is the per-tx audit surface (tx_hash + log_index + canonical class).
+   **schema_version 1 → 2 (2026-08-30)**: `transfers_export.csv` dropped the
+   `counterparty_label` column, and no public artifact carries identity
+   labels any more (owner/team/custodian names, wallet↔mind names, label
+   notes) — public label fields hold structural placeholders only ("Funding
+   wallet A", "creator wallet"). Consumers that joined on
+   `counterparty_label` must key on the `counterparty` address instead and,
+   with repo access, join identities from `moca-ledger-private:labels/`.
 6. **PostHog warehouse path** (documented, run locally — credentials never in
    CI): export canonical rows to Parquet → R2 bucket `po-import-bucket`
    (`<dataset>/snapshot_<YYYYMMDD>.parquet`) → register via

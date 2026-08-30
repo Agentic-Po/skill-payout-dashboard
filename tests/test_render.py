@@ -15,6 +15,11 @@ import sys
 import tempfile
 
 if not shutil.which("node"):
+    # In CI a missing node must FAIL — a skipped gate is a lying-green gate.
+    import os
+    if os.environ.get("CI"):
+        print("FAIL: node not available in CI — render gate cannot run")
+        sys.exit(1)
     print("SKIP: node not available — render gate not enforced this run")
     sys.exit(0)
 

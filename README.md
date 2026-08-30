@@ -135,7 +135,7 @@ entry. **If you are about to quote a number in a deck, quote the safe sentence.*
 ### wallet balance
 - **Formula**: `refresh.py:balance_at` — `eth_call` `balanceOf` per token at latest block, USD at the live rate; block-pinned copy at `RECON_BLOCK` drives the drift fence.
 - **Source**: Base RPC. **Coverage**: point-in-time, per refresh; history in `stats_history.json`.
-- **Bias**: **this wallet only.** Other Minds wallets (Fireblocks, rebate sink) are out of scope. On a failed fetch the digest falls back to the last non-null snapshot and marks it stale.
+- **Bias**: **this wallet only.** Other Minds treasury wallets (incl. the rebate sink) are out of scope. On a failed fetch the digest falls back to the last non-null snapshot and marks it stale.
 - **Safe to say**: "The distribution wallet holds about $B across MOCA and MENTE — this wallet only, not all of Minds."
 
 ### subsidy ratio

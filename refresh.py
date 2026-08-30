@@ -28,22 +28,29 @@ TOKENS = {
     "MENTE": {"addr": "0x4cd9a847f39106e19a4e41aea8a232e915c82af5", "fallback_rate": 0.01414},
 }
 ADDR2SYM = {v["addr"]: k for k, v in TOKENS.items()}
-# counterparty labels confirmed off-chain (platform wallet-mind map / treasury ops)
-KNOWN = {"0x9a95d76c41aa34093a0db5f26f97309fe734a07f": "The Gamemaster (mind)",
+# PUBLIC structural labels ONLY (redaction, 2026-08-30). Identity labels —
+# owners, teams, custodian products, mind names — live in
+# moca-ledger-private:labels/ and, for local builds, in the gitignored
+# private_labels.json; they feed ONLY private artifacts (guard_private.json).
+# The public build must not need identities: absent file = placeholders.
+# The four flow-chart wallets (treasury, collector, rebate, gas funder) are
+# deliberately public by owner decision and keep their names.
+KNOWN = {"0x9a95d76c41aa34093a0db5f26f97309fe734a07f": "creator wallet",
          "0xd85096faec1ac03075667b4c1a1661f5623bf111": "Cognition Credits collector — also the original SWARM-era treasury+collector hub (pre-Apr 2026)",
          "0xea87169699dabd028a78d4b91544b4298086baf6": "SWARM token contract (original Cognition Credit token, migrated to MENTE ~Apr 2026)",
          "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432": "AgentIdentity registry (historic, ERC-8004 era)",
          "0x7b85e278a7446d8349b066e835d3057d895aecff": "registration-era gas funder (historic)",
-         "0xd8506866faadfdcfb9600479ba7dc652a203f111": "⚠ ADDRESS-POISONING MIMIC — fake lookalike of the collector, do NOT use",
-         "0xf605dbb5626dfc1448cee33e2e1221103021468f": "primary MENTE funding source — owner unconfirmed (Finance/platform ops?), identification open",
-         "0x4d3021a52b31ffafde3c46450d02c72807c3a178": "Minds Operations General (Fireblocks)",
-         "0x5edea73327eaf586164233e288ba2a8775ccd49c": "Minds Treasury Distribution Wallet Reserve (Fireblocks) — internal treasury moves, not payouts",
-         "0xe540397495e0b9cdc5f130405808d07e79fa3daa": "Minds Campaign (Fireblocks)",
-         "0xb15afc65532f8ec4d39db521ad7eb5b9e9ef5acf": "Minds Coupon Distributor (Fireblocks) — coupon credit deliveries, a major outflow leg",
+         "0xd8506866faadfdcfb9600479ba7dc652a203f111": "known mimic — do not copy",
          "0x1c5ebb794335b72d773df2fd8f80f3d1afbb75dd": "gas funder (sends ETH to mind wallets for cognition spends)"}
-# Optional wallet↔mind map (drop wallet_mind_map.csv beside this script — gitignored,
-# from the platform's wallet-mind-map export). ONLY the display name is surfaced on
-# the public page; emails/IDs stay local and feed the private CSV export labels.
+# Private identity labels ({addr_lower: {"label":..., "note":...}}).
+_plbl_path = os.path.join(HERE, "private_labels.json")
+PRIVATE_LABELS = json.load(open(_plbl_path)) if os.path.exists(_plbl_path) else {}
+if PRIVATE_LABELS:
+    print(f"private_labels.json: {len(PRIVATE_LABELS)} private labels loaded (private surfaces only)")
+# Optional wallet↔mind map (drop wallet_mind_map.csv beside this script —
+# gitignored, from the platform's wallet-mind-map export). Public surfaces get
+# the structural "creator wallet" tag only; the mind NAME is an identity and
+# goes to PRIVATE_LABELS for the private guard file.
 _map_path = os.path.join(HERE, "wallet_mind_map.csv")
 if os.path.exists(_map_path):
     import csv as _csv
@@ -58,9 +65,14 @@ if os.path.exists(_map_path):
                 _w = (_row.get(_wcol) or "").strip().lower()
                 _nm = (_row.get(_ncol) or "").strip() if _ncol else ""
                 if _w.startswith("0x") and _nm and _w not in KNOWN:
-                    KNOWN[_w] = _nm + " (mind)"
+                    KNOWN[_w] = "creator wallet"
+                    PRIVATE_LABELS.setdefault(_w, {}).setdefault("label", _nm + " (mind)")
                     n_loaded += 1
-        print(f"wallet_mind_map.csv: {n_loaded} mind labels loaded")
+        print(f"wallet_mind_map.csv: {n_loaded} mind wallets tagged (names stay private)")
+
+def private_label(addr):
+    """Identity label for PRIVATE artifacts only — never a public field."""
+    return (PRIVATE_LABELS.get(addr.lower()) or {}).get("label") or KNOWN.get(addr.lower())
 
 RATES_PATH = os.path.join(HERE, "day_rates.json")
 STATE = json.load(open(RATES_PATH)) if os.path.exists(RATES_PATH) else {}
@@ -833,15 +845,28 @@ top_recip = sorted(({"addr": k, "label": KNOWN.get(k.lower()), "n": v["n"], "usd
                      "share": round(v["usd"] / tot_out_usd * 100, 1)}
                     for k, v in recip.items()), key=lambda x: -x["usd"])[:25]
 
-# inflow sources (factual, labeled where known)
-# Hand-maintained labels for funding wallets live in inflow_labels.json
-# ({addr_lowercase: {"label": ..., "note": ...}}); edit the file and the next
-# refresh republishes with the labels applied. Falls back to the KNOWN map.
-_ilbl_path = os.path.join(HERE, "inflow_labels.json")
-INFLOW_LABELS = json.load(open(_ilbl_path)) if os.path.exists(_ilbl_path) else {}
+# inflow sources (factual, structurally labeled)
+# Funding-wallet IDENTITY labels are private (moca-ledger-private:labels/ +
+# the gitignored private_labels.json). Publicly, every non-KNOWN inflow source
+# gets a stable structural placeholder — "Funding wallet A/B/…" ordered by the
+# wallet's FIRST-SEEN inflow (append-only history, so letters never reshuffle).
+# Notes never publish: the old note field carried audit narratives.
+_fw_order = {}
+for _f in sorted(inflows, key=lambda f: (f["ts"], f["from"])):
+    _fw_order.setdefault(_f["from"].lower(), len(_fw_order))
+def _fw_name(i):
+    s, i = "", i + 1
+    while i:
+        i, r = divmod(i - 1, 26)
+        s = chr(65 + r) + s
+    return "Funding wallet " + s
 def in_label(addr):
-    e = INFLOW_LABELS.get(addr.lower()) or {}
-    return e.get("label") or KNOWN.get(addr.lower()), e.get("note", "")
+    a = addr.lower()
+    if a in KNOWN:
+        return KNOWN[a], ""
+    if a in _fw_order:
+        return _fw_name(_fw_order[a]), ""
+    return None, ""
 
 src = defaultdict(lambda: {"n": 0, "usd": 0.0, "first": "9999", "last": "0"})
 for f in inflows:
@@ -1076,7 +1101,9 @@ for c in creators:
     if n >= 15 and burst > 0.7 and span_h > 2: flags.append("burst cluster")
     tags = ["high volume"] if n > vol_hi else []
     if c["addr"] in inc_recip: tags.append("earn+receive")
-    grows.append({"addr": c["addr"], "label": KNOWN.get(c["addr"].lower()), "n": n,
+    # grows lands ONLY in guard_private.json — the one surface where identity
+    # labels are allowed, so reviewers keep context the public page lost.
+    grows.append({"addr": c["addr"], "label": private_label(c["addr"]), "n": n,
                   "span_h": round(span_h, 1), "ent": round(ent, 2), "acf": round(ac, 2),
                   "burst": round(burst * 100), "usd": c["usd"],
                   "flags": flags, "tags": tags, "status": "review" if flags else "organic"})
@@ -1235,8 +1262,8 @@ scope = {"wallet": WALLET, "tokens": {s: TOKENS[s]["addr"] for s in TOKENS},
          # The real row-exact cross-check is the weekly reconcile.yml job.
          "cross_check": {"text": "Cross-checked weekly, row-exact, against an independent second crawler",
                          "repo": "https://github.com/Agentic-Po/moca-ledger"},
-         "note": "This wallet only. Other Minds wallets (e.g. Fireblocks) are out of scope. "
-                 "Coupon deliveries flow from the separate Minds Coupon Distributor wallet and are "
+         "note": "This wallet only. Other Minds treasury wallets are out of scope. "
+                 "Coupon credit deliveries flow from a separate distributor wallet and are "
                  "out of scope for this wallet's ledger — that wallet's own ledger is being banked "
                  "privately, so no coupon leg appears in any figure on this page."}
 
@@ -1258,21 +1285,21 @@ insights = {
 }
 open_items = [
     {"item": "Confirm MENTE burn mechanism (event-less balance changes, ~$1,250 lifetime; sample txs 0x0080584a…, 0xc9f7afc5… in block 45862329)", "type": "clarify", "owner": "Po → MENTE team", "opened": "2026-07-19", "anchor": "scope"},
-    {"item": "Reconcile Stripe-sized outflow vs recorded top-ups — Valerii holds Stripe API access (feeds PostHog) and can close this end-to-end", "type": "follow-up", "owner": "Po → Valerii (Stripe API access confirmed)", "opened": "2026-07-18", "anchor": "serverCard"} if server else None,
-    {"item": "Identify owner of 0xf605dBb5…1468f — the primary MENTE funder (4.88M MENTE lifetime incl. an unattributed ~$6K on Jul 7); Po's Fireblocks and the collector are confirmed, three small early funders remain unlabeled", "type": "clarify", "owner": "Po + Finance/treasury ops", "opened": "2026-07-19", "anchor": "srcT"},
-    {"item": "Formalize the recycle policy: collector→treasury flows are informal ops habit today — defining the rule defines who owns the economy's cash flow", "type": "clarify", "owner": "Po → Minh / platform", "opened": "2026-07-19", "anchor": "srcT"},
+    {"item": "Reconcile Stripe-sized outflow vs recorded top-ups — the data platform team holds Stripe API access (feeds PostHog) and can close this end-to-end", "type": "follow-up", "owner": "Po → data platform team (Stripe API access confirmed)", "opened": "2026-07-18", "anchor": "serverCard"} if server else None,
+    {"item": "Identify owner of 0xf605dBb5…1468f — the primary MENTE funder; three small early funders also remain unattributed", "type": "clarify", "owner": "Po + treasury ops", "opened": "2026-07-19", "anchor": "srcT"},
+    {"item": "Formalize the recycle policy: collector→treasury flows are informal ops habit today — defining the rule defines who owns the economy's cash flow", "type": "clarify", "owner": "Po → platform lead", "opened": "2026-07-19", "anchor": "srcT"},
     {"item": "Subsidy-ratio trend: watch whether the weekly ratio bends down as revenue features land", "type": "trend", "owner": "dashboard (auto)", "opened": "2026-07-19", "anchor": "serverCard"},
-    {"item": "Manual heartbeat: wallet stays solvent only by hand-refills — standing replenishment policy pending Minh", "type": "follow-up", "owner": "Po → Minh", "opened": "2026-07-19", "anchor": "plainStrip"},
+    {"item": "Manual heartbeat: wallet stays solvent only by hand-refills — standing replenishment policy pending platform lead", "type": "follow-up", "owner": "Po → platform lead", "opened": "2026-07-19", "anchor": "plainStrip"},
 ]
 open_items = [o for o in open_items if o]
 gaps = [
     {"missing": "SWARM era (pre-Apr 2026) not yet integrated", "effect": "this dashboard covers the MENTE/MOCA credit era (from Apr 12/24); the economy's first generation ran on SWARM (Ethoswarm token) through the SAME collector hub 0xd850… — those flows are not yet counted", "unlocks": "full multi-era economy history: crawl the collector's SWARM in/outflows and add an era-aware timeline"},
     {"missing": "Recycle policy (constitutional)", "effect": "collector→treasury flows are informal; ownership of the economy's cash flow undefined", "unlocks": "closed-loop rule, creator revenue-share, or burn discipline — a protocol instead of a babysat wallet"},
-    {"missing": "Complete Stripe data feed — Valerii has Stripe API access (pulls for PostHog today, but only client-side events land)", "effect": "live revenue still client-side only; an interim VERIFIED snapshot (Stripe CSV, May 13–Jul 15: net $6,455) now anchors the true numbers — live feed needed for ongoing days", "unlocks": "true revenue-backed split; divergence control closes"},
+    {"missing": "Complete Stripe data feed — the data platform team has Stripe API access (pulls for PostHog today, but only client-side events land)", "effect": "live revenue still client-side only; an interim VERIFIED snapshot (Stripe CSV, May 13–Jul 15: net $6,455) now anchors the true numbers — live feed needed for ongoing days", "unlocks": "true revenue-backed split; divergence control closes"},
     {"missing": "Per-transfer memo/event from the payout contract", "effect": "classification is size-inference (±8%); amber zone larger than it needs to be", "unlocks": "exact payout types — most of the amber zone becomes fact"},
-    {"missing": "Wallet↔mind map (Katherine)", "effect": "recipients are hex addresses; per-creator economics invisible", "unlocks": "named earnings leaderboard + per-wallet hold/spend/exit disposition — retires the farming debate with data"},
+    {"missing": "Wallet↔mind map (platform export)", "effect": "recipients are hex addresses; per-creator economics invisible", "unlocks": "named earnings leaderboard + per-wallet hold/spend/exit disposition — retires the farming debate with data"},
     {"missing": "MENTE burn-mechanism confirmation (platform)", "effect": "~1.2% of MENTE flow explained forensically but unconfirmed", "unlocks": "complete, auditable MENTE accounting; event emission restores full verifiability"},
-    {"missing": "Fireblocks wallet scope", "effect": "the $50K manual-support wallet is invisible to this dashboard", "unlocks": "whole-treasury view; no separate manual attestation needed"},
+    {"missing": "Manual-support wallet scope", "effect": "the $50K manual-support wallet (separate custody) is invisible to this dashboard", "unlocks": "whole-treasury view; no separate manual attestation needed"},
 ]
 guard["dist_pace"] = dist_pace
 
@@ -1337,7 +1364,7 @@ try:
             print("collector balance fallback failed:", _e2)
 
     # --- rebate-wallet monitor (Po, 2026-08-20): the sink is the Minds Rebate
-    # Fireblocks wallet. DATops is expected to swap its accumulated MENTE to
+    # wallet. DATops is expected to swap its accumulated MENTE to
     # MOCA roughly weekly — track both balances and the last swap (any MENTE
     # outflow), and flag when the swap is overdue so DATops can be reminded.
     def _erc20_bal(token_addr, holder):
@@ -1454,15 +1481,17 @@ registry = [
     _reg("0x1c5ebb794335b72d773df2fd8f80f3d1afbb75dd", "Gas funder — sends ETH slivers so cognition spends are gasless for users", "Infrastructure"),
     _reg("0x7b85e278a7446d8349b066e835d3057d895aecff", "Registration-era gas funder (historic)", "Infrastructure"),
     _reg("0x8004a169fb4a3325136eb29fa0ceb6d2e539a432", "AgentIdentity registry — ERC-8004 era (historic, economically inert)", "Infrastructure"),
-    _reg("0x4d3021a52b31ffafde3c46450d02c72807c3a178", "Minds Operations General (Fireblocks) — manual MOCA top-ups", "Funding sources"),
-    _reg("0xf605dbb5626dfc1448cee33e2e1221103021468f", "Primary MENTE funder — OWNER UNCONFIRMED, identification open", "Funding sources"),
-    _reg(SINK, "Minds Rebate Fireblocks wallet — receives the daily 40% MENTE sweep from the collector since 2026-06-19; DATops swaps its MENTE to MOCA on a weekly cadence", "Collector"),
+    # Funding-source roles are structural placeholders — the identity map is
+    # private (moca-ledger-private:labels/). Mimic warnings name no victim.
+    _reg("0x4d3021a52b31ffafde3c46450d02c72807c3a178", f"{in_label('0x4d3021a52b31ffafde3c46450d02c72807c3a178')[0] or 'Funding wallet'} — manual MOCA top-ups", "Funding sources"),
+    _reg("0xf605dbb5626dfc1448cee33e2e1221103021468f", f"{in_label('0xf605dbb5626dfc1448cee33e2e1221103021468f')[0] or 'Funding wallet'} — primary MENTE funder", "Funding sources"),
+    _reg(SINK, "Minds Rebate wallet — receives the daily 40% MENTE sweep from the collector since 2026-06-19; DATops swaps its MENTE to MOCA on a weekly cadence", "Collector"),
     _reg("0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B", "EIP-7702 delegator implementation the treasury EOA delegates to", "Infrastructure"),
-    _reg("0x45d0cEAd7c0a2E1a0528C4131A2d95DE9a394839", "Early MENTE funder (Apr 2026) — unidentified; also spent 100k MENTE into the collector", "Funding sources"),
-    _reg("0xbDCb95A80d4C770fa811B1FAF0bb4Cf204d310b5", "Early MENTE funder (Apr–May 2026) — unidentified", "Funding sources"),
+    _reg("0x45d0cEAd7c0a2E1a0528C4131A2d95DE9a394839", f"{in_label('0x45d0cEAd7c0a2E1a0528C4131A2d95DE9a394839')[0] or 'Funding wallet'} — early MENTE funder (Apr 2026)", "Funding sources"),
+    _reg("0xbDCb95A80d4C770fa811B1FAF0bb4Cf204d310b5", f"{in_label('0xbDCb95A80d4C770fa811B1FAF0bb4Cf204d310b5')[0] or 'Funding wallet'} — early MENTE funder (Apr–May 2026)", "Funding sources"),
     _reg("0x0a2854Fbbd9B3Ef66F17d47284E7f899b9509330", "Swap counterparty — took 72k MENTE, returned 112k MOCA; venue unconfirmed", "Liquidity"),
-    _reg("0xd8506866faadfdcfb9600479ba7dc652a203f111", "ADDRESS-POISONING MIMIC of the collector — never copy the collector from a transaction history", "Warnings", True),
-    _reg("0x9a95a47a4f90c9c14ae8e3a9c37e822ed0e5a07f", "ADDRESS-POISONING MIMIC of The Gamemaster mind — zero-value poison transfers, SWARM era", "Warnings", True),
+    _reg("0xd8506866faadfdcfb9600479ba7dc652a203f111", "known mimic — do not copy", "Warnings", True),
+    _reg("0x9a95a47a4f90c9c14ae8e3a9c37e822ed0e5a07f", "known mimic — do not copy", "Warnings", True),
 ]
 _have = {r["addr"].lower() for r in registry}
 for _c in top_recip[:10]:                      # material outflow counterparties
@@ -1474,7 +1503,9 @@ for _c in in_sources[:10]:                     # material funding counterparties
         registry.append(_reg(_c["addr"], f"Inflow source — ${_c['usd']:,.0f} over {_c['n']} transfers · unlabeled", "Funding sources"))
         _have.add(_c["addr"].lower())
 for _a, _l in KNOWN.items():                   # anything labeled but not yet surfaced
-    if _a not in _have and "(mind)" not in _l:
+    # "creator wallet" is a structural tag, not a curated call-out — putting
+    # those wallets in the registry would single them out by name-lessness.
+    if _a not in _have and _l != "creator wallet":
         registry.append(_reg(_a, _l, "Other labeled"))
         _have.add(_a)
 
@@ -1495,7 +1526,9 @@ for _r in registry:
     elif len(_short[_a[:6].lower() + _a[-4:].lower()]) > 1:
         _r["collision"] = "short"      # ambiguous in the 0xXXXX…XXXX diagram/prose form
 
-data = {"schema_version": 1,
+# schema_version 2 (2026-08-30): identity labels redacted from all public
+# fields; transfers_export.csv dropped counterparty_label. See CONSUMERS.md.
+data = {"schema_version": 2,
         "scope": scope, "facts": facts, "infer": infer, "server": server, "stripe_snap": stripe_snap,
         "insights": insights, "open_items": open_items, "gaps": gaps, "registry": registry, "sink": sink}
 
@@ -1513,14 +1546,15 @@ with open(os.path.join(HERE, "transfers_export.csv"), "w", newline="") as fh:
     # auditor can tie every CSV row to the page fine_table and the Telegram
     # digest without re-implementing the taxonomy; log_index completes the
     # (tx_hash, log_index) primary key for multi-transfer transactions.
-    w.writerow(["timestamp_utc", "direction", "token", "amount", "rate_usd", "rate_source", "usd", "size_band", "counterparty", "counterparty_label", "tx_hash", "log_index", "class_coarse", "class_fine"])
+    # schema v2: no counterparty_label column — identity labels are private.
+    w.writerow(["timestamp_utc", "direction", "token", "amount", "rate_usd", "rate_source", "usd", "size_band", "counterparty", "tx_hash", "log_index", "class_coarse", "class_fine"])
     for r in rows:
         w.writerow([r["ts"], "OUT", r["tok"], f"{r['val']:.6f}", f"{r['rate']:.8f}", r["rsrc"], f"{r['usd']:.4f}",
-                    BAND_LABEL[band(r["usd"])], r["to"], KNOWN.get(r["to"].lower(), ""), r["tx"],
+                    BAND_LABEL[band(r["usd"])], r["to"], r["tx"],
                     r.get("li", ""), r.get("cat", ""), r.get("fine", "")])
     for f in inflows:
         w.writerow([f["ts"], "IN", f["tok"], f"{f['val']:.6f}", f"{f['rate']:.8f}", f["rsrc"], f"{f['usd']:.4f}",
-                    "", f["from"], KNOWN.get(f["from"].lower(), ""), f["tx"], f.get("li", ""), "", ""])
+                    "", f["from"], f["tx"], f.get("li", ""), "", ""])
 
 # --- snapshot history (append-only; git history is the immutable trail) ---
 hist_path = os.path.join(HERE, "stats_history.json")
@@ -1602,7 +1636,7 @@ if mrows:
     lrun = round(lbal * LRATE / lburn24, 1) if lbal and lburn24 > 0 else None
     lrun_adj = round(lbal * LRATE / (lburn24 * lgf), 1) if lbal and lburn24 > 0 else None
     # legacy view is intentionally FROZEN on the old taxonomy (no $20/$100
-    # packs) — it exists to match what Minh originally saw; do not extend.
+    # packs) — it exists to match what stakeholders originally saw; do not extend.
     UNIT_L = {"invoke": 0.10, "equip": 1, "$3 credit": 3, "referral $5": 5,
               "stripe $10": 10, "stripe $25": 25, "stripe $50": 50}
     lprom = sum(UNIT_L.get(r["fine"], r["val"] * LRATE) for r in mrows)

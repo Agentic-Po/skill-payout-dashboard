@@ -2,6 +2,8 @@
 .env
 __pycache__/
 wallet_mind_map.csv
+# identity labels — private (moca-ledger-private:labels/), never published
+private_labels.json
 # detector state — Actions cache only, never the public repo (timing oracle)
 alert_state.json
 guard_private.json

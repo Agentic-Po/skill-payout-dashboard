@@ -68,6 +68,13 @@ def _sums(rows, cut):
 
 def main():
     D, rows = _load()
+    # schema v2 = the identity-redacted contract. Every figure check below is
+    # the pre/post-redaction parity proof: the sums recomputed from raw shards
+    # must still match the published page to the cent, so redaction provably
+    # touched labels only, never money.
+    assert D.get("schema_version") == 2, \
+        f"schema_version {D.get('schema_version')!r} != 2 — redaction contract not in force"
+    print("ok schema_version == 2 (redacted contract)")
     gen = datetime.fromisoformat(D["scope"]["generated_iso"].replace("Z", ""))
     byw = {w["label"]: w for w in D["facts"]["windows"]}
 

@@ -14,15 +14,15 @@
 0x1c5ebb794335b72d773df2fd8f80f3d1afbb75dd   # Infrastructure — Gas funder — sends ETH slivers so cognition spends are gasle
 0x7b85e278a7446d8349b066e835d3057d895aecff   # Infrastructure — Registration-era gas funder (historic)
 0x8004a169fb4a3325136eb29fa0ceb6d2e539a432   # Infrastructure — AgentIdentity registry — ERC-8004 era (historic, economicall
-0x4d3021a52b31ffafde3c46450d02c72807c3a178   # Funding sources — Minds team Fireblocks wallet — manual MOCA top-ups
-0xf605dbb5626dfc1448cee33e2e1221103021468f   # Funding sources — Primary MENTE funder — OWNER UNCONFIRMED, identification ope
-0xf0961686bc71b8a1f42e7888bd8160e9b6240f40   # Collector — Minds Rebate Fireblocks wallet — receives the daily 40% MENT
+0x4d3021a52b31ffafde3c46450d02c72807c3a178   # Funding sources — manual MOCA top-ups (identity private)
+0xf605dbb5626dfc1448cee33e2e1221103021468f   # Funding sources — primary MENTE funder (identity private)
+0xf0961686bc71b8a1f42e7888bd8160e9b6240f40   # Collector — Minds Rebate wallet — receives the daily 40% MENTE sweep
 0x63c0c19a282a1b52b07dd5a65b58948a07dae32b   # Infrastructure — EIP-7702 delegator implementation the treasury EOA delegates
 0x45d0cead7c0a2e1a0528c4131a2d95de9a394839   # Funding sources — Early MENTE funder (Apr 2026) — unidentified; also spent 100
 0xbdcb95a80d4c770fa811b1faf0bb4cf204d310b5   # Funding sources — Early MENTE funder (Apr–May 2026) — unidentified
 0x0a2854fbbd9b3ef66f17d47284e7f899b9509330   # Liquidity — Swap counterparty — took 72k MENTE, returned 112k MOCA; venu
-0xd8506866faadfdcfb9600479ba7dc652a203f111   # Warnings — ADDRESS-POISONING MIMIC of the collector — never copy the co
-0x9a95a47a4f90c9c14ae8e3a9c37e822ed0e5a07f   # Warnings — ADDRESS-POISONING MIMIC of The Gamemaster mind — zero-value 
+0xd8506866faadfdcfb9600479ba7dc652a203f111   # Warnings — known mimic — do not copy
+0x9a95a47a4f90c9c14ae8e3a9c37e822ed0e5a07f   # Warnings — known mimic — do not copy
 0x5edea73327eaf586164233e288ba2a8775ccd49c   # Recipients — Top recipient — $39,187 over 4 transfers · unlabeled
 0x0d462daf8eebf53476cd95aeac87fb3141f9b13b   # Recipients — Top recipient — $9,393 over 9580 transfers · unlabeled
 0xdb959c6a9d0cc8023e579292805666a226c1dfde   # Recipients — Top recipient — $6,712 over 6792 transfers · unlabeled

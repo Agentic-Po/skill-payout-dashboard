@@ -151,7 +151,7 @@ if _rebate and _rebate.get("overdue"):
         state["rebate_swap_reminded"] = now.isoformat(timespec="minutes")
         _sink_addr = (DATA.get("sink") or {}).get("addr", "")
         lines += ["", "⏰ <b>Rebate wallet swap overdue</b> — remind DATops",
-                  f"  · Minds Rebate Fireblocks wallet {_sink_addr[:8]}…{_sink_addr[-4:]} holds "
+                  f"  · Minds Rebate wallet {_sink_addr[:8]}…{_sink_addr[-4:]} holds "
                   f"<b>{_rebate['bal_mente']:,.0f} MENTE</b> (≈${_rebate['bal_mente_usd']:,.0f}) unswapped",
                   f"  · last MENTE→MOCA swap: <b>{_rebate.get('last_swap') or 'never'}</b>"
                   + (f" ({_rebate['days_since_swap']} days ago)" if _rebate.get("days_since_swap") is not None else ""),
