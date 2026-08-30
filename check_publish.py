@@ -62,7 +62,8 @@ PUBLISH_EXTRA = [
     "*.py", "tests/*.py",
     ".github/workflows/*.yml",
     ".gitignore", "Makefile",
-    "README.md", "DATASETS.md", "HEARTBEAT.md", "RUNBOOK-deadman.md",
+    "README.md", "DATASETS.md",
+    "CONSUMERS.md", "HEARTBEAT.md", "RUNBOOK-deadman.md",
     "catalog.json", "data.json", "day_rates.json", "stats_history.json",
     "inflow_labels.json", "stripe_snapshot.json", "posthog_cache.json",
     "swarm_era.json", "swarm_prices.json",
@@ -238,7 +239,7 @@ def scan():
     # address in a ranked aggregate is an on-chain fact, an address in a
     # hand-written doc or in the catalog is somebody singling it out.
     targets = [("data.json:registry", _registry_text())]
-    for rel in ("DATASETS.md", "README.md", "catalog.json"):
+    for rel in ("DATASETS.md", "README.md", "catalog.json", "CONSUMERS.md"):
         p = os.path.join(HERE, rel)
         if os.path.exists(p):
             targets.append((rel, open(p, errors="replace").read()))

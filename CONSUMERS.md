@@ -1,7 +1,8 @@
 # Consuming this data from other systems
 
-The three repos form ONE data bank (843,975 rows · 232 MB as of 2026-08-30 —
-live totals always in each repo's `DATASETS.md`). Rules for any consumer:
+The three repos form ONE data bank (844,004 rows · 232 MB · 16 datasets at
+last count — the LIVE numbers are always each repo's machine-generated
+`DATASETS.md`; never hand-quote totals from this file). Rules for any consumer:
 
 1. **Discover via `catalog.json`** (machine-readable; committed in every repo,
    recomputed each refresh). Public over HTTP, no auth:
