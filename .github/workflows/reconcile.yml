@@ -8,6 +8,12 @@ on:
     - cron: "0 2 * * 1"   # Monday 02:00 UTC, after the weekly heartbeat (01:00)
   workflow_dispatch:
 
+# The invariant this job asserts in prose, enforced: no write token reaches a
+# job that audits another repo's data, and checkout leaves no credentials in
+# the clone's git config.
+permissions:
+  contents: read
+
 concurrency:
   group: reconcile
   cancel-in-progress: false
@@ -17,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -24,7 +32,7 @@ jobs:
       # able to write to the ledger it is auditing.
       - name: Clone moca-ledger (public, read-only)
         run: git clone --depth 1 https://github.com/Agentic-Po/moca-ledger.git "$RUNNER_TEMP/moca-ledger"
-      - name: Reconcile last 3 closed days
+      - name: Reconcile last 7 closed days
         env:
           MOCA_LEDGER_PATH: ${{ runner.temp }}/moca-ledger
         run: python3 tests/test_reconcile.py

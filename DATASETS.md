@@ -76,14 +76,15 @@ Rows, bytes and coverage are measured off the files, never asserted.
 ## private (not published)
 
 Listed so the absence is deliberate and visible. No schema, no path,
-no coverage: those are calibration hints for the detectors they feed.
+no coverage and no size: those are calibration hints for the detectors
+they feed.
 
 | Dataset | Kind | Size | Note |
 |---|---|---:|---|
-| `guard_private.json` | derived | 85.5 KB | private — see companion doc |
-| `alert_state.json` | derived | 3.4 KB | private — see companion doc |
+| `guard_private.json` | derived | — | private — see companion doc |
+| `alert_state.json` | derived | — | private — see companion doc |
 
 ## peer repo — Agentic-Po/moca-ledger
 
-_peer catalog unavailable this run_ (HTTPError: HTTP Error 404: Not Found).
+_peer catalog unavailable this run_ (degraded: peer catalog not fetched this run).
 

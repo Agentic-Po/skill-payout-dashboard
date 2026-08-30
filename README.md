@@ -55,8 +55,15 @@ in `stripe_snapshot.json`).
 | repo secrets | TELEGRAM_*, LEDGER_*, HEALTHCHECK_URL, POSTHOG_API_KEY | never in code or artifacts |
 
 CI enforces this in `check_publish.py`. `--scan` fails the run if per-wallet
-detector fields, identity strings, or a flagged-but-unregistered address ever
-reach a public artifact. `--stage` replaced `git add -A` with an **explicit
+detector fields or identity strings reach a public artifact, if a detector
+field or a review/flagged status ever appears next to an address in one, or if
+a monitored address turns up in a **curated** surface (`DATASETS.md`,
+`README.md`, `catalog.json`, `data.json`'s registry) without being on the
+hand-maintained `publish_allow_addrs.txt`. The invariant is *no public
+artifact may reveal an address's monitoring status* — deliberately not "no
+monitored address may appear": `facts.top_recipients` ranks counterparties by
+USD received, which anyone can recompute from the shards this repo publishes,
+so redacting a wallet from it would hide nothing while breaking the page. `--stage` replaced `git add -A` with an **explicit
 allowlist**: gitignoring a private file is no longer the only thing standing
 between it and publication, and any working-tree file that is neither ignored
 nor listed gets a loud warning in the log — so a new state file is *noticed*
@@ -154,8 +161,9 @@ entry. **If you are about to quote a number in a deck, quote the safe sentence.*
 `catalog.py` measures every dataset in this repo — rows, bytes and coverage
 are computed off the files on every refresh, never hand-typed — and writes
 `catalog.json` (machine) and [`DATASETS.md`](DATASETS.md) (human). Private
-datasets appear there by name only, so their absence is visible without their
-shape being published. `python3 catalog.py --check` fails CI if the committed
+datasets appear there by name only — no path, no schema, no coverage and no
+size (a byte count tracks how many wallets are flagged) — so their absence is
+visible without their shape being published. `python3 catalog.py --check` fails CI if the committed
 catalog disagrees with the data. `DATASETS.md` also aggregates the peer ledger
 at [Agentic-Po/moca-ledger](https://github.com/Agentic-Po/moca-ledger); that
 fetch is best-effort and degrades to a one-line note, so neither repo's CI can

@@ -12,14 +12,51 @@ silently published or silently dropped.
   python3 check_publish.py --scan    leak tripwire; nonzero = do not publish
 
 The allowlist is derived from `git ls-files` and kept explicit in code on
-purpose: a pattern nobody typed is a pattern nobody reviewed.
+purpose: a pattern nobody typed is a pattern nobody reviewed. Globs are
+anchored: `*.py` matches ROOT-level python only (fnmatch does not treat "/"
+specially, so an unanchored `*.py` would silently allowlist
+`.creds_probe/keys.py`), and dataset directories are expanded to their
+concrete files — stage() never emits a bare directory, because `git add
+transfers/` sweeps in every file under the tree whether or not the allowlist
+approved it, which is the `add -A` failure mode this file exists to close.
+
+WHAT THE ADDRESS SCAN IS FOR (revised 2026-08-30 after QA).
+The earlier rule was "a guard_private address must not appear in a public
+artifact". Applied to index.html / legacy.html / data.json as a whole that
+rule is WRONG, and loudly so: `facts.top_recipients` and `infer.creators` rank
+counterparties by USD received, which is an on-chain fact anyone can recompute
+from the very shards this repo publishes. Redacting a wallet from that ranking
+would not hide anything — and 18 of the 411 monitored wallets are in it purely
+because they receive a lot of MOCA.
+
+The real secret is not WHICH addresses exist, it is WHICH ADDRESSES WE ARE
+WATCHING AND WHAT THE DETECTOR THINKS OF THEM. guard_private.json's per-wallet
+`ent`/`acf`/`burst`/`flags`/`status` row IS the calibration oracle; the address
+alone is not. So the invariant enforced here is:
+
+  no public artifact may reveal an address's MONITORING STATUS.
+
+Two complementary gates implement it:
+  (a) address scan, on CURATED surfaces only — DATASETS.md, README.md,
+      catalog.json and data.json's registry block. Those are hand- or
+      narrative-generated: an address appearing there implies somebody chose
+      to single it out, which is itself curation context. Exemptions come from
+      publish_allow_addrs.txt, a hand-maintained reviewed file — NOT from
+      data.json:registry, which refresh.py auto-extends with top recipients
+      and would therefore let a wallet exempt itself.
+  (b) status-adjacency scan, on EVERY public artifact including index.html,
+      legacy.html, the whole of data.json and transfers_export.csv: an address
+      appearing near a detector field or a review/flagged status token is a
+      leak of monitoring status regardless of which file it lands in.
 """
 import fnmatch, json, os, re, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # Explicit publish allowlist (glob patterns, repo-relative). Everything the
-# repo tracked as of 2026-08-30 plus this change's new files.
+# repo tracked as of 2026-08-30 plus this change's new files. Patterns are
+# matched against the whole repo-relative path, so a pattern without a "/"
+# only ever matches a ROOT-level file.
 PUBLISH_EXTRA = [
     "index.html", "legacy.html", "dashboard.html", "template.html", "template_legacy.html",
     "*.py", "tests/*.py",
@@ -29,17 +66,37 @@ PUBLISH_EXTRA = [
     "catalog.json", "data.json", "day_rates.json", "stats_history.json",
     "inflow_labels.json", "stripe_snapshot.json", "posthog_cache.json",
     "swarm_era.json", "swarm_prices.json",
-    "transfers_export.csv",
+    "transfers_export.csv", "publish_allow_addrs.txt",
 ]
 
 # Field names that must never reach a public artifact. Per-wallet detector
-# signals are a calibration oracle; the last two are identity leaks.
-DENIED = [r'"ent"\s*:', r'"acf"\s*:', r'"burst"\s*:', r'"flags"\s*:',
+# signals are a calibration oracle; the last two are identity leaks. Key
+# position is matched with optional quoting: index.html is a rendered
+# template, so `{ent:0.42}` and `{'ent':0.42}` are as much a leak as the
+# double-quoted JSON form.
+def _key(k):
+    return r'(?<![A-Za-z0-9_])["\']?' + k + r'["\']?\s*:'
+
+
+DENIED = [_key("ent"), _key("acf"), _key("burst"), _key("flags"),
           r"retired_ledger", r"@gmail", r"@animoca"]
 
 # Every public/derived artifact gets the denied-field scan.
 DENIED_TARGETS = ["index.html", "legacy.html", "data.json", "catalog.json",
-                  "DATASETS.md", "README.md", "stats_history.json"]
+                  "DATASETS.md", "README.md", "stats_history.json",
+                  "transfers_export.csv"]
+
+# Tokens that betray monitoring status when they sit next to an address.
+STATUS_TOKENS = [r'["\']?ent["\']?\s*:', r'["\']?acf["\']?\s*:',
+                 r'["\']?burst["\']?\s*:', r'["\']?flags["\']?\s*:',
+                 r'["\']?status["\']?\s*:\s*["\']?review', r"retired_ledger",
+                 r"flagged"]
+STATUS_RE = re.compile("|".join(STATUS_TOKENS), re.I)
+ADDR_RE = re.compile(r"0x[0-9a-fA-F]{40}")
+# One JSON/JS object with no nested braces: the tightest "same record as"
+# bracket available without parsing every artifact format.
+OBJ_RE = re.compile(r"\{[^{}]{0,4000}\}")
+NEAR = 200      # chars, for non-object formats (CSV rows, HTML text)
 
 
 def _git(*args):
@@ -56,26 +113,57 @@ def _catalog_paths():
     return [q for e in json.load(open(p)) if e.get("public") for q in e.get("path", [])]
 
 
-def _allowed(rel, extra_paths):
-    if rel in extra_paths:
+# A monthly shard, and nothing else, may appear inside a dataset directory.
+# Same regex shards.load() uses to decide what to READ, so the publish
+# surface and the read surface cannot diverge: a file the pipeline would
+# ignore is a file the pipeline must not publish either.
+SHARD_RE = re.compile(r"\d{4}-\d{2}\.json")
+
+
+def _expand(paths):
+    """Directory dataset entries -> their concrete shard files. Never returns
+    a directory: `git add <dir>` would outrun this allowlist, staging whatever
+    else has appeared under the tree."""
+    out = []
+    for p in paths:
+        if not p.endswith("/"):
+            out.append(p)
+            continue
+        d = os.path.join(HERE, p)
+        if not os.path.isdir(d):
+            continue
+        out += sorted(p + f for f in os.listdir(d)
+                      if os.path.isfile(os.path.join(d, f)) and SHARD_RE.fullmatch(f))
+    return out
+
+
+def _match(rel, pat):
+    """fnmatch with "/" made significant: fnmatch's "*" happily crosses
+    directory separators, which is how `*.py` allowlisted `.creds_probe/
+    keys.py`. A pattern matches only at its own depth, segment by segment."""
+    r, p = rel.split("/"), pat.split("/")
+    return len(r) == len(p) and all(fnmatch.fnmatch(a, b) for a, b in zip(r, p))
+
+
+def _allowed(rel, extra_files):
+    """extra_files is the EXPANDED catalog file list — exact matches only, so
+    a new non-dataset file dropped into transfers/ is not auto-allowed."""
+    if rel in extra_files:
         return True
-    for pat in extra_paths:
-        if pat.endswith("/") and rel.startswith(pat):
-            return True
-    return any(fnmatch.fnmatch(rel, pat) for pat in PUBLISH_EXTRA)
+    return any(_match(rel, pat) for pat in PUBLISH_EXTRA)
 
 
 def stage():
     tracked = _git("ls-files")
     untracked = _git("ls-files", "--others", "--exclude-standard")
-    extra = _catalog_paths()
+    extra = _expand(_catalog_paths())
     files, unlisted = list(tracked), []
     for rel in untracked:
         (files if _allowed(rel, extra) else unlisted).append(rel)
-    # Directory datasets are staged as directories so NEW monthly shards are
-    # picked up without this file knowing the month names.
+    # New monthly shards are picked up because the catalog's directory entries
+    # are expanded to real filenames above — as FILES, one per line.
     for p in extra:
-        if p.endswith("/") and p not in files:
+        if p not in files and os.path.exists(os.path.join(HERE, p)):
             files.append(p)
     for rel in sorted(unlisted):
         print(f"WARNING: {rel} is neither ignored nor in the publish allowlist "
@@ -84,9 +172,24 @@ def stage():
     return 0
 
 
-def _registry_addrs():
+def _allow_addrs():
+    """Hand-maintained reviewed exemptions. Deliberately NOT data.json:
+    refresh.py auto-appends top recipients to the registry, so using it would
+    let an address exempt itself from the artifact being scanned."""
+    p = os.path.join(HERE, "publish_allow_addrs.txt")
+    if not os.path.exists(p):
+        return set()
+    out = set()
+    for line in open(p):
+        line = line.split("#", 1)[0].strip().lower()
+        if line.startswith("0x"):
+            out.add(line)
+    return out
+
+
+def _registry_text():
     d = json.load(open(os.path.join(HERE, "data.json")))
-    return {r["addr"].lower() for r in d.get("registry", [])}, json.dumps(d.get("registry", []))
+    return json.dumps(d.get("registry", []))
 
 
 def _guard_addrs():
@@ -95,6 +198,26 @@ def _guard_addrs():
         return set()
     g = json.load(open(p))
     return {r["addr"].lower() for r in g.get("rows", []) if r.get("addr", "").startswith("0x")}
+
+
+def _status_adjacent(rel, text):
+    """Any address sharing a record — or 200 chars — with a status token."""
+    hits = []
+    seen = set()
+    for m in OBJ_RE.finditer(text):
+        seg = m.group(0)
+        if STATUS_RE.search(seg):
+            for a in ADDR_RE.findall(seg):
+                if a.lower() not in seen:
+                    seen.add(a.lower())
+                    hits.append(f"monitoring status adjacent to {a} in {rel} (same record)")
+    for m in STATUS_RE.finditer(text):
+        window = text[max(0, m.start() - NEAR): m.end() + NEAR]
+        for a in ADDR_RE.findall(window):
+            if a.lower() not in seen:
+                seen.add(a.lower())
+                hits.append(f"monitoring status adjacent to {a} in {rel} (within {NEAR} chars)")
+    return hits
 
 
 def scan():
@@ -107,18 +230,19 @@ def scan():
         for pat in DENIED:
             if re.search(pat, text):
                 bad.append(f"denied field {pat!r} found in {rel}")
-    # Address scan: DERIVED/AGGREGATE artifacts only. Raw row exports
-    # (transfers_export.csv, the shards) legitimately contain every recipient,
-    # including flagged ones — the payout itself is public on-chain. What must
-    # never happen is a flagged-but-unregistered wallet being singled out in an
-    # aggregate the page presents as "who matters here".
-    reg_addrs, reg_text = _registry_addrs()
-    targets = [("data.json:registry", reg_text)]
+        # (b) status adjacency — on EVERY public artifact, including the raw
+        # export and the rendered pages, where a plain address is fine but a
+        # detector verdict next to one is not.
+        bad += _status_adjacent(rel, text)
+    # (a) Address scan: CURATED surfaces only. See the module docstring — an
+    # address in a ranked aggregate is an on-chain fact, an address in a
+    # hand-written doc or in the catalog is somebody singling it out.
+    targets = [("data.json:registry", _registry_text())]
     for rel in ("DATASETS.md", "README.md", "catalog.json"):
         p = os.path.join(HERE, rel)
         if os.path.exists(p):
             targets.append((rel, open(p, errors="replace").read()))
-    for a in _guard_addrs() - reg_addrs:
+    for a in _guard_addrs() - _allow_addrs():
         for name, text in targets:
             if a in text.lower():
                 bad.append(f"guard_private address {a} surfaced in {name}")

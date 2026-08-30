@@ -1,0 +1,33 @@
+# Hand-maintained, reviewed exemption list for check_publish.py --scan.
+# One address per line (comments with #). NOTHING generates this file: the
+# whole point is that the exemption source is NOT the artifact being scanned.
+# Seeded 2026-08-30 from data.json:registry after review; a new flagged
+# address reaching a curated doc must be reviewed and added by a human.
+
+0xbd956171f5b50936f0ad1c4db80c022bd2442519   # Treasury — Treasury Distribution wallet — the subject of this dashboard
+0xd85096faec1ac03075667b4c1a1661f5623bf111   # Collector — Cognition Credits collector — minds pay MENTE here per reque
+0x4cd9a847f39106e19a4e41aea8a232e915c82af5   # Token contracts — MENTE token contract — the current cognition credit
+0x2b11834ed1feaed4b4b3a86a6f571315e25a884d   # Token contracts — MOCA token contract — counted by USD value, auto-swaps to ME
+0xea87169699dabd028a78d4b91544b4298086baf6   # Token contracts — SWARM token contract — generation-1 credit (Ethoswarm), migr
+0xd76d44875716a708dbd55cd8ffc3eb1f94acbce3   # Liquidity — MENTE price-oracle pool — base leg
+0x2a5eeea4d91042f779ee6014f4f6fd41f375262d   # Liquidity — MOCA/MENTE pool — LP'd by treasury; price oracle
+0x1c5ebb794335b72d773df2fd8f80f3d1afbb75dd   # Infrastructure — Gas funder — sends ETH slivers so cognition spends are gasle
+0x7b85e278a7446d8349b066e835d3057d895aecff   # Infrastructure — Registration-era gas funder (historic)
+0x8004a169fb4a3325136eb29fa0ceb6d2e539a432   # Infrastructure — AgentIdentity registry — ERC-8004 era (historic, economicall
+0x4d3021a52b31ffafde3c46450d02c72807c3a178   # Funding sources — Minds team Fireblocks wallet — manual MOCA top-ups
+0xf605dbb5626dfc1448cee33e2e1221103021468f   # Funding sources — Primary MENTE funder — OWNER UNCONFIRMED, identification ope
+0xf0961686bc71b8a1f42e7888bd8160e9b6240f40   # Collector — Minds Rebate Fireblocks wallet — receives the daily 40% MENT
+0x63c0c19a282a1b52b07dd5a65b58948a07dae32b   # Infrastructure — EIP-7702 delegator implementation the treasury EOA delegates
+0x45d0cead7c0a2e1a0528c4131a2d95de9a394839   # Funding sources — Early MENTE funder (Apr 2026) — unidentified; also spent 100
+0xbdcb95a80d4c770fa811b1faf0bb4cf204d310b5   # Funding sources — Early MENTE funder (Apr–May 2026) — unidentified
+0x0a2854fbbd9b3ef66f17d47284e7f899b9509330   # Liquidity — Swap counterparty — took 72k MENTE, returned 112k MOCA; venu
+0xd8506866faadfdcfb9600479ba7dc652a203f111   # Warnings — ADDRESS-POISONING MIMIC of the collector — never copy the co
+0x9a95a47a4f90c9c14ae8e3a9c37e822ed0e5a07f   # Warnings — ADDRESS-POISONING MIMIC of The Gamemaster mind — zero-value 
+0x5edea73327eaf586164233e288ba2a8775ccd49c   # Recipients — Top recipient — $39,187 over 4 transfers · unlabeled
+0x0d462daf8eebf53476cd95aeac87fb3141f9b13b   # Recipients — Top recipient — $9,393 over 9580 transfers · unlabeled
+0xdb959c6a9d0cc8023e579292805666a226c1dfde   # Recipients — Top recipient — $6,712 over 6792 transfers · unlabeled
+0xd7c9b4032072069e5b2a7039954b9f9bb43815ad   # Recipients — Top recipient — $4,771 over 4951 transfers · unlabeled
+0x78f8f65be72f2cbf3b10ed47fd6a289c7974f15c   # Recipients — Top recipient — $1,412 over 2781 transfers · unlabeled
+0xfe11c2cd4c0bdd43c621cd57dc9acad722fb3ef3   # Recipients — Top recipient — $1,225 over 1963 transfers · unlabeled
+0x986597787d5faafde21dd56808c48064b3171b04   # Recipients — Top recipient — $1,120 over 1837 transfers · unlabeled
+0x2ed2c1ab26bcf22f566ce476a5545f59b4bc4eb5   # Recipients — Top recipient — $982 over 1491 transfers · unlabeled

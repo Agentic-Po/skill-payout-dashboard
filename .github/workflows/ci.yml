@@ -1,0 +1,35 @@
+name: CI gates
+
+# refresh.yml runs `catalog.py --check` immediately after refresh.py rebuilt
+# catalog.json in the SAME job, so it can only prove catalog.py is
+# deterministic — a stale or hand-edited committed catalog.json is invisible
+# to it, because the build overwrote the file before the check ran. This job
+# is the drift gate the docs claim: checkout, then compare the COMMITTED
+# catalog.json against a fresh recompute, with nothing rebuilding it first.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Catalog drift gate (committed vs recomputed)
+        run: python3 catalog.py --check
+      - name: Publish leak tripwire
+        run: python3 check_publish.py --scan
+      - name: Publish allowlist regression
+        run: python3 tests/test_stage.py
+      - name: Digest/page parity
+        run: python3 tests/test_parity.py

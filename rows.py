@@ -54,8 +54,10 @@ def canonical_rows(source, path=None):
 
     PRECISION CAVEAT (cognition_in): those rows are pre-slimmed and carry
     `val` as a FLOAT token amount, not the on-chain integer — the wei value is
-    reconstructed as int(val * 1e18) and is therefore accurate to ~float64
-    precision (~1e-4 MENTE on a 1e5-sized amount), NOT exact. Never use
+    reconstructed as int(round(val * 1e18)) and is therefore accurate to ~float64
+    precision (~1e-4 MENTE on a 1e5-sized amount), NOT exact. round(), not a
+    bare int(): truncation toward zero is always LOW, so a sum of many rows
+    biases downward instead of averaging out. Never use
     cognition_in wei for an equality reconciliation; use it for sums only.
     """
     import shards
@@ -78,7 +80,7 @@ def canonical_rows(source, path=None):
         for c in shards.load(os.path.join(HERE, "cognition_in"), ts_key="ts"):
             yield _row("MENTE", 0, _epoch(c["ts"]), c["tx"], c["log_index"],
                        c["from"], "0xd85096faec1ac03075667b4c1a1661f5623bf111",
-                       int(c["val"] * 1e18), source)
+                       int(round(c["val"] * 1e18)), source)
     else:
         raise ValueError(f"unknown source {source!r}")
 

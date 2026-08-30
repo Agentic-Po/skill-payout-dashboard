@@ -22,7 +22,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 import rows as R
 
-N_DAYS = 3
+# Matches the weekly cron: with N_DAYS=3 on a Monday job, days 4-7 of every
+# week were never reconciled at all, so a gap only had to survive three days
+# to escape permanently.
+N_DAYS = 7
 
 
 def _day(epoch):
@@ -60,18 +63,28 @@ def main():
         if d < today:
             theirs.setdefault(d, set()).add((r["tx_hash"].lower(), r["log_index"], r["value_wei"]))
 
-    common = sorted(set(ours) & set(theirs))
-    if not common:
-        print("SKIP: no closed day is covered by both sources")
+    # UNION over the overlap of the two COVERED RANGES, not the intersection
+    # of the days each source happens to have rows for. A day where one
+    # crawler produced ZERO rows has no key in its dict; intersecting drops
+    # that day silently — which is precisely the whole-day recovery hole this
+    # test exists to catch. Inside the overlapping range, a missing day is an
+    # EMPTY set and therefore a loud FAIL.
+    if not ours or not theirs:
+        print("SKIP: one source has no closed day at all")
         return 0
-    days = common[-N_DAYS:]
+    lo = max(min(ours), min(theirs))
+    hi = min(max(ours), max(theirs))
+    covered = sorted(d for d in set(ours) | set(theirs) if lo <= d <= hi)
+    if not covered:
+        print("SKIP: the two sources' covered ranges do not overlap")
+        return 0
+    days = covered[-N_DAYS:]
     print(f"reconciling {len(days)} closed day(s): {', '.join(days)}")
 
     fails = 0
     for d in days:
-        a, b = ours[d], theirs[d]
+        a, b = ours.get(d, set()), theirs.get(d, set())
         only_ours, only_theirs = a - b, b - a
-        assert isinstance(a, set) and isinstance(b, set)
         if only_ours or only_theirs:
             fails += 1
             print(f"FAIL {d}: dashboard={len(a)} moca-ledger={len(b)} "

@@ -13,9 +13,14 @@ hint for the detector they feed.
 --check tolerance: everything is compared exactly except (a) generated_iso,
 which is build time, and (b) on datasets marked live, the fields that the
 CURRENT month legitimately grows between two builds (rows, bytes,
-coverage.to, max_row_ts) — compared as recomputed >= committed. rows_closed
-(rows in months strictly before the current UTC month) is always exact, so a
-closed shard can never change unnoticed.
+coverage.to, max_row_ts, source_generated_iso) — compared as recomputed >=
+committed. rows_closed (rows in months strictly before the current UTC month)
+is always exact, so a closed shard can never change unnoticed.
+
+MONTH ROLLOVER: because rows_closed is exact, an out-of-band --check that
+spans a UTC month boundary (committed before the 1st, recomputed after) fails
+on rows_closed by design — last month's rows have just become closed. That is
+the check working, not data corruption; rebuild the catalog and move on.
 """
 import csv, json, os, sys
 from datetime import datetime, timezone
@@ -76,6 +81,14 @@ def _swarm_stamps(rel):
     return sorted(r["ts"][:19] for side in ("in", "out") for r in se.get(side, []))
 
 
+def _data_generated(rel):
+    """data.json carries its OWN build stamp. Recording it per-dataset means
+    catalog.json can answer "when were these figures written?" and not only
+    "when did catalog.py last run?" — the distinction notify.py's second
+    freshness leg depends on."""
+    return json.load(open(os.path.join(HERE, rel))).get("scope", {}).get("generated_iso")
+
+
 def _data_stamps(rel):
     d = json.load(open(os.path.join(HERE, rel)))
     rng = d.get("facts", {}).get("range", {})
@@ -129,6 +142,7 @@ PUBLIC = [
          measure=lambda: _data_stamps("data.json"),
          row_schema="schema_version, scope, facts, infer, server, stripe_snap, insights, open_items, gaps, registry, sink",
          update_cadence="every refresh (~4x/hour)", expected_cadence_minutes=15,
+         source_generated=lambda: _data_generated("data.json"),
          provenance="refresh.py — the versioned contract; a strict subset of what index.html embeds",
          not_included="no per-wallet detector signals (those stay in guard_private.json) and no raw transfer rows"),
     dict(name="stats_history", path=["stats_history.json"], kind="derived", live=True,
@@ -166,11 +180,17 @@ def build_entries():
             "provenance": d["provenance"], "not_included": d["not_included"],
             "live": d["live"],
         })
+        # Where the SOURCE file carries its own build stamp, record it: the
+        # shared `generated_iso` above is only when catalog.py ran.
+        if d.get("source_generated"):
+            out[-1]["source_generated_iso"] = d["source_generated"]()
     for d in PRIVATE:
         # NAME ONLY. No schema, no path beyond the repo-relative name, no
-        # coverage: each of those is a usable hint about what the detector sees.
+        # coverage — and no BYTES: guard_private.json's size tracks the number
+        # of flagged wallets, so publishing it every refresh is a live
+        # calibration oracle of exactly the class this section withholds.
         out.append({"name": d["name"], "public": False, "kind": d["kind"],
-                    "bytes": _size(d["name"]), "note": d["note"]})
+                    "note": d["note"]})
     return out
 
 
@@ -222,10 +242,11 @@ def render_md(entries, peer=None, peer_error=None):
                   f"- not included: {e['not_included']}", ""]
     L += ["## private (not published)", "",
           "Listed so the absence is deliberate and visible. No schema, no path,",
-          "no coverage: those are calibration hints for the detectors they feed.", "",
+          "no coverage and no size: those are calibration hints for the detectors", "they feed.", "",
           "| Dataset | Kind | Size | Note |", "|---|---|---:|---|"]
     for e in priv:
-        L.append(f"| `{e['name']}` | {e['kind']} | {_human(e['bytes'])} | {e['note']} |")
+        # Size is an em dash on purpose — see build_entries().
+        L.append(f"| `{e['name']}` | {e['kind']} | — | {e['note']} |")
     L += ["", "## peer repo — Agentic-Po/moca-ledger", ""]
     if peer:
         pp = [e for e in peer if e.get("public")]
@@ -254,7 +275,10 @@ def build(fetch_peer=True):
             peer = _peer_catalog()
         except Exception as e:
             err = f"{type(e).__name__}: {e}"
+            # Actions log only: an exception string can carry a URL or an
+            # auth hint, and DATASETS.md is a public artifact.
             print("peer catalog fetch failed:", err)
+            err = "degraded: peer catalog not fetched this run"
     open(DATASETS_MD, "w").write(render_md(entries, peer, err))
     pub = [e for e in entries if e.get("public")]
     print(f"catalog: {len(pub)} public datasets, {sum(e['rows'] for e in pub):,} rows")
@@ -263,7 +287,7 @@ def build(fetch_peer=True):
 
 # Fields the CURRENT month legitimately grows between two builds. Everything
 # else must match byte-for-byte or --check fails.
-DRIFTY = ("rows", "max_row_ts")
+DRIFTY = ("rows", "max_row_ts", "source_generated_iso")
 # bytes is a display figure: re-serialising data.json can move it either way,
 # so on live datasets it carries no integrity signal and is not compared.
 # rows_closed (months before the current one) is the exact anchor instead.
@@ -289,7 +313,13 @@ def check():
                 continue
             ov, nv = o.get(k), n.get(k)
             if live and k in DRIFTY:
-                if ov is None or nv is None or nv < ov:
+                if ov is None or nv is None:
+                    # A key present on one side only is a SCHEMA change (a
+                    # field added to build_entries in a later release), not
+                    # data moving backwards. Say which.
+                    bad.append(f"{n['name']}.{k}: new/absent field ({ov!r} -> {nv!r}) "
+                               f"— rebuild catalog.json after a schema change")
+                elif nv < ov:
                     bad.append(f"{n['name']}.{k}: {ov} -> {nv} (went backwards)")
             elif live and k == "coverage":
                 if (ov or {}).get("from") != (nv or {}).get("from"):

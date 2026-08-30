@@ -27,16 +27,25 @@ _D = json.load(open(_dj))
 _gen = _D.get("scope", {}).get("generated_iso")
 if not _gen:
     raise SystemExit("FATAL: data.json has no generated_iso — pre-contract file, refusing to send")
-# ONE refusal primitive (rows.require_fresh), not two: same 2h threshold and
-# same fatal behavior as the inline check it replaces, but the rule now lives
-# in one place that every write/send path can call. catalog.json is rebuilt at
-# the end of every refresh, so its `data` entry's generated_iso is this run's
-# build time — a missing catalog is itself a broken pipeline and refuses.
+# TWO freshness legs, because they answer different questions and the QA pass
+# (2026-08-30) caught the swap that dropped one of them:
+#   1. rows.require_fresh on catalog.json's `data` entry — the PIPELINE is
+#      alive (catalog.json is rebuilt at the end of every refresh; a missing
+#      catalog is itself a broken pipeline and refuses).
+#   2. data.json's own scope.generated_iso — the FIGURES about to be sent are
+#      fresh. Leg 1 alone is not enough: `python3 catalog.py` run by hand, or
+#      a partial refresh that rebuilds only the catalog, resets leg 1's clock
+#      while data.json stays arbitrarily stale (17 min of decoupling was
+#      already visible in the committed tree).
 import rows as _rows
 try:
     _rows.require_fresh(os.path.join(HERE, "catalog.json"), "data", 2, field="generated_iso")
 except _rows.StaleData as e:
     raise SystemExit(f"FATAL: {e} — refusing to send outdated figures")
+_gen_age_h = (now - datetime.fromisoformat(_gen.rstrip("Z")[:19])).total_seconds() / 3600
+if _gen_age_h > 2:
+    raise SystemExit(f"FATAL: data.json is {_gen_age_h:.1f}h old (generated_iso {_gen}, "
+                     f"limit 2h) — refusing to send outdated figures")
 F = _D["facts"]
 G = _D["infer"]["guard"]
 TOKENS = {a.lower(): s for s, a in _D["scope"]["tokens"].items()}   # addr -> sym
