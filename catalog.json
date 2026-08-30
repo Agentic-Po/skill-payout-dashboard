@@ -14,7 +14,7 @@
    "from": "2026-04-24T22:13:15",
    "to": "2026-08-30T04:25:25"
   },
-  "generated_iso": "2026-08-30T05:49:49Z",
+  "generated_iso": "2026-08-30T05:56:23Z",
   "max_row_ts": "2026-08-30T04:25:25",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
@@ -37,7 +37,7 @@
    "from": "2026-04-24T20:07:19",
    "to": "2026-08-29T18:02:21"
   },
-  "generated_iso": "2026-08-30T05:49:49Z",
+  "generated_iso": "2026-08-30T05:56:23Z",
   "max_row_ts": "2026-08-29T18:02:21",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
@@ -60,7 +60,7 @@
    "from": "2026-04-12T19:58:25",
    "to": "2026-08-30T05:27:53"
   },
-  "generated_iso": "2026-08-30T05:49:49Z",
+  "generated_iso": "2026-08-30T05:56:23Z",
   "max_row_ts": "2026-08-30T05:27:53",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
@@ -83,7 +83,7 @@
    "from": "2026-04-24T20:07:19",
    "to": "2026-08-30T04:25:25"
   },
-  "generated_iso": "2026-08-30T05:49:49Z",
+  "generated_iso": "2026-08-30T05:56:23Z",
   "max_row_ts": "2026-08-30T04:25:25",
   "expected_cadence_minutes": 15,
   "update_cadence": "rewritten in full every refresh",
@@ -106,7 +106,7 @@
    "from": "2026-04-24",
    "to": "2026-08-29"
   },
-  "generated_iso": "2026-08-30T05:49:49Z",
+  "generated_iso": "2026-08-30T05:56:23Z",
   "max_row_ts": "2026-08-29",
   "expected_cadence_minutes": 1440,
   "update_cadence": "one immutable entry per token per day",
@@ -130,7 +130,7 @@
    "from": "2026-01-30T12:44:05",
    "to": "2026-07-17T16:30:57"
   },
-  "generated_iso": "2026-08-30T05:49:49Z",
+  "generated_iso": "2026-08-30T05:56:23Z",
   "max_row_ts": "2026-07-17T16:30:57",
   "expected_cadence_minutes": null,
   "update_cadence": "static archive \u2014 frozen",
@@ -148,19 +148,19 @@
   "row_schema": "schema_version, scope, facts, infer, server, stripe_snap, insights, open_items, gaps, registry, sink",
   "rows": 1,
   "rows_closed": 1,
-  "bytes": 156877,
+  "bytes": 156875,
   "coverage": {
    "from": "2026-04-24",
    "to": "2026-08-30T04:25:25"
   },
-  "generated_iso": "2026-08-30T05:49:49Z",
+  "generated_iso": "2026-08-30T05:56:23Z",
   "max_row_ts": "2026-08-30T04:25:25",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
   "provenance": "refresh.py \u2014 the versioned contract; a strict subset of what index.html embeds",
   "not_included": "no per-wallet detector signals (those stay in guard_private.json) and no raw transfer rows",
   "live": true,
-  "source_generated_iso": "2026-08-30T05:44:28Z"
+  "source_generated_iso": "2026-08-30T05:53:11Z"
  },
  {
   "name": "stats_history",
@@ -170,15 +170,15 @@
   "public": true,
   "kind": "derived",
   "row_schema": "ts, recon, invoke, equip, growth, moca, creators, rate, balance, mente_balance, runway7, runway_adj",
-  "rows": 702,
+  "rows": 703,
   "rows_closed": 235,
-  "bytes": 150337,
+  "bytes": 150651,
   "coverage": {
    "from": "2026-07-13T00:00",
-   "to": "2026-08-30T05:44"
+   "to": "2026-08-30T05:53"
   },
-  "generated_iso": "2026-08-30T05:49:49Z",
-  "max_row_ts": "2026-08-30T05:44",
+  "generated_iso": "2026-08-30T05:56:23Z",
+  "max_row_ts": "2026-08-30T05:53",
   "expected_cadence_minutes": 15,
   "update_cadence": "one append per refresh (~4x/hour)",
   "provenance": "refresh.py append-only snapshot; git history of the hourly commits is the immutable trail",
