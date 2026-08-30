@@ -1,0 +1,36 @@
+name: Cross-crawler reconciliation
+
+# Two independent crawlers over the same chain. A silent gap in either is
+# invisible from inside the crawler that has it — this is the only check that
+# sees one. Weekly is enough: it is a correctness proof, not a monitor.
+on:
+  schedule:
+    - cron: "0 2 * * 1"   # Monday 02:00 UTC, after the weekly heartbeat (01:00)
+  workflow_dispatch:
+
+concurrency:
+  group: reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Public repo, read-only, no secret and no token: this job must never be
+      # able to write to the ledger it is auditing.
+      - name: Clone moca-ledger (public, read-only)
+        run: git clone --depth 1 https://github.com/Agentic-Po/moca-ledger.git "$RUNNER_TEMP/moca-ledger"
+      - name: Reconcile last 3 closed days
+        env:
+          MOCA_LEDGER_PATH: ${{ runner.temp }}/moca-ledger
+        run: python3 tests/test_reconcile.py
+      - name: Alert Telegram on failure
+        if: failure()
+        run: |
+          curl -s -o /dev/null "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            --data-urlencode text="🔴 Skill Payout Dashboard: cross-crawler RECONCILIATION FAILED — the Blockscout ledger and moca-ledger disagree on a closed day. Check https://github.com/${{ github.repository }}/actions"

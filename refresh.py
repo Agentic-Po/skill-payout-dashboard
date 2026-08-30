@@ -1475,3 +1475,11 @@ tpl = open(os.path.join(HERE, "template.html")).read()
 out = os.path.join(HERE, "index.html")
 open(out, "w").write("<!doctype html>\n<html lang=\"en\">\n" + tpl.replace("/*__DATA__*/", json.dumps(data)) + "\n</html>")
 print("wrote", out, "| rows:", len(rows), "| range:", facts["range"], "| recon:", recon)
+
+# --- data catalog (LAST: it measures files, so every one must be written) ---
+# The spec placed this right after data.json; it has to run at the END instead,
+# because transfers_export.csv and stats_history.json are written below that
+# point and `catalog.py --check` immediately after a refresh would otherwise
+# see one more row than the catalog recorded. Imported, not shelled out.
+import catalog
+catalog.build()

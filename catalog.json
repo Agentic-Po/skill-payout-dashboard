@@ -1,0 +1,201 @@
+[
+ {
+  "name": "transfers",
+  "path": [
+   "transfers/"
+  ],
+  "public": true,
+  "kind": "ledger",
+  "row_schema": "timestamp, transaction_hash, log_index, block_number, from.hash, to.hash, token.address_hash, total.value, total.decimals",
+  "rows": 106762,
+  "rows_closed": 70790,
+  "bytes": 47108652,
+  "coverage": {
+   "from": "2026-04-24T22:13:15",
+   "to": "2026-08-29T22:30:29"
+  },
+  "generated_iso": "2026-08-30T00:53:07Z",
+  "max_row_ts": "2026-08-29T22:30:29",
+  "expected_cadence_minutes": 15,
+  "update_cadence": "every refresh (~4x/hour)",
+  "provenance": "Blockscout v2 token-transfers (filter=from) \u2192 eth_getLogs fallback \u2192 24h cross-check",
+  "not_included": "outbound only; inbound lives in transfers_in/ (partial: tracked tokens only)",
+  "live": true
+ },
+ {
+  "name": "transfers_in",
+  "path": [
+   "transfers_in/"
+  ],
+  "public": true,
+  "kind": "ledger",
+  "row_schema": "timestamp, transaction_hash, log_index, block_number, from.hash, to.hash, token.address_hash, total.value, total.decimals",
+  "rows": 677,
+  "rows_closed": 570,
+  "bytes": 292209,
+  "coverage": {
+   "from": "2026-04-24T20:07:19",
+   "to": "2026-08-29T18:02:21"
+  },
+  "generated_iso": "2026-08-30T00:53:07Z",
+  "max_row_ts": "2026-08-29T18:02:21",
+  "expected_cadence_minutes": 15,
+  "update_cadence": "every refresh (~4x/hour)",
+  "provenance": "Blockscout v2 token-transfers (filter=to) \u2192 eth_getLogs fallback \u2192 24h cross-check",
+  "not_included": "every token the wallet ever received is stored, but only MOCA and MENTE are priced and counted \u2014 airdrops/spam are kept raw and excluded downstream",
+  "live": true
+ },
+ {
+  "name": "cognition_in",
+  "path": [
+   "cognition_in/"
+  ],
+  "public": true,
+  "kind": "ledger",
+  "row_schema": "ts, val (MENTE token amount, float), from, tx, log_index, transaction_hash",
+  "rows": 101689,
+  "rows_closed": 83145,
+  "bytes": 29944788,
+  "coverage": {
+   "from": "2026-04-12T19:58:25",
+   "to": "2026-08-30T00:24:25"
+  },
+  "generated_iso": "2026-08-30T00:53:07Z",
+  "max_row_ts": "2026-08-30T00:24:25",
+  "expected_cadence_minutes": 15,
+  "update_cadence": "every refresh (~4x/hour)",
+  "provenance": "Blockscout v2 token-transfers into the Cognition Credits collector \u2192 eth_getLogs fallback \u2192 24h cross-check",
+  "not_included": "MENTE only, collector-inbound only; rows are pre-slimmed and val is a float token amount, not wei \u2014 see rows.py for the precision caveat",
+  "live": true
+ },
+ {
+  "name": "transfers_export",
+  "path": [
+   "transfers_export.csv"
+  ],
+  "public": true,
+  "kind": "derived",
+  "row_schema": "timestamp_utc, direction, token, amount, rate_usd, rate_source, usd, size_band, counterparty, counterparty_label, tx_hash, log_index, class_coarse, class_fine",
+  "rows": 106825,
+  "rows_closed": 70852,
+  "bytes": 22695692,
+  "coverage": {
+   "from": "2026-04-24T20:07:19",
+   "to": "2026-08-29T22:30:29"
+  },
+  "generated_iso": "2026-08-30T00:53:07Z",
+  "max_row_ts": "2026-08-29T22:30:29",
+  "expected_cadence_minutes": 15,
+  "update_cadence": "rewritten in full every refresh",
+  "provenance": "refresh.py, from transfers/ + transfers_in/ priced at the day-pinned rate",
+  "not_included": "no cognition_in rows and no SWARM-era rows; counterparty_label is blank for unlabeled wallets",
+  "live": true
+ },
+ {
+  "name": "day_rates",
+  "path": [
+   "day_rates.json"
+  ],
+  "public": true,
+  "kind": "oracle",
+  "row_schema": "day_rates[symbol][YYYY-MM-DD] -> USD rate; plus last_accepted_rate, recon, pending_rate, open_day_rate, market_rates",
+  "rows": 112,
+  "rows_closed": 91,
+  "bytes": 9819,
+  "coverage": {
+   "from": "2026-05-02",
+   "to": "2026-08-21"
+  },
+  "generated_iso": "2026-08-30T00:53:07Z",
+  "max_row_ts": "2026-08-21",
+  "expected_cadence_minutes": 1440,
+  "update_cadence": "one immutable entry per token per day",
+  "provenance": "day-implied payout rate from the $0.10 invoke cluster, anchored by the live Blockscout exchange rate; closed days are never recomputed",
+  "not_included": "no intraday rates and no pre-crawl days \u2014 a day with no payouts gets no entry and is carried forward/back by classify.pin_rate",
+  "live": true
+ },
+ {
+  "name": "swarm_era",
+  "path": [
+   "swarm_era.json",
+   "swarm_prices.json"
+  ],
+  "public": true,
+  "kind": "archive",
+  "row_schema": "in[]/out[]: ts, val, cp (counterparty), tx, li; swarm_prices.json: YYYY-MM-DD -> USD",
+  "rows": 19843,
+  "rows_closed": 19843,
+  "bytes": 3715823,
+  "coverage": {
+   "from": "2026-01-30T12:44:05",
+   "to": "2026-07-17T16:30:57"
+  },
+  "generated_iso": "2026-08-30T00:53:07Z",
+  "max_row_ts": "2026-07-17T16:30:57",
+  "expected_cadence_minutes": null,
+  "update_cadence": "static archive \u2014 frozen",
+  "provenance": "one-time crawl of the generation-1 SWARM treasury hub, priced with CoinGecko daily closes",
+  "not_included": "pre-migration SWARM only; not reconciled against the MOCA/MENTE ledger and not part of any economy figure",
+  "live": false
+ },
+ {
+  "name": "data",
+  "path": [
+   "data.json"
+  ],
+  "public": true,
+  "kind": "derived",
+  "row_schema": "schema_version, scope, facts, infer, server, stripe_snap, insights, open_items, gaps, registry, sink",
+  "rows": 1,
+  "rows_closed": 1,
+  "bytes": 150752,
+  "coverage": {
+   "from": "2026-04-24",
+   "to": "2026-08-29T22:30:29"
+  },
+  "generated_iso": "2026-08-30T00:53:07Z",
+  "max_row_ts": "2026-08-29T22:30:29",
+  "expected_cadence_minutes": 15,
+  "update_cadence": "every refresh (~4x/hour)",
+  "provenance": "refresh.py \u2014 the versioned contract; a strict subset of what index.html embeds",
+  "not_included": "no per-wallet detector signals (those stay in guard_private.json) and no raw transfer rows",
+  "live": true
+ },
+ {
+  "name": "stats_history",
+  "path": [
+   "stats_history.json"
+  ],
+  "public": true,
+  "kind": "derived",
+  "row_schema": "ts, recon, invoke, equip, growth, moca, creators, rate, balance, mente_balance, runway7, runway_adj",
+  "rows": 695,
+  "rows_closed": 235,
+  "bytes": 148139,
+  "coverage": {
+   "from": "2026-07-13T00:00",
+   "to": "2026-08-30T00:36"
+  },
+  "generated_iso": "2026-08-30T00:53:07Z",
+  "max_row_ts": "2026-08-30T00:36",
+  "expected_cadence_minutes": 15,
+  "update_cadence": "one append per refresh (~4x/hour)",
+  "provenance": "refresh.py append-only snapshot; git history of the hourly commits is the immutable trail",
+  "not_included": "counts and balances only \u2014 no per-wallet or per-transaction detail",
+  "live": true
+ },
+ {
+  "name": "guard_private.json",
+  "public": false,
+  "kind": "derived",
+  "bytes": 87520,
+  "note": "private \u2014 see companion doc"
+ },
+ {
+  "name": "alert_state.json",
+  "public": false,
+  "kind": "derived",
+  "bytes": 0,
+  "note": "private \u2014 see companion doc"
+ }
+]

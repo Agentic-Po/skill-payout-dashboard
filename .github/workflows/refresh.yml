@@ -47,11 +47,15 @@ jobs:
       # Leak tripwire (council 2026-08-30): per-wallet detector scores must
       # never reach a public artifact again — fail the run before commit.
       - name: Guard against detector-signal leaks
+        run: python3 check_publish.py --scan
+      # refresh.py just rebuilt the catalog, so a disagreement here is proof
+      # the build is not deterministic — not a stale commit.
+      - name: Catalog check
+        run: python3 catalog.py --check
+      - name: Data contract tests
         run: |
-          if grep -lE '"(ent|acf|burst)":' index.html legacy.html data.json stats_history.json transfers_export.csv 2>/dev/null; then
-            echo "::error::Per-wallet detector signals found in a public artifact — refusing to publish"
-            exit 1
-          fi
+          python3 tests/test_parity.py
+          python3 tests/test_reconcile.py
       - name: Guard against oversized files
         run: |
           BIG=$(find . -path ./.git -prune -o -type f -size +50M -print)
@@ -70,12 +74,21 @@ jobs:
         run: python3 alerts.py
       - name: Commit and push
         run: |
+          # load-bearing: Actions runs `run:` under `bash -e`, not `-eo
+          # pipefail`, so without this the pipe below reports xargs' status and
+          # a failed check_publish.py would stage nothing, silently.
+          set -o pipefail
           git config user.name "dashboard-bot"
           git config user.email "actions@github.com"
-          # add -A closes the new-state-file outage class (cognition_in.json,
-          # 2026-07-19: an unstaged new file broke every push for 7h);
-          # .gitignore keeps alert_state.json and scratch files out
-          git add -A
+          # An explicit allowlist, not `git add -A`: add -A closed the
+          # new-state-file outage class (cognition_in.json, 2026-07-19) but
+          # publishes any new private file the first time a .gitignore line is
+          # forgotten. check_publish.py --stage keeps BOTH properties — it
+          # warns on stderr about every unlisted working-tree file, so a new
+          # file is noticed rather than silently published or silently dropped.
+          # If it exits nonzero the step FAILS. Never fall back to add -A: the
+          # fallback is what would publish the file the allowlist just caught.
+          python3 check_publish.py --stage | xargs -d '\n' git add --
           git diff --cached --quiet || git commit -m "refresh $(date -u +'%Y-%m-%d %H:%M') UTC"
           # -X theirs: during rebase, "theirs" = this run's replayed commit,
           # so the freshly generated artifacts win conflicting hunks while
