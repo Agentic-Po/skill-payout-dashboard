@@ -53,6 +53,10 @@ h1{font-size:21px;margin:0;letter-spacing:-.01em}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink2);margin-bottom:10px}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .sw{width:10px;height:10px;border-radius:3px;display:inline-block;border:1px solid var(--line)}
+/* day-pricing provenance marker — deliberately typographic (small "m"), kept
+   visually distinct from the size-band chips so it can never be misread as a
+   detector flag or a band. */
+.mkt{font-size:9px;font-weight:700;color:var(--acc);cursor:help;letter-spacing:.02em}
 .bandchip{display:inline-block;font-size:10px;font-weight:650;padding:1px 7px;border-radius:4px;color:#fff;font-variant-numeric:tabular-nums}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;color:var(--ink3);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
@@ -299,7 +303,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <details class="aiwrap">
       <summary id="patSum"><span class="aibadge">AI-inferred</span>Payout pattern monitor</summary>
       <div class="inner">
-        <p class="method"><b>Method:</b> we look at each earner's payout timing and ask: does it look human-irregular or robotically regular? Three signals: timing variety, repeating rhythm, and rapid-fire bursts (technical: gap entropy, lag-1 autocorrelation, 60-second burst share). Cut-offs are judgment calls; flags mean "worth a look", never "confirmed abuse". Automated invocation can be legitimate — the automation policy is an open decision. Flagged rows sort first.</p>
+        <p class="method"><b>Method:</b> we look at each earner's payout timing and ask: does it look human-irregular or robotically regular? Statistical pattern checks flag transfer patterns worth review; the specific signals and their cut-offs are reviewed privately, because publishing them would hand anyone gaming payouts a calibration oracle. Cut-offs are judgment calls; flags mean "worth a look", never "confirmed abuse". Automated invocation can be legitimate — the automation policy is an open decision. Flagged rows sort first.</p>
         <div class="scroll"><table id="gT"></table></div>
       </div>
     </details>
@@ -342,6 +346,9 @@ const DATA = /*__DATA__*/;
   if(box.children.length)document.body.insertBefore(box,document.body.firstChild);
 })();
 const F=DATA.facts, I=DATA.infer, SC=DATA.scope, G=I.guard;
+// day-pricing provenance summary; absent in an older data.json, in which case
+// every provenance marker below renders as nothing at all (render gate lesson)
+const PP=F.pricing_provenance||null;
 const fmt=n=>n.toLocaleString("en-US",{maximumFractionDigits:1});
 const fmt0=n=>n.toLocaleString("en-US",{maximumFractionDigits:0});
 const usd=n=>"$"+n.toLocaleString("en-US",{maximumFractionDigits:0});
@@ -378,7 +385,10 @@ const rec=Object.entries(F.recon).map(([s,r])=>{if(!r)return`${s} n/a`;
 document.getElementById("scope").innerHTML=
  `<span><b>Scope:</b> one wallet · MENTE + MOCA only (${SC.excluded_in_tx} inbound transfers of other tokens excluded)</span>`+
  `<span><b>Data range:</b> ${F.range.from} → ${F.range.to} UTC${SC.complete?"":" · <b style='color:var(--warn)'>⚠ fetch incomplete this run</b>"}</span>`+
- `<span><b>Rates:</b> MENTE $${F.rate.MENTE.toFixed(6)} (${F.rate_src.MENTE}) · MOCA $${F.rate.MOCA.toFixed(6)} (${F.rate_src.MOCA})</span>`+
+ `<span><b>Rates:</b> MENTE $${F.rate.MENTE.toFixed(6)} (${F.rate_src.MENTE}) · MOCA $${F.rate.MOCA.toFixed(6)} (${F.rate_src.MOCA})`
+  +(PP?` · <b>day pricing:</b> ${PP.implied} days implied · ${PP.market} market-filled · ${PP.refused} refused (out-of-band market closes, fell back to implied) — market fills carry a <sup class="mkt">m</sup> below; per-day provenance in day_rates.json. Restating history on this basis moved the lifetime total by +$${PP.restatement_usd.toLocaleString()} (${PP.restatement_date}).`:"")
+  +`</span>`+
+ `<span><b>Independent check:</b> ${SC.cross_check?SC.cross_check.text:"Cross-checked weekly, row-exact, against an independent second crawler"} (public <a href="${SC.cross_check?SC.cross_check.repo:"https://github.com/Agentic-Po/moca-ledger"}" target="_blank">moca-ledger</a> repo)</span>`+
  (F.market_check&&Object.keys(F.market_check).length?`<span><b>Rate validation:</b> ${Object.entries(F.market_check).map(([k,v])=>`${k} ${v.within15}/${v.n} typically within ${v.median_dev??"?"}% of market price (${v.within15}/${v.n} days inside the 15% gate; worst day ${v.max_dev}%)`).join(" · ")} — each day priced at its own day's rate, cross-checked against the right trading pool for that period</span>`:"")+
  `<span><b>Balance reconciliation:</b> ${rec} — cache covers the wallet's full lifetime; balance valued at the newest cached block. The MENTE Δ (<b>≈$1,250 over the wallet's lifetime</b> — 88K tokens, ~1.2%) is an automatic burn by the token contract itself — expected platform behavior being confirmed with the team, <b>not missing funds</b>. (Technical: transfer logs verify exact vs raw chain, 36,715 = 36,715; the delta accrues in blocks with zero token events — the contract changes balances without emitting them.) Movement beyond this pattern flags in amber here</span>`+
  `<span><b>Note:</b> ${SC.note}</span>`;
@@ -428,7 +438,7 @@ return list.map(d=>{
  const bar=BK.map(k=>{const v=(d.bands[k]||{}).usd||0;return v?`<div style="height:10px;background:${BC[k]};width:${v/dmax*100}%;border-right:1px solid var(--surface)"></div>`:"";}).join("");
  const tipRows=BK.filter(k=>d.bands[k]).map(k=>`<tr><td><span class="bandchip" style="background:${BC[k]}${(k==="micro"||k==="other")?";color:#111":""}">${F.band_labels[k]}</span></td><td style="text-align:right">${d.bands[k].n} tx</td><td style="text-align:right"><b>$${d.bands[k].usd.toFixed(0)}</b></td><td style="text-align:right">${d.bands[k].w} wallets</td></tr>`).join("");
   const tipTxt=`<b>${d.d}</b> — $${d.out_usd.toFixed(0)} out<table>${tipRows||"<tr><td>no outflow</td></tr>"}</table>`;
- return `<tr data-tiphtml="${tipTxt.replace(/"/g,"&quot;")}" style="${d.partial?"opacity:.75":""}"><td class="mono">${d.d}${d.partial?' <span class="pill">partial day</span>':""}</td><td class="r mono">$${d.out_usd.toFixed(2)}</td><td style="width:26%;min-width:130px"><div style="display:flex;border-radius:3px;overflow:hidden">${bar}</div></td><td class="r mono">${d.out_tx}</td><td class="r mono">${d.wallets}</td><td class="r mono" style="color:${d.in_usd?"var(--c-in)":"var(--ink3)"}">${d.in_usd?"$"+d.in_usd.toFixed(0):"—"}</td></tr>`;});}
+ return `<tr data-tiphtml="${tipTxt.replace(/"/g,"&quot;")}" style="${d.partial?"opacity:.75":""}"><td class="mono">${d.d}${d.mkt?`<sup class="mkt" title="priced from that day's market close: ${Object.keys(d.mkt).join(", ")}">•m</sup>`:""}${d.partial?' <span class="pill">partial day</span>':""}</td><td class="r mono">$${d.out_usd.toFixed(2)}</td><td style="width:26%;min-width:130px"><div style="display:flex;border-radius:3px;overflow:hidden">${bar}</div></td><td class="r mono">${d.out_tx}</td><td class="r mono">${d.wallets}</td><td class="r mono" style="color:${d.in_usd?"var(--c-in)":"var(--ink3)"}">${d.in_usd?"$"+d.in_usd.toFixed(0):"—"}</td></tr>`;});}
 const dHead=`<thead><tr><th>Day (UTC)</th><th class="r">Out USD</th><th>Size-band mix</th><th class="r">Tx</th><th class="r">Wallets</th><th class="r">In USD</th></tr></thead>`;
 const dailyT=document.getElementById("dailyT");
 const revDaily=F.daily.slice().reverse();
@@ -497,7 +507,7 @@ if(F.balance_series&&F.balance_series.tokens&&F.balance_series.tokens.length){
     const rcell=m?`<td class="r mono"${(m.in_rec||0)===0?' style="color:var(--warn)"':''}>${fmt0(m.in_rec||0)}</td>`:"";
     const part=at(toks[0],d)&&at(toks[0],d).partial;
     return `<tr${part?' style="opacity:.7"':''}><td class="mono">${d.replace(/-/g,"/")}${part?' <span class="sub">live</span>':''}</td>`
-      +toks.map(t=>{const p=at(t,d);return `<td class="r mono">${p?fmt0(cq(p.qty)):"—"}</td><td class="r mono" title="${p?p.rsrc:""}">${p?usd(Math.max(0,p.usd)):"—"}</td>`;}).join("")
+      +toks.map(t=>{const p=at(t,d);return `<td class="r mono">${p?fmt0(cq(p.qty)):"—"}</td><td class="r mono" title="${p?p.rsrc:""}">${p?usd(Math.max(0,p.usd)):"—"}${p&&p.rsrc==="day-market"?`<sup class="mkt" title="priced from that day's market close">•m</sup>`:""}</td>`;}).join("")
       +`<td class="r mono">${usd(totUsd(d))}</td>`+(hasM?dcell+rcell:"")+`</tr>`;
   };
   const revDays=[...days].reverse();
@@ -816,6 +826,17 @@ document.getElementById("fineT").innerHTML=`<thead><tr><th>Inferred type</th><th
 document.getElementById("creatT").innerHTML=`<thead><tr><th>#</th><th>Creator wallet</th><th class="r">Invokes</th><th class="r">Equips</th><th class="r">USD</th><th class="r">Share</th></tr></thead><tbody>`+
  I.creators.slice(0,15).map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r">${c.invoke.toLocaleString()}</td><td class="r">${c.equip}</td><td class="r mono">$${c.usd.toLocaleString()}</td><td class="r mono">${(c.usd/I.ce_total*100).toFixed(1)}%</td></tr>`).join("")+`</tbody>`;
 document.getElementById("patSum").innerHTML=`<span class="aibadge">AI-inferred</span>Payout pattern monitor <span class="pill" style="${G.flagged_n?"border-color:var(--warn);color:var(--warn)":""}">${G.flagged_n?G.flagged_n+" flagged · $"+G.at_risk_usd.toLocaleString():"no flags"}</span><span class="pill">${G.monitored_n} monitored</span>`;
+// Retired-payout stragglers: AGGREGATE ONLY (count, USD, cutoff, last seen).
+// No tx hashes, no per-entry addresses, no detection band — the entries[] and
+// the band live in the private reviewer file, and check_publish.py --scan
+// fails the build if any of them reach data.json or the page. Hidden when
+// n === 0, and absent entirely from an older data.json.
+const RETLINE=(I.retired_public||[]).filter(x=>x&&x.n).map(x=>
+ `<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line);color:var(--warn)">
+   Retired &lsquo;$1 ${x.cat}&rsquo; rewards: <b>${x.n}</b> straggler transfer${x.n===1?"":"s"}
+   &asymp; <b>$${x.usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</b>
+   since the ${x.cutoff} cutoff${x.last_seen?`, last ${x.last_seen}`:""} — mis-configured job, tracked.
+  </div>`).join("");
 // Per-wallet monitor rows are no longer published (calibration-oracle
 // lesson): the public page shows aggregates only; the row-level detail
 // lives in a private reviewer file on the CI runner.
@@ -824,7 +845,6 @@ document.getElementById("gT").innerHTML=`<tbody><tr><td style="padding:14px;colo
  anyone gaming payouts a calibration oracle. This page reports the aggregates:
  <b>${G.monitored_n}</b> wallets monitored · <b>${G.flagged_n}</b> flagged ·
  <b>$${G.at_risk_usd.toLocaleString()}</b> (${(G.at_risk_usd/G.ce_total_usd*100).toFixed(1)}% of creator earnings) under review — heuristic, unconfirmed.
-</td></tr></tbody>`;});
-}
-renderMonitor();
+ ${RETLINE}
+</td></tr></tbody>`;
 </script>

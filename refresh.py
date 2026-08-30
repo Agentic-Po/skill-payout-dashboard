@@ -501,6 +501,39 @@ for _s in TOKENS:
     _missing = set(STATE["day_rates"][_s]) - set(STATE["day_rate_src"].get(_s, {}))
     assert not _missing, f"{_s}: day_rates days without a day_rate_src stamp: {sorted(_missing)[:5]}"
 
+# ---- pricing provenance (public summary) ----
+# Surfacing only: per-token COUNTS by source value of STATE["day_rate_src"].
+# The per-day map itself is not embedded in data.json — the full ledger is
+# persisted in day_rates.json, which is published. The restatement figure is a
+# one-time historical note (git d75e9bd, "+$2,587 / +4.98%"), hard-stamped with
+# its date, never recomputed. Counts are DYNAMIC: the market-filled count grows
+# with every closed day after the 2026-08-21 cutoff, so nothing here is pinned.
+PRICING_RESTATEMENT_USD = 2587
+PRICING_RESTATEMENT_DATE = "2026-08-30"
+pricing_provenance = {"by_token": {}, "implied": 0, "market": 0, "refused": 0,
+                      "restatement_usd": PRICING_RESTATEMENT_USD,
+                      "restatement_date": PRICING_RESTATEMENT_DATE}
+for _s in TOKENS:
+    _counts = dict(Counter((STATE["day_rate_src"].get(_s) or {}).values()))
+    pricing_provenance["by_token"][_s] = _counts
+    pricing_provenance["implied"] += _counts.get("implied", 0)
+    pricing_provenance["market"] += _counts.get("market", 0)
+    pricing_provenance["refused"] += (_counts.get("market-rejected", 0)
+                                      + _counts.get("market-unbanded", 0))
+# Build-time assertion: the published summary must equal a direct len-by-value
+# recount of day_rate_src — a summary that drifts from the stamps it claims to
+# summarise is worse than no summary.
+for _s in TOKENS:
+    _direct = Counter((STATE["day_rate_src"].get(_s) or {}).values())
+    assert pricing_provenance["by_token"][_s] == dict(_direct), \
+        f"{_s}: pricing_provenance drifted from day_rate_src"
+    assert sum(pricing_provenance["by_token"][_s].values()) == len(STATE["day_rate_src"].get(_s) or {}), \
+        f"{_s}: pricing_provenance count != number of stamped days"
+assert (pricing_provenance["implied"] + pricing_provenance["market"]
+        + pricing_provenance["refused"]) == sum(
+            sum(c.values()) for c in pricing_provenance["by_token"].values()), \
+    "pricing_provenance totals do not cover every day_rate_src value"
+
 def day_rate(sym, ts):
     """Return (rate, source) for a timestamp."""
     d, dr = ts[:10], STATE["day_rates"][sym]
@@ -769,7 +802,14 @@ for d in days:
         b = band(r["usd"]); bc[b] += 1; bu[b] += r["usd"]; bw[b].add(r["to"])
     out_usd = sum(r["usd"] for r in rs)
     in_usd = sum(f["usd"] for f in ins)
+    # Provenance marker: day_rate_src is per-TOKEN per-day while a daily row
+    # aggregates tokens, so this is a per-token map, never one boolean — a
+    # MOCA-market/MENTE-implied day must not render as "the day was market".
+    # Omitted entirely when no token was market-filled that day.
+    _mkt = {s: True for s in TOKENS
+            if (STATE["day_rate_src"].get(s) or {}).get(d) == "market"}
     daily.append({"d": d, "partial": d == today,
+                  **({"mkt": _mkt} if _mkt else {}),
                   "out_usd": round(out_usd, 2), "in_usd": round(in_usd, 2),
                   "net_usd": round(in_usd - out_usd, 2),
                   "out_tx": len(rs), "wallets": len({r["to"] for r in rs}),
@@ -966,6 +1006,7 @@ facts = {"windows": windows, "prev24": prev24, "monthly": monthly, "daily": dail
          "balance": {s: (round(BALANCE[s], 0) if BALANCE[s] is not None else None) for s in TOKENS},
          "balance_usd": {s: (round(BALANCE[s] * RATE[s], 0) if BALANCE[s] is not None else None) for s in TOKENS},
          "rate": RATE, "rate_src": RATE_SRC, "recon": recon,
+         "pricing_provenance": pricing_provenance,
          "market_check": market_summary, "cognition": cognition, "swarm_era": swarm_era,
          "band_labels": BAND_LABEL, "band_keys": BAND_KEYS,
          "range": {"from": range_from, "to": rows[0]["ts"][:19] if rows else None}}
@@ -1103,6 +1144,25 @@ json.dump({"generated": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "rows": grows,
            "retired_ledger": retired_ledger},
           open(os.path.join(HERE, "guard_private.json"), "w"))
 
+# Public aggregate for the retired-payout stragglers, derived from the SAME
+# object that just went to the private file — one codepath, so the page and
+# the private ledger can never state different counts. AGGREGATE FIELDS ONLY:
+# no entries[], no tx hashes, no per-entry addresses, no detection band
+# (point/tol) — those are the calibration-oracle class. check_publish.py
+# --scan enforces the tx-hash/entries half of this in CI.
+retired_public = []
+for _cat, _v in retired_ledger.items():
+    retired_public.append({
+        "cat": _cat, "cutoff": _v["cutoff"], "n": _v["n"], "usd": _v["usd"],
+        "last_seen": max((h["ts"][:10] for h in _v["entries"]), default=None)})
+for _rp in retired_public:
+    _src = retired_ledger[_rp["cat"]]
+    assert _rp["n"] == len(_src["entries"]), f"retired_public {_rp['cat']}: n != len(entries)"
+    assert _rp["usd"] == round(sum(h["usd"] for h in _src["entries"]), 2), \
+        f"retired_public {_rp['cat']}: usd != sum(entries)"
+    assert set(_rp) == {"cat", "cutoff", "n", "usd", "last_seen"}, \
+        "retired_public carries a field outside the published aggregate contract"
+
 # permanent Stripe snapshot (verified server-side revenue reference)
 stripe_snap = None
 _snap_path = os.path.join(HERE, "stripe_snapshot.json")
@@ -1116,7 +1176,8 @@ if os.path.exists(_snap_path):
     _proceeds = stripe_snap.get("net_proceeds_est_usd") or (stripe_snap["net_usd"] - stripe_snap["fees_est_usd"])
     stripe_snap["period_subsidy_ratio"] = round(_dist / _proceeds, 1) if _proceeds else None
 
-infer = {"S": S, "creators": creators[:25], "ce_total": ce_total, "fine_table": fine_table, "guard": guard}
+infer = {"S": S, "creators": creators[:25], "ce_total": ce_total, "fine_table": fine_table, "guard": guard,
+         "retired_public": retired_public}
 
 # ================= SERVER-RECORDED TIER (PostHog, optional) =================
 # Middle trust tier: platform-recorded events (client-confirmed top-ups, mind
@@ -1168,7 +1229,16 @@ scope = {"wallet": WALLET, "tokens": {s: TOKENS[s]["addr"] for s in TOKENS},
          "generated_iso": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
          "source": "Blockscout (Base) token-transfer API; balances via eth_call; live prices via Blockscout exchange_rate (validated); historical USD via persisted day-implied payout rates",
          "complete": data_complete, "excluded_in_tx": excluded_in,
-         "note": "This wallet only. Other Minds wallets (e.g. Fireblocks) are out of scope."}
+         # Mechanism only, deliberately WITHOUT a date claim: the reconcile
+         # step in the hourly refresh runs with no MOCA_LEDGER_PATH and skips,
+         # so no run-derived date exists that this file could truthfully stamp.
+         # The real row-exact cross-check is the weekly reconcile.yml job.
+         "cross_check": {"text": "Cross-checked weekly, row-exact, against an independent second crawler",
+                         "repo": "https://github.com/Agentic-Po/moca-ledger"},
+         "note": "This wallet only. Other Minds wallets (e.g. Fireblocks) are out of scope. "
+                 "Coupon deliveries flow from the separate Minds Coupon Distributor wallet and are "
+                 "out of scope for this wallet's ledger — that wallet's own ledger is being banked "
+                 "privately, so no coupon leg appears in any figure on this page."}
 
 # ---- computed guided-view layer: insights, open items, gaps (panel-designed) ----
 # out_di already covers every category — the old formula re-added

@@ -100,6 +100,75 @@ OBJ_RE = re.compile(r"\{[^{}]{0,4000}\}")
 NEAR = 200      # chars, for non-object formats (CSV rows, HTML text)
 
 
+# ---- structural walk of data.json (added 2026-08-30, council item 5) ----
+# The regex gates above read the artifacts as TEXT. This one parses data.json
+# and rejects detector-shaped keys by STRUCTURE, so a future refresh.py that
+# starts emitting a per-day or per-wallet detector field is caught even if its
+# text form dodges the regexes.
+#
+# EXACT key names, never substrings. The substring form of this rule is a trap:
+# "ent" is inside "top_recipients", "tol" is inside "total_mente", "flagged" is
+# inside the legitimate public aggregate "flagged_n" — a substring walk would
+# fail every clean build on data we deliberately publish.
+ORACLE_KEYS = {"ent", "acf", "burst", "tol", "flagged", "flags", "status"}
+
+# Reviewed exact paths where one of the above names is NOT a monitoring
+# verdict. Each entry is a deliberate, human-reviewed exemption; a new path
+# does not get added here without knowing what it holds.
+#   server.diverge_meta.status — narrative status of an OPEN ITEM (the
+#     PostHog/Stripe reconciliation blocker), no wallet and no detector value.
+ORACLE_KEY_ALLOW = {"server.diverge_meta.status"}
+
+
+def _oracle_keys(obj, path="", hits=None):
+    """Exact-name detector keys anywhere in the parsed payload.
+
+    Per-day rows (facts.daily[]) and per-wallet rows (infer.creators[],
+    facts.top_recipients[]) are the contexts that matter, but the walk is
+    deliberately whole-document: a detector field is oracle-class wherever it
+    lands, and an allowlist of reviewed paths is cheaper to audit than a
+    heuristic for what counts as a "row"."""
+    if hits is None:
+        hits = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            p = f"{path}.{k}" if path else k
+            if k in ORACLE_KEYS and p not in ORACLE_KEY_ALLOW:
+                hits.append(f"detector-shaped key {k!r} at data.json:{p}")
+            _oracle_keys(v, p, hits)
+    elif isinstance(obj, list):
+        for v in obj:
+            # list index is not part of the path: rows are interchangeable and
+            # an index-bearing allowlist would rot on the next refresh
+            _oracle_keys(v, path + "[]", hits)
+    return hits
+
+
+def _retired_leak(texts):
+    """Retired-straggler tx hashes / entries[] structure must never publish.
+
+    Scoped per the 2026-08-30 QA finding: NOT a blanket address ban. Straggler
+    recipients are ordinary payout recipients that legitimately appear in
+    top_recipients and the registry, so banning their bare addresses would
+    false-positive on clean builds. What must not leak is the per-entry
+    identification — the tx hash, and the entries[] list itself."""
+    p = os.path.join(HERE, "guard_private.json")
+    if not os.path.exists(p):
+        return []
+    led = (json.load(open(p)) or {}).get("retired_ledger") or {}
+    hashes = {h.get("tx", "").lower() for v in led.values()
+              for h in v.get("entries", []) if h.get("tx")}
+    hits = []
+    for name, text in texts:
+        low = text.lower()
+        for h in hashes:
+            if h and h in low:
+                hits.append(f"retired-straggler tx {h[:12]}… surfaced in {name}")
+        if re.search(r'["\']?entries["\']?\s*:', text):
+            hits.append(f"retired_ledger entries[] structure surfaced in {name}")
+    return hits
+
+
 def _git(*args):
     return subprocess.run(["git", "-C", HERE] + list(args),
                           capture_output=True, text=True, check=True).stdout.splitlines()
@@ -247,6 +316,20 @@ def scan():
         for name, text in targets:
             if a in text.lower():
                 bad.append(f"guard_private address {a} surfaced in {name}")
+    # (c) structural walk of data.json — exact detector key names, by parse.
+    _dj = os.path.join(HERE, "data.json")
+    if os.path.exists(_dj):
+        try:
+            bad += _oracle_keys(json.load(open(_dj)))
+        except json.JSONDecodeError as e:
+            bad.append(f"data.json did not parse for the structural scan: {e}")
+    # (d) retired-straggler per-entry detail — tx hashes and entries[] only.
+    _rt = []
+    for rel in ("data.json", "index.html"):
+        p = os.path.join(HERE, rel)
+        if os.path.exists(p):
+            _rt.append((rel, open(p, errors="replace").read()))
+    bad += _retired_leak(_rt)
     for b in bad:
         print(f"::error::{b}")
     print("check_publish --scan:", "FAIL" if bad else "ok")
