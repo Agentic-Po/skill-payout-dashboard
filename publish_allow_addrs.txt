@@ -31,3 +31,5 @@
 0xfe11c2cd4c0bdd43c621cd57dc9acad722fb3ef3   # Recipients — Top recipient — $1,225 over 1963 transfers · unlabeled
 0x986597787d5faafde21dd56808c48064b3171b04   # Recipients — Top recipient — $1,120 over 1837 transfers · unlabeled
 0x2ed2c1ab26bcf22f566ce476a5545f59b4bc4eb5   # Recipients — Top recipient — $982 over 1491 transfers · unlabeled
+0xe540397495e0b9cdc5f130405808d07e79fa3daa
+0xb15afc65532f8ec4d39db521ad7eb5b9e9ef5acf
