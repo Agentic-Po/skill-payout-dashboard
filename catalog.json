@@ -14,7 +14,7 @@
    "from": "2026-04-24T22:13:15",
    "to": "2026-08-29T22:30:29"
   },
-  "generated_iso": "2026-08-30T00:53:07Z",
+  "generated_iso": "2026-08-30T01:07:44Z",
   "max_row_ts": "2026-08-29T22:30:29",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
@@ -37,7 +37,7 @@
    "from": "2026-04-24T20:07:19",
    "to": "2026-08-29T18:02:21"
   },
-  "generated_iso": "2026-08-30T00:53:07Z",
+  "generated_iso": "2026-08-30T01:07:44Z",
   "max_row_ts": "2026-08-29T18:02:21",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
@@ -53,15 +53,15 @@
   "public": true,
   "kind": "ledger",
   "row_schema": "ts, val (MENTE token amount, float), from, tx, log_index, transaction_hash",
-  "rows": 101689,
+  "rows": 101699,
   "rows_closed": 83145,
-  "bytes": 29944788,
+  "bytes": 29947608,
   "coverage": {
    "from": "2026-04-12T19:58:25",
-   "to": "2026-08-30T00:24:25"
+   "to": "2026-08-30T00:56:05"
   },
-  "generated_iso": "2026-08-30T00:53:07Z",
-  "max_row_ts": "2026-08-30T00:24:25",
+  "generated_iso": "2026-08-30T01:07:44Z",
+  "max_row_ts": "2026-08-30T00:56:05",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
   "provenance": "Blockscout v2 token-transfers into the Cognition Credits collector \u2192 eth_getLogs fallback \u2192 24h cross-check",
@@ -83,7 +83,7 @@
    "from": "2026-04-24T20:07:19",
    "to": "2026-08-29T22:30:29"
   },
-  "generated_iso": "2026-08-30T00:53:07Z",
+  "generated_iso": "2026-08-30T01:07:44Z",
   "max_row_ts": "2026-08-29T22:30:29",
   "expected_cadence_minutes": 15,
   "update_cadence": "rewritten in full every refresh",
@@ -106,7 +106,7 @@
    "from": "2026-05-02",
    "to": "2026-08-21"
   },
-  "generated_iso": "2026-08-30T00:53:07Z",
+  "generated_iso": "2026-08-30T01:07:44Z",
   "max_row_ts": "2026-08-21",
   "expected_cadence_minutes": 1440,
   "update_cadence": "one immutable entry per token per day",
@@ -130,7 +130,7 @@
    "from": "2026-01-30T12:44:05",
    "to": "2026-07-17T16:30:57"
   },
-  "generated_iso": "2026-08-30T00:53:07Z",
+  "generated_iso": "2026-08-30T01:07:44Z",
   "max_row_ts": "2026-07-17T16:30:57",
   "expected_cadence_minutes": null,
   "update_cadence": "static archive \u2014 frozen",
@@ -148,12 +148,12 @@
   "row_schema": "schema_version, scope, facts, infer, server, stripe_snap, insights, open_items, gaps, registry, sink",
   "rows": 1,
   "rows_closed": 1,
-  "bytes": 150752,
+  "bytes": 156396,
   "coverage": {
    "from": "2026-04-24",
    "to": "2026-08-29T22:30:29"
   },
-  "generated_iso": "2026-08-30T00:53:07Z",
+  "generated_iso": "2026-08-30T01:07:44Z",
   "max_row_ts": "2026-08-29T22:30:29",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
@@ -169,15 +169,15 @@
   "public": true,
   "kind": "derived",
   "row_schema": "ts, recon, invoke, equip, growth, moca, creators, rate, balance, mente_balance, runway7, runway_adj",
-  "rows": 695,
+  "rows": 696,
   "rows_closed": 235,
-  "bytes": 148139,
+  "bytes": 148453,
   "coverage": {
    "from": "2026-07-13T00:00",
-   "to": "2026-08-30T00:36"
+   "to": "2026-08-30T00:59"
   },
-  "generated_iso": "2026-08-30T00:53:07Z",
-  "max_row_ts": "2026-08-30T00:36",
+  "generated_iso": "2026-08-30T01:07:44Z",
+  "max_row_ts": "2026-08-30T00:59",
   "expected_cadence_minutes": 15,
   "update_cadence": "one append per refresh (~4x/hour)",
   "provenance": "refresh.py append-only snapshot; git history of the hourly commits is the immutable trail",
@@ -195,7 +195,7 @@
   "name": "alert_state.json",
   "public": false,
   "kind": "derived",
-  "bytes": 0,
+  "bytes": 3531,
   "note": "private \u2014 see companion doc"
  }
 ]
