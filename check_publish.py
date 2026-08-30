@@ -60,10 +60,17 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PUBLISH_EXTRA = [
     "index.html", "legacy.html", "dashboard.html", "template.html", "template_legacy.html",
     "*.py", "tests/*.py",
+    # the render-exec gate's committed DOM shim (Cycle-3 Loop 2, item 1) —
+    # listed explicitly or the stage step warns and silently never commits it
+    "tests/domshim.js",
     ".github/workflows/*.yml",
     ".gitignore", "Makefile",
     "README.md", "DATASETS.md",
     "CONSUMERS.md", "HEARTBEAT.md", "RUNBOOK-deadman.md",
+    # closed-day digest ledger + its public restatement record (item 3):
+    # aggregates only, no rows — MUST commit or the ledger is rebuilt from
+    # scratch every run and carries zero tamper evidence
+    "day_digests.json", "RESTATEMENTS.md",
     "catalog.json", "data.json", "day_rates.json", "stats_history.json",
     "stripe_snapshot.json", "posthog_cache.json",
     "swarm_era.json", "swarm_prices.json",
@@ -94,7 +101,7 @@ LEAKED_NAME_RES = [re.compile("ja" + "son" + r"\s+o" + "ng", re.I),
 # Every public/derived artifact gets the denied-field scan.
 DENIED_TARGETS = ["index.html", "legacy.html", "data.json", "catalog.json",
                   "DATASETS.md", "README.md", "stats_history.json",
-                  "transfers_export.csv"]
+                  "transfers_export.csv", "day_digests.json", "RESTATEMENTS.md"]
 
 # Tokens that betray monitoring status when they sit next to an address.
 STATUS_TOKENS = [r'["\']?ent["\']?\s*:', r'["\']?acf["\']?\s*:',

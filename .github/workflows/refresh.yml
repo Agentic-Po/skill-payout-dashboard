@@ -58,6 +58,11 @@ jobs:
           python3 tests/test_reconcile.py
       - name: Render parse gate
         run: python3 tests/test_render.py
+      # Parse proves nothing about paint: this executes the freshly built
+      # page's scripts on the real data.json under tests/domshim.js and
+      # fails on any uncaught runtime error or an empty rendered structure.
+      - name: Render execution gate
+        run: python3 tests/test_render_exec.py
       - name: Guard against oversized files
         run: |
           BIG=$(find . -path ./.git -prune -o -type f -size +50M -print)
@@ -120,6 +125,15 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python3 notify.py hourly
+      # Send-path dead-man (Cycle-3 Loop 2, item 4): the Telegram sends above
+      # STAY continue-on-error (an outage must not kill a good refresh), but
+      # 3+ consecutive failed send attempts on any channel mean the send path
+      # itself is dead — this step is deliberately NOT continue-on-error, so
+      # the workflow goes red where silence would otherwise accumulate.
+      # Caveat: the counters live in the Actions cache; eviction resets them
+      # (RUNBOOK-deadman.md).
+      - name: Alert liveness check
+        run: python3 alive_check.py
       - name: Alert Telegram on failure
         if: failure()
         run: |

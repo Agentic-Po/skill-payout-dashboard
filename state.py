@@ -33,3 +33,33 @@ def update(mutation):
         json.dump(st, fh)
     os.replace(tmp, PATH)
     return st
+
+
+def record_send(channel, ok, now=None):
+    """Record one Telegram send attempt's outcome (Cycle-3 Loop 2, item 4).
+
+    Per channel ("alerts", "digest"): a CONSECUTIVE-failure counter (reset to
+    0 by any success) plus 24h send/fail timestamp lists for the daily
+    digest's health line. alive_check.py turns consec_fail >= 3 into a red
+    workflow — the send-path dead-man the full-workflow dead-man can't see.
+    Only ATTEMPTED sends are recorded; a run with nothing to say leaves the
+    counters untouched. State rides the Actions cache (never committed);
+    cache eviction resets the counters — documented in RUNBOOK-deadman.md.
+    """
+    from datetime import datetime, timedelta, timezone
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    cutoff = (now - timedelta(hours=24)).isoformat(timespec="minutes")
+    stamp = now.isoformat(timespec="minutes")
+    health = dict(load().get("send_health") or {})
+    c = dict(health.get(channel) or {})
+    sent = [t for t in c.get("sent", []) if t > cutoff]
+    failed = [t for t in c.get("failed", []) if t > cutoff]
+    if ok:
+        sent.append(stamp)
+        c["consec_fail"] = 0
+    else:
+        failed.append(stamp)
+        c["consec_fail"] = int(c.get("consec_fail", 0)) + 1
+    c["sent"], c["failed"] = sent[-200:], failed[-200:]
+    health[channel] = c
+    return update({"send_health": health})

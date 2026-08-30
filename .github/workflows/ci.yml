@@ -37,3 +37,16 @@ jobs:
         run: python3 tests/test_parity.py
       - name: Render parse gate
         run: python3 tests/test_render.py
+      # Executes the committed page's scripts on the committed data.json
+      # under tests/domshim.js — a runtime error that blanks the page is red
+      # here even though it parses.
+      - name: Render execution gate
+        run: python3 tests/test_render_exec.py
+      - name: Shard corruption / atomic-write gate
+        run: python3 tests/test_shards.py
+      - name: Closed-day digest ledger gate
+        run: python3 tests/test_digests.py
+      # The tripwire that turns a silent breaking change for consumers into
+      # red CI + a deliberate CONSUMERS.md / schema_version bump.
+      - name: Consumer contract tests
+        run: python3 tests/test_contract.py

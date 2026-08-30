@@ -149,3 +149,25 @@ are failing* (those already alert on their own).
 3. Data does not need repair after a stall. Both crawlers are resumable and
    catch up from their own state on the next successful run; the day-pinned
    rates for closed days are immutable, so nothing reprices.
+
+## 6. Send-path liveness (alive_check.py) — and its cache caveat
+
+The dead-man above answers "are runs landing?". A separate gate answers
+"can the runs still *reach Telegram*?": `state.record_send()` keeps a
+consecutive-failure counter per channel (`alerts`, `digest`) in
+`alert_state.json`, and refresh.yml's blocking **Alert liveness check** step
+(`python3 alive_check.py`) turns 3+ consecutive failed send attempts into a
+red workflow. The sends themselves stay `continue-on-error` — a Telegram
+outage must never kill a refresh that otherwise succeeded; only the
+*pattern* of failures blocks.
+
+**Documented caveat: cache eviction resets the counter.** `alert_state.json`
+lives only in the Actions cache (deliberately — committing it published
+armed/cooling detector state). GitHub evicts cache entries after ~7 days
+unused or under the 10 GB repo cap, and a fresh runner with no cache hit
+starts every counter at zero. After an eviction, a dead send path needs 3
+NEW consecutive failures before the gate fires again — so treat a green
+liveness check right after a cache miss ("no send attempts recorded yet" in
+the step log) as unproven, not as healthy. The healthchecks.io dead-man and
+the daily digest's `alerts: N sent / M failed (24h)` line are the
+cross-checks that do not share this reset.

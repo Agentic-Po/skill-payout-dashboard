@@ -226,7 +226,12 @@ def persist_state():
     # keep 'seen' bounded: only keys that can still re-trigger (last 48h)
     recent = {r[5] for rows_ in flows.values() for r in rows_
               if r[0] > now - timedelta(hours=48)}
-    _statemod.update({**state, "seen": sorted(seen & recent), "anomaly": anom})
+    st = {**state, "seen": sorted(seen & recent), "anomaly": anom}
+    # send_health is owned by state.record_send (item 4): the copy loaded at
+    # the top of this run is stale by send time — writing it back here would
+    # clobber the outcome just recorded.
+    st.pop("send_health", None)
+    _statemod.update(st)
 
 if lines:
     msg = "\n".join(["🚨 <b>Flow alert</b> — <i>Skill Payout Dashboard</i>"] + lines)
@@ -237,8 +242,17 @@ if lines:
     }).encode()
     req = urllib.request.Request(
         f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage", data=body)
-    with urllib.request.urlopen(req, timeout=30) as r:
-        print("alert sent:", r.status)
+    # Liveness bookkeeping (Cycle-3 Loop 2, item 4): record the ATTEMPT's
+    # outcome either way; 3 consecutive failures turn refresh.yml red via
+    # alive_check.py. The send itself stays continue-on-error in the workflow
+    # (redline) — record-then-reraise preserves that behaviour exactly.
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            print("alert sent:", r.status)
+    except Exception:
+        _statemod.record_send("alerts", False, now)
+        raise
+    _statemod.record_send("alerts", True, now)
     persist_state()
 else:
     persist_state()

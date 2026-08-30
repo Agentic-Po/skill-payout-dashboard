@@ -828,6 +828,20 @@ for d in days:
                   "tok_raw": {s: round(sum(r["val"] for r in rs if r["tok"] == s), 1) for s in TOKENS},
                   "bands": {k: {"n": bc[k], "usd": round(bu[k], 2), "w": len(bw[k])} for k in bc}})
 
+# --- closed-day digest ledger (Cycle-3 Loop 2, item 3) ---
+# "Closed days never reprice" becomes mechanical: every closed UTC day's
+# outflow aggregates are sealed under a sha256 in day_digests.json; a later
+# run recomputing a different value HARD FAILS unless the day is documented
+# in RESTATEMENTS.md. Fed the SAME priced rows the page renders from, so the
+# ledger cannot diverge from what publishes.
+import digests as _digests
+_dig_records = _digests.records_for_closed_days(rows, today)
+try:
+    _digests.enforce(_dig_records,
+                     now_iso=now.strftime("%Y-%m-%dT%H:%M:%SZ"))
+except _digests.DigestMismatch as e:
+    raise SystemExit(f"FATAL: {e}")
+
 wal_days = defaultdict(set)
 for r in rows:
     wal_days[r["to"]].add(r["ts"][:10])

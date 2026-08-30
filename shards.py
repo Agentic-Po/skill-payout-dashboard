@@ -8,6 +8,32 @@ month lives in its own file so no single file grows unbounded.
 """
 import json, os, re
 
+
+class ShardCorrupt(Exception):
+    """A shard file failed to parse. Deliberately loud and NAMED (Cycle-3
+    Loop 2): a truncated shard — half-written by a killed process, or mangled
+    by a bad merge — must stop the pipeline with the offending path in hand,
+    never be half-read or silently skipped. The fix is always the same:
+    restore the named file from git history (every shard is committed
+    hourly), then re-run."""
+
+
+def _atomic_dump(obj, path):
+    """Write JSON via tmp-file-in-same-dir + os.replace (state.py's pattern):
+    a kill mid-write leaves the previous complete file, never a truncation."""
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w") as fh:
+            json.dump(obj, fh)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def slim(i):
     """Keep only the fields consumed downstream, preserving the raw
     Blockscout nesting so consuming code is unchanged."""
@@ -29,7 +55,13 @@ def load(dir_path, ts_key="timestamp"):
     rows = []
     for fn in sorted(os.listdir(dir_path)):
         if re.fullmatch(r"\d{4}-\d{2}\.json", fn):
-            rows += json.load(open(os.path.join(dir_path, fn)))
+            p = os.path.join(dir_path, fn)
+            try:
+                rows += json.load(open(p))
+            except json.JSONDecodeError as e:
+                raise ShardCorrupt(
+                    f"corrupt shard {p}: {e} — restore it from git history "
+                    f"(shards are committed hourly), then re-run") from e
     rows.sort(key=lambda r: r[ts_key], reverse=True)
     return rows
 
@@ -43,7 +75,7 @@ def save(dir_path, rows, months=None, ts_key="timestamp"):
         by_m.setdefault(month_of(r, ts_key), []).append(r)
     for m, rs in by_m.items():
         if months is None or m in months:
-            json.dump(rs, open(os.path.join(dir_path, f"{m}.json"), "w"))
+            _atomic_dump(rs, os.path.join(dir_path, f"{m}.json"))
 
 def migrate_legacy(dir_path, ts_key="timestamp", do_slim=True):
     """One-time: convert <dir>.json into monthly shards, then delete it."""

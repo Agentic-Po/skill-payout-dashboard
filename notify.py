@@ -193,6 +193,16 @@ if mode in ("daily", "weekly"):
     health.append(f"<b>Pattern monitor:</b> {G['flagged_n']} of {G['monitored_n']} flagged · <b>at risk:</b> ${G['at_risk_usd']:,.2f} of ${G['ce_total_usd']:,.2f} <i>(heuristic, unconfirmed)</i>")
     if G.get("runway7") is not None:
         health.append(f"<b>Payout float:</b> ~{G['runway7']} days (7d-avg burn) · {G.get('runway24') or '?'}d at 24h pace — top-up cadence, not solvency")
+    # Alert-delivery liveness (Cycle-3 Loop 2, item 4): counts come from
+    # alert_state.json's send_health (Actions cache) — digest-only, never a
+    # public artifact. A stretch of failures also turns refresh.yml red via
+    # alive_check.py; this line keeps the trend visible even below threshold.
+    import state as _st_health
+    _sh = _st_health.load().get("send_health") or {}
+    _cut24 = (now - timedelta(hours=24)).isoformat(timespec="minutes")
+    _n_sent = sum(1 for c in _sh.values() for t in c.get("sent", []) if t > _cut24)
+    _n_fail = sum(1 for c in _sh.values() for t in c.get("failed", []) if t > _cut24)
+    health.append(f"<b>alerts:</b> {_n_sent} sent / {_n_fail} failed (24h)")
 if mode == "weekly":
     health.append("")
     _ss = _D.get("stripe_snap") or {}
@@ -259,8 +269,17 @@ body = urllib.parse.urlencode({
 req = urllib.request.Request(
     f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage",
     data=body)
-with urllib.request.urlopen(req, timeout=30) as r:
-    print("telegram:", r.status)
+# Liveness bookkeeping (item 4): record the ATTEMPT's outcome either way.
+# On failure record-then-reraise — the workflow step is continue-on-error,
+# so the raise can't kill the refresh, but alive_check.py turns 3 consecutive
+# failures into a red run.
+try:
+    with urllib.request.urlopen(req, timeout=30) as r:
+        print("telegram:", r.status)
+except Exception:
+    _state.record_send("digest", False, now)
+    raise
+_state.record_send("digest", True, now)
 # stamp AFTER the successful send — stamping first would let one failed send
 # silence the digest for 50 min (same class as the alerts.py QA finding)
 if mode == "hourly":
