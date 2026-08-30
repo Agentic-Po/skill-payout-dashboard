@@ -32,8 +32,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 
+# exec_summary added 2026-08-30 (Cycle-3 Loop 3, item 1) — ADDITIVE, no
+# schema_version bump; documented in CONSUMERS.md §5.
 TOP_KEYS = {"schema_version", "scope", "facts", "infer", "server", "stripe_snap",
-            "insights", "open_items", "gaps", "registry", "sink"}
+            "insights", "open_items", "gaps", "registry", "sink", "exec_summary"}
 
 WINDOW_KEYS = {"label", "out_usd", "in_usd", "economy_out_usd", "ops_out_usd",
                "in_recycled_usd", "in_external_usd", "net_usd", "out_tx", "in_tx",

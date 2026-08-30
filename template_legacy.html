@@ -62,6 +62,10 @@ td a{color:var(--acc);text-decoration:none}
     <div class="sub mono"><a href="https://basescan.org/address/0xBD956171F5B50936f0Ad1C4db80c022bd2442519" target="_blank">0xBD95…2519</a> on Base · updated <span id="gen"></span> UTC · MOCA rate used $0.008912</div>
   </header>
 
+  <!-- Executive summary — server-computed in refresh.py (same text as the
+       main page); injected below, never recomputed here. -->
+  <div class="card" id="execSummary" style="display:none;border-left:6px solid var(--acc);font-size:15px"></div>
+
   <div id="runwayBanner" style="display:none;border:1px solid var(--c-equip);background:color-mix(in srgb,var(--c-equip) 8%,var(--surface));border-radius:8px;padding:10px 16px;font-size:13.5px"></div>
 
   <div class="milestone">🏁 <strong>First invoke payout ($0.10):</strong> <span class="mono">2026-07-11 17:17:59 UTC</span> · first MOCA transfer ever from this wallet (a ~$0.06 test-size amount) at <span class="mono">2026-07-11 15:41 UTC</span>. Everything below covers the full MOCA-payout era.</div>
@@ -123,6 +127,12 @@ const CN={invoke:"Invoke ($0.10)",equip:"Equip ($1)",growth:"User growth (credit
 const CC={invoke:"var(--c-invoke)",equip:"var(--c-equip)",growth:"var(--c-growth)",micro:"var(--c-micro)"};
 const fmt=n=>n.toLocaleString("en-US",{maximumFractionDigits:1});
 document.getElementById("gen").textContent=S.generated;
+// executive summary — server-computed (refresh.py); text-injected only.
+if(DATA.exec_summary&&DATA.exec_summary.text){
+ const ex=document.getElementById("execSummary");
+ ex.textContent=DATA.exec_summary.text;
+ ex.style.display="";
+}
 const ceMoca=S.tot.invoke.moca+S.tot.equip.moca;
 const tiles=[
  ["Invokes — all time", S.tot.invoke.n, fmt(S.tot.invoke.moca)+" MOCA ≈ $"+(S.tot.invoke.moca*S.rate).toFixed(2)],

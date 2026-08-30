@@ -66,6 +66,68 @@ def _sums(rows, cut):
             "usd_micro": sum(r["usd"] for r in rs if r["cat"] == "micro")}
 
 
+def _exec_sentence_checks(D):
+    """Executive-summary parity (Cycle-3 Loop 3, item 1): the plain-English
+    sentences embedded in the BUILT index.html must quote facts_window /
+    balance values to the cent. The text is extracted from index.html itself
+    (the page is the artifact execs read), cross-checked against data.json's
+    copy, then each $ figure is parsed back out and compared."""
+    html = open(os.path.join(ROOT, "index.html"), errors="replace").read()
+    m = re.search(r'"exec_summary":\s*\{[^{}]*?"text":\s*"((?:[^"\\]|\\.)*)"', html)
+    assert m, "index.html embeds no exec_summary text — rebuild the page"
+    text = json.loads('"' + m.group(1) + '"')
+    ex = D.get("exec_summary") or {}
+    assert ex.get("text") == text, \
+        f"exec text drifted between index.html and data.json:\n  page {text!r}\n  data {ex.get('text')!r}"
+
+    def num(pat):
+        mm = re.search(pat, text)
+        assert mm, f"exec sentence pattern {pat!r} missing from: {text!r}"
+        return float(mm.group(1).replace(",", ""))
+
+    w7 = {w["label"]: w for w in D["facts"]["windows"]}["7d"]
+    checked = 0
+    paid = num(r"treasury paid \$([\d,]+\.\d{2}) to creators and users")
+    assert abs(paid - w7["economy_out_usd"]) <= TOL, \
+        f"exec 'paid' ${paid:,.2f} != 7d economy_out_usd ${w7['economy_out_usd']:,.2f}"
+    print(f"ok exec sentence: paid ${paid:,.2f} == 7d economy_out_usd")
+    checked += 1
+    ntx = int(num(r"across ([\d,]+) transfers"))
+    assert ntx == w7["out_tx"], f"exec transfer count {ntx} != 7d out_tx {w7['out_tx']}"
+    print(f"ok exec sentence: {ntx:,} transfers == 7d out_tx")
+    checked += 1
+    if w7["ops_out_usd"]:
+        ops = num(r"\$([\d,]+\.\d{2}) more went to treasury operations")
+        assert abs(ops - w7["ops_out_usd"]) <= TOL, \
+            f"exec 'ops' ${ops:,.2f} != 7d ops_out_usd ${w7['ops_out_usd']:,.2f}"
+        print(f"ok exec sentence: ops ${ops:,.2f} == 7d ops_out_usd")
+        checked += 1
+    bal = num(r"wallet holds \$([\d,]+\.\d{2})")
+    want = sum(v for v in D["facts"]["balance_usd"].values() if v)
+    assert abs(bal - want) <= TOL, \
+        f"exec 'holds' ${bal:,.2f} != published balance_usd sum ${want:,.2f}"
+    print(f"ok exec sentence: holds ${bal:,.2f} == balance_usd sum")
+    checked += 1
+    # "about W weeks of payouts" must be denominated by PAYOUT pace
+    # (economy_out_usd), never total outflow — a swap-heavy week must not
+    # read as a near-empty wallet (Cycle-3 Loop-3 QA defect D1/D2)
+    m = re.search(r"about ([\d,.]+) weeks? of payouts", text)
+    econ7 = D["facts"]["windows"][1]["economy_out_usd"]
+    if m and econ7 > 0:
+        got = float(m.group(1).replace(",", ""))
+        assert abs(got - want / econ7) < 0.05 + 1e-9, \
+            f"exec weeks {got} != balance/economy pace {want / econ7:.2f}"
+        print(f"ok exec sentence: {got} weeks == balance / 7d economy pace")
+        checked += 1
+    # degraded prefix must agree with the flag the pipeline recorded
+    has_prefix = bool(re.search(r"^Data is \d+ hours old — figures may lag\.", text))
+    assert has_prefix == bool(ex.get("degraded")), \
+        f"degraded prefix present={has_prefix} but exec_summary.degraded={ex.get('degraded')}"
+    print(f"ok exec degraded prefix consistent (degraded={bool(ex.get('degraded'))})")
+    checked += 1
+    return checked
+
+
 def main():
     D, rows = _load()
     # schema v2 = the identity-redacted contract. Every figure check below is
@@ -106,6 +168,8 @@ def main():
     missing = [k for k in GLOSSARY_KEYS if k not in section]
     assert not missing, f"glossary is missing: {missing}"
     print(f"ok glossary documents all {len(GLOSSARY_KEYS)} declared figures")
+
+    checked += _exec_sentence_checks(D)
 
     print(f"test_parity: PASS ({checked} figure checks)")
     return 0

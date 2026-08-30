@@ -14,7 +14,7 @@
    "from": "2026-04-24T22:13:15",
    "to": "2026-08-30T12:39:31"
   },
-  "generated_iso": "2026-08-30T14:47:54Z",
+  "generated_iso": "2026-08-30T16:03:21Z",
   "max_row_ts": "2026-08-30T12:39:31",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
@@ -37,7 +37,7 @@
    "from": "2026-04-24T20:07:19",
    "to": "2026-08-29T18:02:21"
   },
-  "generated_iso": "2026-08-30T14:47:54Z",
+  "generated_iso": "2026-08-30T16:03:21Z",
   "max_row_ts": "2026-08-29T18:02:21",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
@@ -60,7 +60,7 @@
    "from": "2026-04-12T19:58:25",
    "to": "2026-08-30T14:24:55"
   },
-  "generated_iso": "2026-08-30T14:47:54Z",
+  "generated_iso": "2026-08-30T16:03:21Z",
   "max_row_ts": "2026-08-30T14:24:55",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
@@ -83,7 +83,7 @@
    "from": "2026-04-24T20:07:19",
    "to": "2026-08-30T12:39:31"
   },
-  "generated_iso": "2026-08-30T14:47:54Z",
+  "generated_iso": "2026-08-30T16:03:21Z",
   "max_row_ts": "2026-08-30T12:39:31",
   "expected_cadence_minutes": 15,
   "update_cadence": "rewritten in full every refresh",
@@ -106,7 +106,7 @@
    "from": "2026-04-24",
    "to": "2026-08-29"
   },
-  "generated_iso": "2026-08-30T14:47:54Z",
+  "generated_iso": "2026-08-30T16:03:21Z",
   "max_row_ts": "2026-08-29",
   "expected_cadence_minutes": 1440,
   "update_cadence": "one immutable entry per token per day",
@@ -130,7 +130,7 @@
    "from": "2026-01-30T12:44:05",
    "to": "2026-07-17T16:30:57"
   },
-  "generated_iso": "2026-08-30T14:47:54Z",
+  "generated_iso": "2026-08-30T16:03:21Z",
   "max_row_ts": "2026-07-17T16:30:57",
   "expected_cadence_minutes": null,
   "update_cadence": "static archive \u2014 frozen",
@@ -148,12 +148,12 @@
   "row_schema": "schema_version, scope, facts, infer, server, stripe_snap, insights, open_items, gaps, registry, sink",
   "rows": 1,
   "rows_closed": 1,
-  "bytes": 146528,
+  "bytes": 146901,
   "coverage": {
    "from": "2026-04-24",
    "to": "2026-08-30T12:39:31"
   },
-  "generated_iso": "2026-08-30T14:47:54Z",
+  "generated_iso": "2026-08-30T16:03:21Z",
   "max_row_ts": "2026-08-30T12:39:31",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
@@ -177,7 +177,7 @@
    "from": "2026-07-13T00:00",
    "to": "2026-08-30T14:32"
   },
-  "generated_iso": "2026-08-30T14:47:54Z",
+  "generated_iso": "2026-08-30T16:03:21Z",
   "max_row_ts": "2026-08-30T14:32",
   "expected_cadence_minutes": 15,
   "update_cadence": "one append per refresh (~4x/hour)",

@@ -12,7 +12,7 @@ Historical day rates are persisted in day_rates.json and never recomputed, so
 closed days cannot reprice on later runs. Git history of the hourly commits is
 the append-only audit trail of every published figure.
 """
-import csv, json, math, os, statistics, time, urllib.request
+import csv, json, math, os, statistics, sys, time, urllib.request
 import posthog_source
 import shards
 # taxonomy lives in classify.py — the ONE classifier shared with notify/alerts
@@ -20,7 +20,34 @@ from classify import band, classify_usd, BAND_LABEL, BAND_KEYS, STRIPE_FINE
 from datetime import datetime, timezone, timedelta
 from collections import Counter, defaultdict
 
+_T0 = time.time()   # run-duration telemetry (digest-only; see end of file)
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+# ---- --offline: rebuild pages + derived artifacts from on-disk state ----
+# (Cycle-3 Loop 3.) No crawling, no RPC, no rate/balance/PostHog fetches:
+# rows come from the committed shards, rates/balances/sink/server are reused
+# from the previous run's data.json, and THE CLOCK IS PINNED to that run's
+# generated_iso so every window/digest computation reproduces the published
+# state instead of shifting window boundaries under stale data (a real
+# wall-clock "today" over an old cache would try to seal incomplete days
+# into the closed-day digest ledger). The one thing measured against the
+# REAL clock is data age, which drives the executive summary's degraded
+# prefix — the server-side twin of the page's staleness banner.
+OFFLINE = "--offline" in sys.argv[1:]
+PREV = None
+if OFFLINE:
+    _prev_path = os.path.join(HERE, "data.json")
+    if not os.path.exists(_prev_path):
+        raise SystemExit("FATAL: --offline needs an on-disk data.json from a previous run")
+    PREV = json.load(open(_prev_path))
+    _PINNED_NOW = datetime.strptime(
+        PREV["scope"]["generated_iso"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    print(f"OFFLINE rebuild: network disabled; clock pinned to {PREV['scope']['generated_iso']}")
+
+def utcnow():
+    """Pipeline clock: pinned to the previous run's generated_iso when
+    --offline (see above), wall clock otherwise."""
+    return _PINNED_NOW if OFFLINE else datetime.now(timezone.utc)
 WALLET = "0xBD956171F5B50936f0Ad1C4db80c022bd2442519"
 BASE = f"https://base.blockscout.com/api/v2/addresses/{WALLET}/token-transfers?filter=from"
 TOKENS = {
@@ -125,6 +152,15 @@ def rpc(method, params, tries=3):
                 last_err = e
                 time.sleep(1)
     raise last_err
+
+# --offline hard kill-switch: every HTTP/RPC path in this file funnels
+# through get()/rpc(), so rebinding them guarantees no code path (including
+# a future one) can crawl during an offline rebuild — sections that would
+# have fetched are also explicitly gated below to reuse prior state instead.
+if OFFLINE:
+    def _no_net(*a, **k):
+        raise RuntimeError("--offline: network access is disabled")
+    get = rpc = _no_net
 
 _block_ts_cache = {}
 def block_ts(bn):
@@ -243,14 +279,30 @@ def refresh_cache(base_url, dir_path, pages=100):
         shards.save(dir_path, full, months={shards.month_of(r) for r in add})
     return full, len(add), True
 
-full, n_new, ok_out = refresh_cache(BASE, os.path.join(HERE, "transfers"))
-full_in, n_new_in, ok_in = refresh_cache(BASE.replace("filter=from", "filter=to"), os.path.join(HERE, "transfers_in"), pages=60)
-data_complete = ok_out and ok_in
-print(f"fetched {n_new} new OUT / {n_new_in} new IN, cache {len(full)} out / {len(full_in)} in, complete={data_complete}")
+if OFFLINE:
+    # rebuild from the committed shard caches exactly as banked; completeness
+    # is whatever the run that banked them reported (a stale-cache rebuild
+    # must not fake a clean fetch).
+    full = shards.load(os.path.join(HERE, "transfers"))
+    full_in = shards.load(os.path.join(HERE, "transfers_in"))
+    n_new = n_new_in = 0
+    data_complete = bool(PREV["scope"].get("complete", True))
+    print(f"OFFLINE: cache {len(full)} out / {len(full_in)} in, complete={data_complete} (carried from prior run)")
+else:
+    full, n_new, ok_out = refresh_cache(BASE, os.path.join(HERE, "transfers"))
+    full_in, n_new_in, ok_in = refresh_cache(BASE.replace("filter=from", "filter=to"), os.path.join(HERE, "transfers_in"), pages=60)
+    data_complete = ok_out and ok_in
+    print(f"fetched {n_new} new OUT / {n_new_in} new IN, cache {len(full)} out / {len(full_in)} in, complete={data_complete}")
 
 # --- live rates, decimals + balances per token (validated) ---
 RATE, RATE_SRC, BALANCE, DECIMALS = {}, {}, {}, {}
-for sym, t in TOKENS.items():
+if OFFLINE:
+    # the run that published data.json already validated these — reuse them
+    for sym in TOKENS:
+        RATE[sym] = PREV["facts"]["rate"][sym]
+        RATE_SRC[sym] = PREV["facts"]["rate_src"][sym]
+        DECIMALS[sym] = 18          # both tracked tokens are 18-decimals
+for sym, t in ([] if OFFLINE else list(TOKENS.items())):
     # band against the last accepted live rate (persisted) so a genuine large
     # price move doesn't permanently pin us to a stale source-code constant.
     anchor = STATE["last_accepted_rate"].get(sym) or t["fallback_rate"]
@@ -317,7 +369,18 @@ _newest_in = max([i.get("block_number", 0) for i in full_in] + [0])
 RECON_BLOCK = min([b for b in (_newest_out, _newest_in) if b] or [0])
 RECON_DEGRADED = set()
 BALANCE_RECON = {}
-for sym, t in TOKENS.items():
+if OFFLINE:
+    # balances cannot be re-fetched offline: reuse the previous run's live
+    # balance (facts.balance) and its block-pinned reconciliation balance
+    # (facts.recon[sym].balance). Both were published, so nothing new enters.
+    _prev_recon = PREV["facts"].get("recon") or {}
+    for sym in TOKENS:
+        BALANCE[sym] = PREV["facts"]["balance"].get(sym)
+        _pr = _prev_recon.get(sym)
+        BALANCE_RECON[sym] = _pr.get("balance") if _pr else BALANCE[sym]
+        if _pr and _pr.get("degraded"):
+            RECON_DEGRADED.add(sym)
+for sym, t in ([] if OFFLINE else list(TOKENS.items())):
     try:
         BALANCE[sym] = balance_at(t["addr"], sym)
     except Exception as e:
@@ -371,7 +434,9 @@ MARKET_POOLS = {
 STATE.setdefault("market_rates", {})
 try:
     from datetime import datetime as _dt
-    for sym, pools in MARKET_POOLS.items():
+    # offline: no OHLCV refetch — the oracle's market leg runs on the closes
+    # already banked in day_rates.json's market_rates.
+    for sym, pools in ([] if OFFLINE else list(MARKET_POOLS.items())):
         mr = STATE["market_rates"].setdefault(sym, {})
         # 1 day, not 3: the oracle's market leg can only fill YESTERDAY if
         # yesterday's close is already banked, so the refetch trigger has to be
@@ -452,7 +517,7 @@ for sym in TOKENS:
         if r["tok"] == sym:
             by_day[r["ts"][:10]].append(r["val"])
     ref = RATE[sym]
-    today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today_utc = utcnow().strftime("%Y-%m-%d")
     for d in sorted(by_day, reverse=True):
         if d in persisted:
             ref = persisted[d]
@@ -660,7 +725,7 @@ if os.path.isdir(COG_DIR):
     treasury_l = WALLET.lower()
     _payout_recips = {r["to"].lower() for r in rows}
     spends = [c for c in cog if c["from"].lower() != treasury_l and c["from"].lower() in _payout_recips]
-    _now = datetime.now(timezone.utc)
+    _now = utcnow()
     _c7 = (_now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
     _c24 = (_now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S")
     def _cog_usd(rows_):
@@ -754,7 +819,7 @@ if os.path.exists(_se_path) and os.path.exists(_sp_path):
                              for m, v in sorted(_md.items())]}
 
 # ============================ LAYER 1 — FACTS ============================
-now = datetime.now(timezone.utc)
+now = utcnow()
 today = now.strftime("%Y-%m-%d")
 cut24 = (now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S")
 cut48 = (now - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M:%S")
@@ -1224,11 +1289,17 @@ infer = {"S": S, "creators": creators[:25], "ce_total": ce_total, "fine_table": 
 # Middle trust tier: platform-recorded events (client-confirmed top-ups, mind
 # awakenings, WAU/MAU). Not on-chain truth, but independent of size-inference.
 server = None
-try:
-    _ph = posthog_source.fetch()
-except Exception as _e:
-    print("posthog tier unavailable:", _e)
+if OFFLINE:
+    # no PostHog query offline — the previous run's published server tier is
+    # reused verbatim (it was computed at the same pinned instant).
     _ph = None
+    server = PREV.get("server")
+else:
+    try:
+        _ph = posthog_source.fetch()
+    except Exception as _e:
+        print("posthog tier unavailable:", _e)
+        _ph = None
 if _ph and _ph.get("daily"):
     _closed = sorted(d for d in _ph["daily"] if _ph["daily"][d].get("settled"))[-7:]
     _pd = [_ph["daily"][d] for d in _closed]
@@ -1324,6 +1395,8 @@ guard["dist_pace"] = dist_pace
 SINK = "0xf0961686bC71B8A1f42E7888bD8160e9B6240f40"
 sink = None
 try:
+    if OFFLINE:
+        raise RuntimeError("offline — sink/rebate reused from prior data.json below")
     SINK_GENESIS_BLOCK = 47_400_000  # 2026-06-16, safely before the sink's first sweep (Jun 19)
     def _sweep(direction):
         acc, params = [], ""
@@ -1474,6 +1547,10 @@ try:
         }
 except Exception as e:
     print("sink fetch failed:", e)
+if OFFLINE:
+    # the sink has no local cache (small, ~1 tx/day) — reuse the previous
+    # run's published block wholesale, rebate monitor included.
+    sink = PREV.get("sink")
 
 # ================= ADDRESS REGISTRY =================
 # Every material participant in the loop, with the FULL address. The rest of the
@@ -1540,11 +1617,46 @@ for _r in registry:
     elif len(_short[_a[:6].lower() + _a[-4:].lower()]) > 1:
         _r["collision"] = "short"      # ambiguous in the 0xXXXX…XXXX diagram/prose form
 
+# ---- executive summary (Cycle-3 Loop 3, item 1) ----
+# Plain-English block above the hero strip, computed HERE from the SAME
+# facts_window values the page renders — the page only injects the text,
+# never recomputes it (tests/test_parity.py holds the sentences' $ figures
+# to facts_window values to the cent). Degraded-aware: if the page's
+# staleness banner would show (data age > 2.5h — only possible on an
+# --offline rebuild of old state, since a live run stamps generated=now),
+# the block leads with a "Data is N hours old" sentence. Deliberately NO
+# anomaly/detector content beyond what the pattern panel already publishes
+# (verdict 12a) — and none is included at all.
+_w7 = facts["windows"][1]
+assert _w7["label"] == "7d", "facts.windows[1] is no longer the 7d window"
+_bal_pub = sum(v for v in facts["balance_usd"].values() if v)
+_exec_sent = [f"In the last 7 days the treasury paid ${_w7['economy_out_usd']:,.2f} "
+              f"to creators and users across {_w7['out_tx']:,} transfers."]
+if _w7["ops_out_usd"]:
+    _exec_sent.append(f"${_w7['ops_out_usd']:,.2f} more went to treasury operations (swaps, rebates).")
+if _w7["economy_out_usd"] > 0 and _bal_pub > 0:
+    # denominator is PAYOUT pace, matching the sentence's own vocabulary —
+    # dividing by total outflow made a one-off swap week read as near-empty
+    _exec_wk = _bal_pub / _w7["economy_out_usd"]
+    _exec_sent.append(f"The wallet holds ${_bal_pub:,.2f} — about {_exec_wk:,.1f} "
+                      f"week{'' if round(_exec_wk, 1) == 1 else 's'} of payouts at the current pace.")
+else:
+    _exec_sent.append(f"The wallet holds ${_bal_pub:,.2f}.")
+_exec_sent.append("All figures are on-chain; sized labels are inferred (±8%).")
+_exec_age_h = (datetime.now(timezone.utc) - now).total_seconds() / 3600
+_exec_degraded = _exec_age_h > 2.5            # same threshold as the page banner
+if _exec_degraded:
+    _exec_sent.insert(0, f"Data is {round(_exec_age_h)} hours old — figures may lag.")
+exec_summary = {"text": " ".join(_exec_sent), "degraded": _exec_degraded,
+                "data_age_hours": round(_exec_age_h, 1)}
+
 # schema_version 2 (2026-08-30): identity labels redacted from all public
 # fields; transfers_export.csv dropped counterparty_label. See CONSUMERS.md.
+# exec_summary added 2026-08-30 (additive, no version bump) — CONSUMERS.md §5.
 data = {"schema_version": 2,
         "scope": scope, "facts": facts, "infer": infer, "server": server, "stripe_snap": stripe_snap,
-        "insights": insights, "open_items": open_items, "gaps": gaps, "registry": registry, "sink": sink}
+        "insights": insights, "open_items": open_items, "gaps": gaps, "registry": registry, "sink": sink,
+        "exec_summary": exec_summary}
 
 # machine-readable copy of exactly what the page embeds — alerts.py/notify.py
 # read this instead of regex-scraping index.html (council item 3, 2026-08-28).
@@ -1571,19 +1683,24 @@ with open(os.path.join(HERE, "transfers_export.csv"), "w", newline="") as fh:
                     "", f["from"], f["tx"], f.get("li", ""), "", ""])
 
 # --- snapshot history (append-only; git history is the immutable trail) ---
+# NOT appended on --offline rebuilds: stats_history's timestamp cadence is
+# the weekly digest's refresh-uptime measurement (Cycle-3 Loop 3, item 3),
+# and an offline rebuild is not a scheduled refresh — appending would fake
+# uptime (and duplicate the pinned timestamp).
 hist_path = os.path.join(HERE, "stats_history.json")
 hist = json.load(open(hist_path)) if os.path.exists(hist_path) else []
-hist.append({"ts": now.strftime("%Y-%m-%dT%H:%M"),
-             "recon": {s: {"delta": recon[s]["delta"], "drift": recon[s]["drift"]}
-                       for s in TOKENS if recon.get(s)},
-             "invoke": S["tot"]["invoke"]["n"], "equip": S["tot"]["equip"]["n"],
-             "growth": S["tot"]["growth"]["n"],
-             "moca": round(sum(r["val"] for r in rows if r["tok"] == "MOCA"), 1),
-             "creators": S["creators_n"], "rate": RATE["MOCA"],
-             "balance": round(BALANCE["MOCA"], 1) if BALANCE["MOCA"] is not None else None,
-             "mente_balance": round(BALANCE["MENTE"], 1) if BALANCE.get("MENTE") is not None else None,
-             "runway7": runway7, "runway_adj": runway7})
-json.dump(hist, open(hist_path, "w"))
+if not OFFLINE:
+    hist.append({"ts": now.strftime("%Y-%m-%dT%H:%M"),
+                 "recon": {s: {"delta": recon[s]["delta"], "drift": recon[s]["drift"]}
+                           for s in TOKENS if recon.get(s)},
+                 "invoke": S["tot"]["invoke"]["n"], "equip": S["tot"]["equip"]["n"],
+                 "growth": S["tot"]["growth"]["n"],
+                 "moca": round(sum(r["val"] for r in rows if r["tok"] == "MOCA"), 1),
+                 "creators": S["creators_n"], "rate": RATE["MOCA"],
+                 "balance": round(BALANCE["MOCA"], 1) if BALANCE["MOCA"] is not None else None,
+                 "mente_balance": round(BALANCE["MENTE"], 1) if BALANCE.get("MENTE") is not None else None,
+                 "runway7": runway7, "runway_adj": runway7})
+    json.dump(hist, open(hist_path, "w"))
 
 
 # ==================== LEGACY VIEW (continuity for execs) ====================
@@ -1696,7 +1813,9 @@ if mrows:
               "burn7_usd": round(sum(lu_d[d] for d in lfull[-7:]) / max(len(lfull[-7:]), 1), 2),
               "daily": lt_daily}
     ldata = {"S": LS, "hourly": lhourly, "daily": ldaily, "creators": lcreators,
-             "other": lother, "guard": lguard, "treasury": ltreas}
+             "other": lother, "guard": lguard, "treasury": ltreas,
+             # same server-computed executive summary as the main page (item 1)
+             "exec_summary": data["exec_summary"]}
     ltpl = open(os.path.join(HERE, "template_legacy.html")).read()
     ltpl = ltpl.replace("MOCA rate used $0.008912", f"MOCA rate used ${LRATE:.6f}")
     open(os.path.join(HERE, "legacy.html"), "w").write(
@@ -1714,4 +1833,24 @@ print("wrote", out, "| rows:", len(rows), "| range:", facts["range"], "| recon:"
 # point and `catalog.py --check` immediately after a refresh would otherwise
 # see one more row than the catalog recorded. Imported, not shelled out.
 import catalog
-catalog.build()
+# --offline: the peer-catalog fetch in catalog.build() is the one remaining
+# HTTP call outside get()/rpc() — skip it too (DATASETS.md's peer section
+# degrades to its explicit "not fetched" note; catalog.json is purely local
+# either way, so --check stays deterministic).
+catalog.build(fetch_peer=not OFFLINE)
+
+# --- refresh-run duration (Cycle-3 Loop 3, item 3) ---
+# Digest-only ops telemetry: banked in alert_state.json (Actions cache,
+# gitignored, PRIVATE — never a field in any public artifact; the weekly
+# digest reads it). Offline rebuilds are not scheduled refreshes and are
+# not recorded — they would fake the cadence/duration series.
+if not OFFLINE:
+    import state as _state
+    _rr_now = datetime.now(timezone.utc).replace(tzinfo=None)
+    _rr_cut = (_rr_now - timedelta(days=7)).isoformat(timespec="minutes")
+    _rr = [r for r in (_state.load().get("refresh_runs") or [])
+           if isinstance(r, dict) and r.get("ts", "") > _rr_cut]
+    _rr.append({"ts": _rr_now.isoformat(timespec="minutes"),
+                "dur_s": round(time.time() - _T0, 1)})
+    _state.update({"refresh_runs": _rr[-800:]})   # 4/h * 24 * 7 = 672 max + slack
+    print(f"refresh run duration: {_rr[-1]['dur_s']}s ({len(_rr)} run(s) banked, private)")

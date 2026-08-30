@@ -28,6 +28,11 @@ last count — the LIVE numbers are always each repo's machine-generated
    wallet A", "creator wallet"). Consumers that joined on
    `counterparty_label` must key on the `counterparty` address instead and,
    with repo access, join identities from `moca-ledger-private:labels/`.
+   **Additive (2026-08-30, still schema_version 2)**: `data.json` gained a
+   top-level `exec_summary` object (`{text, degraded, data_age_hours}`) —
+   the plain-English executive block the page shows above the hero strip,
+   computed server-side from the same `facts` values. Consumers that
+   asserted an exact top-level key set must add it; nothing else changed.
 6. **PostHog warehouse path** (documented, run locally — credentials never in
    CI): export canonical rows to Parquet → R2 bucket `po-import-bucket`
    (`<dataset>/snapshot_<YYYYMMDD>.parquet`) → register via

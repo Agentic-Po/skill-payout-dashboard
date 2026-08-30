@@ -103,6 +103,11 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <div class="sub mono"><a href="https://basescan.org/address/0xBD956171F5B50936f0Ad1C4db80c022bd2442519" target="_blank">0xBD95…2519</a> on Base · updated <span id="gen"></span> UTC · <a href="transfers_export.csv">per-transaction CSV export</a> · <a href="legacy.html" title="Original MOCA-only layout, old method — kept for continuity, sunsets after adoption">legacy view (MOCA-only, old method)</a> · <a href="https://github.com/Agentic-Po/skill-payout-dashboard/blob/main/DATASETS.md" target="_blank" title="Machine-computed data catalog — rows, sizes, coverage, provenance">data catalog</a> · <a href="https://docs.google.com/document/d/1fsbN5IG4YoZ6R23KKpe0LPjC3O2lfA1se7gpW8SuZaE/edit" target="_blank" title="Team-internal reading guide — access-controlled">team guide 🔒</a></div>
   </header>
 
+  <!-- Executive summary (Cycle-3 Loop 3, item 1): text computed SERVER-SIDE
+       in refresh.py from the same facts_window values the page renders —
+       the script below only injects it, never recomputes. -->
+  <div class="card" id="execSummary" style="display:none;border-left:6px solid var(--acc);font-size:15px"></div>
+
   <div class="card" id="plainStrip" style="border-left:6px solid var(--c-moca);font-size:15px"></div>
 
   <details class="card" id="flowCard" open>
@@ -369,6 +374,16 @@ function bindTips(root){root.querySelectorAll("[data-tip],[data-tiphtml]").forEa
 });}
 document.addEventListener("click",e=>{if(pinned&&!pinned.contains(e.target)){pinned=null;tip.style.opacity=0;}},true);
 document.getElementById("gen").textContent=SC.generated;
+// executive summary — server-computed in refresh.py from the SAME facts the
+// page renders (parity held to the cent by tests/test_parity.py); the
+// degraded "Data is N hours old" prefix is decided upstream too. Injected as
+// text only — this script must never recompute the figures. Absent in an
+// older data.json => the card simply stays hidden (render-gate lesson).
+if(DATA.exec_summary&&DATA.exec_summary.text){
+ const ex=document.getElementById("execSummary");
+ ex.textContent=DATA.exec_summary.text;
+ ex.style.display="";
+}
 // plain-English summary strip — outflow-first (the outflow IS the ecosystem's activity)
 {const wA=F.windows[3];
  const openN=(DATA.open_items||[]).length;

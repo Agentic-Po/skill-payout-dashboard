@@ -209,6 +209,30 @@ if mode == "weekly":
     _ver = (f" Verified Stripe net: ${_ss.get('net_usd', 0):,.0f} ({_ss['period'][0]}→{_ss['period'][1]}, one-time snapshot)."
             if _ss.get("net_usd") and _ss.get("period") else "")
     health.append(f"<i>Paste-ready:</i> This week: {w7d['invoke']:,} invokes across {w7d['creators']:,} creator wallets, ${w7d['usd_ce']:,.2f} paid to creators — {G['flagged_n']} account(s) flagged for review. ${w7d['usd_topup']:,.2f} of flows were Stripe-pack-sized deliveries (size-inferred; may include coupon-delivered credits — not verified revenue).{_ver}")
+    # --- ops footer (Cycle-3 Loop 3, item 3) ---
+    # DIGEST-ONLY, no new public fields. Cadence comes from data already
+    # public (stats_history.json timestamps — one snapshot per successful
+    # refresh, expected 4/hour); run duration comes from alert_state.json's
+    # refresh_runs (Actions cache, PRIVATE — recorded by refresh.py since
+    # this loop; "(collecting)" until it has data / a full 7 days).
+    # refresh.yml's GITHUB_TOKEN lacks actions:read by design (amended
+    # verdict 14) — no gh API call is made here.
+    _c7d_iso = (now - timedelta(days=7)).isoformat(timespec="minutes")
+    _n_runs = sum(1 for _h in hist if _h.get("ts", "") > _c7d_iso)
+    _exp_runs = 4 * 24 * 7                      # refresh.yml fires 4x/hour
+    _uptime = min(100.0, _n_runs / _exp_runs * 100)
+    _rr = [r for r in (_st_health.load().get("refresh_runs") or [])
+           if isinstance(r, dict) and r.get("ts", "") > _c7d_iso and r.get("dur_s") is not None]
+    if _rr:
+        _durs = sorted(r["dur_s"] for r in _rr)
+        _span_d = (now - datetime.fromisoformat(_rr[0]["ts"])).total_seconds() / 86400
+        _dur_s = f"last {_rr[-1]['dur_s']:.0f}s · median {_durs[len(_durs) // 2]:.0f}s over {len(_rr)} run(s)"
+        if _span_d < 6.5:
+            _dur_s += f" <i>(collecting — {_span_d:.1f}d of 7d banked)</i>"
+    else:
+        _dur_s = "<i>(collecting)</i>"
+    health.append(f"🛠 <b>Refresh ops (7d):</b> {_n_runs}/{_exp_runs} scheduled runs published → "
+                  f"uptime {_uptime:.1f}% · <b>run duration:</b> {_dur_s}")
 for sym, r in (F.get("recon") or {}).items():
     if r and r.get("warn"):
         health.append(f"⚠️ <b>Reconciliation drift ({sym}):</b> Δ moved {r['drift']:+,.1f} since last run — possible missed transfers")

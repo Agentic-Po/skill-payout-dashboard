@@ -44,7 +44,7 @@ Rows, bytes and coverage are measured off the files, never asserted.
 | Dataset | Path | Rows | Size | Coverage | Cadence |
 |---|---|---:|---:|---|---|
 | `transfers_export` | `transfers_export.csv` | 106,860 | 22.2 MB | 2026-04-24 → 2026-08-30 | rewritten in full every refresh |
-| `data` | `data.json` | 1 | 146.5 KB | 2026-04-24 → 2026-08-30 | every refresh (~4x/hour) |
+| `data` | `data.json` | 1 | 146.9 KB | 2026-04-24 → 2026-08-30 | every refresh (~4x/hour) |
 | `stats_history` | `stats_history.json` | 708 | 152.2 KB | 2026-07-13 → 2026-08-30 | one append per refresh (~4x/hour) |
 
 **`transfers_export`** — timestamp_utc, direction, token, amount, rate_usd, rate_source, usd, size_band, counterparty, tx_hash, log_index, class_coarse, class_fine
@@ -86,11 +86,5 @@ they feed.
 
 ## peer repo — Agentic-Po/moca-ledger
 
-Fetched from `catalog.json` at build time: **187,764 rows · 47.4 MB across 3 datasets**.
-
-| Dataset | Rows | Size | Coverage |
-|---|---:|---:|---|
-| `ledger` | 187,662 | 47.4 MB | 2026-07-06 → 2026-08-30 |
-| `labels` | 101 | 5.5 KB | 2026-08-22 → 2026-08-22 |
-| `heartbeat` | 1 | 508 B | 2026-08-30 → 2026-08-30 |
+_peer catalog unavailable this run_ (not fetched).
 

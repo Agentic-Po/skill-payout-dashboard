@@ -13,7 +13,9 @@ recorded DOM structure:
 
   * the daily table container (#dailyT) got > 0 <tr> rows,
   * the hero/plain-English strip (#plainStrip) text contains a "$" figure,
-  * the daily size-band mix produced > 0 band divs.
+  * the daily size-band mix produced > 0 band divs,
+  * the executive summary block (#execSummary) rendered non-empty with a
+    "$" figure (Cycle-3 Loop 3, item 1).
 
 Requires node on PATH (present on GitHub runners); in CI a missing node
 FAILS — a skipped gate is a lying-green gate.
@@ -43,10 +45,12 @@ PROBE = r"""
 ;(function () {
   const els = globalThis.__domshim.elements;
   const html = id => String((els.get(id) || {}).innerHTML || "");
+  const text = id => String((els.get(id) || {}).textContent || "");
   const out = {
     daily_rows: (html("dailyT").match(/<tr\b/g) || []).length,
     band_divs: (html("dailyT").match(/height:10px;background:/g) || []).length,
-    strip_text: html("plainStrip")
+    strip_text: html("plainStrip"),
+    exec_text: text("execSummary")
   };
   console.log("__RENDER_PROBE__" + JSON.stringify(out));
 })();
@@ -62,7 +66,7 @@ def main():
     assert scripts, f"{page} has no inline <script> blocks"
 
     failures = 0
-    probe = {"daily_rows": 0, "band_divs": 0, "strip_text": ""}
+    probe = {"daily_rows": 0, "band_divs": 0, "strip_text": "", "exec_text": ""}
     for i, script in enumerate(scripts):
         # index.html ships with the data already injected (no marker left);
         # template.html still carries the slot — either way this runs the
@@ -88,6 +92,7 @@ def main():
         for k in ("daily_rows", "band_divs"):
             probe[k] = max(probe[k], p[k])
         probe["strip_text"] = probe["strip_text"] or p["strip_text"]
+        probe["exec_text"] = probe["exec_text"] or p.get("exec_text", "")
         print(f"ok {os.path.basename(page)} script[{i}] executed clean "
               f"(daily_rows={p['daily_rows']}, band_divs={p['band_divs']})")
 
@@ -100,8 +105,13 @@ def main():
     assert probe["band_divs"] > 0, "size-band mix rendered zero band divs"
     assert "$" in probe["strip_text"], \
         f"hero strip has no $ figure: {probe['strip_text'][:200]!r}"
+    # executive summary block (Cycle-3 Loop 3, item 1): must have RENDERED
+    # non-empty, with a $ figure — server-computed text actually injected.
+    assert probe["exec_text"].strip(), "executive summary block (#execSummary) rendered empty"
+    assert "$" in probe["exec_text"], \
+        f"executive summary has no $ figure: {probe['exec_text'][:200]!r}"
     print(f"ok signal: {probe['daily_rows']} daily rows · {probe['band_divs']} band divs "
-          f"· hero strip carries a $ figure")
+          f"· hero strip carries a $ figure · exec block rendered non-empty")
     print("test_render_exec: PASS")
 
 
