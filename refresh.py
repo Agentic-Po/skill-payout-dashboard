@@ -342,14 +342,65 @@ rows = sorted(filter(None, (norm(i) for i in full)), key=lambda r: r["ts"], reve
 inflows = sorted(filter(None, (norm(i, True) for i in full_in)), key=lambda r: r["ts"], reverse=True)
 excluded_in = len(full_in) - len(inflows)
 
+# --- market daily closes (era-aware pool OHLCV via GeckoTerminal) ---
+# Fetched BEFORE the day-rate oracle because the oracle now uses these closes as
+# its second leg: a closed day with no $0.10 invoke cluster is priced by that
+# day's market close instead of carrying yesterday's rate forward forever. The
+# deviation cross-check that consumes these lives after the oracle (it must only
+# score days the oracle priced independently, i.e. day-implied ones).
+MARKET_POOLS = {
+    "MENTE": [("0xd76d44875716a708dbd55cd8ffc3eb1f94acbce3", "base"),
+              ("0x2a5eeea4d91042f779ee6014f4f6fd41f375262d", "quote")],
+    "MOCA":  [("0x2a5eeea4d91042f779ee6014f4f6fd41f375262d", "base")],
+}
+STATE.setdefault("market_rates", {})
+try:
+    from datetime import datetime as _dt
+    for sym, pools in MARKET_POOLS.items():
+        mr = STATE["market_rates"].setdefault(sym, {})
+        # 1 day, not 3: the oracle's market leg can only fill YESTERDAY if
+        # yesterday's close is already banked, so the refetch trigger has to be
+        # tighter than the gap it is meant to close.
+        need_recent = (_dt.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        if not any(d >= need_recent for d in mr):
+            merged = {}
+            for pool, side in pools:
+                try:
+                    dd = get(f"https://api.geckoterminal.com/api/v2/networks/base/pools/{pool}/ohlcv/day?limit=120&token={side}")
+                    for ts, o, h, l, c, v in dd["data"]["attributes"]["ohlcv_list"]:
+                        day = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
+                        if day not in merged or v > merged[day][1]:
+                            merged[day] = (c, v)
+                    time.sleep(0.5)
+                except Exception as e:
+                    print(sym, pool, "ohlcv failed:", e)
+            for day, (c, v) in merged.items():
+                if day not in mr and c:
+                    mr[day] = round(c, 8)
+except Exception as e:
+    print("market rate fetch failed:", e)
+
 # --- day-anchored rate oracle ---
 # Persisted day rates are immutable. New (unseen) days are computed walking
 # BACKWARD from the most recent day — the live rate is a good anchor at the
 # recent end, and each day's $0.10 cluster is searched in raw-token space
 # using the nearest already-known later day's implied rate, so history can't
 # be mispriced by today's quote and closed days never reprice.
+#
+# SECOND LEG (added 2026-08-30): invokes stopped on 2026-08-21, so from 08-22 on
+# no day had a $0.10 cluster and every later day was priced by carrying 08-21
+# forward while MOCA kept moving. A closed day the implied oracle cannot price
+# now falls back to that day's MARKET close (STATE["market_rates"], fetched
+# above). Provenance is recorded per day in STATE["day_rate_src"] so an auditor
+# can tell the two apart; every day already persisted before this change is
+# implied by construction and is stamped as such, never rewritten. "Closed days
+# never reprice" is unchanged: only days ABSENT from day_rates may be filled.
+STATE.setdefault("day_rate_src", {})
 for sym in TOKENS:
     persisted = STATE["day_rates"][sym]
+    src = STATE["day_rate_src"].setdefault(sym, {})
+    for d in persisted:
+        src.setdefault(d, "implied")
     by_day = defaultdict(list)
     for r in rows:
         if r["tok"] == sym:
@@ -368,11 +419,26 @@ for sym in TOKENS:
                 STATE.setdefault("open_day_rate", {})[sym] = {"d": d, "rate": round(ref, 10)}
             else:
                 persisted[d] = round(ref, 10)
+                src[d] = "implied"
+        elif d != today_utc:
+            # Same 5x sanity band the live rate fetch uses, anchored on the last
+            # rate this walk accepted — a market close outside it is a broken
+            # pool print, not a price move, and is refused (the day then falls
+            # through to carry-forward as before).
+            m = (STATE["market_rates"].get(sym) or {}).get(d)
+            if m and ref / 5 < m < ref * 5:
+                persisted[d] = round(m, 10)
+                src[d] = "market"
+                ref = m
+            elif m:
+                print(sym, d, "market rate rejected (out of 5x band):", m, "vs ref", ref)
 
 def day_rate(sym, ts):
     """Return (rate, source) for a timestamp."""
     d, dr = ts[:10], STATE["day_rates"][sym]
-    if d in dr: return dr[d], "day-implied"
+    if d in dr:
+        return dr[d], ("day-market" if (STATE.get("day_rate_src", {}).get(sym) or {}).get(d) == "market"
+                       else "day-implied")
     od = STATE.get("open_day_rate", {}).get(sym)
     if od and od["d"] == d: return od["rate"], "day-implied (open)"
     prior = [k for k in sorted(dr) if k <= d]
@@ -391,42 +457,22 @@ for f in inflows:
     f["rate"], f["rsrc"] = day_rate(f["tok"], f["ts"])
     f["usd"] = f["val"] * f["rate"]
 
-# --- market-price cross-check (era-aware pool OHLCV via GeckoTerminal) ---
-# Validates the day-implied payout oracle against external market data. MENTE:
+# --- market-price cross-check ---
+# Validates the day-IMPLIED payout oracle against external market data. MENTE:
 # USDC/MENTE Uniswap pool while it carried the volume, then the MOCA/MENTE
-# Aerodrome pool (quote side). MOCA: MOCA/USDC Aerodrome pool. Only new days
-# are fetched; stored beside the pinned rates for auditors.
-MARKET_POOLS = {
-    "MENTE": [("0xd76d44875716a708dbd55cd8ffc3eb1f94acbce3", "base"),
-              ("0x2a5eeea4d91042f779ee6014f4f6fd41f375262d", "quote")],
-    "MOCA":  [("0x2a5eeea4d91042f779ee6014f4f6fd41f375262d", "base")],
-}
-STATE.setdefault("market_rates", {})
+# Aerodrome pool (quote side). MOCA: MOCA/USDC Aerodrome pool. The closes
+# themselves were fetched above (the oracle's market leg needs them first).
+# Only day-implied days are scored: a market-filled day IS the market close, so
+# scoring it would report a fake 0% deviation and inflate the agreement stats.
 market_summary = {}
 try:
-    from datetime import datetime as _dt
     for sym, pools in MARKET_POOLS.items():
-        mr = STATE["market_rates"].setdefault(sym, {})
-        need_recent = (_dt.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%d")
-        if not any(d >= need_recent for d in mr):
-            merged = {}
-            for pool, side in pools:
-                try:
-                    dd = get(f"https://api.geckoterminal.com/api/v2/networks/base/pools/{pool}/ohlcv/day?limit=120&token={side}")
-                    for ts, o, h, l, c, v in dd["data"]["attributes"]["ohlcv_list"]:
-                        day = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
-                        if day not in merged or v > merged[day][1]:
-                            merged[day] = (c, v)
-                    time.sleep(0.5)
-                except Exception as e:
-                    print(sym, pool, "ohlcv failed:", e)
-            for day, (c, v) in merged.items():
-                if day not in mr and c:
-                    mr[day] = round(c, 8)
+        mr = STATE["market_rates"].get(sym) or {}
+        src = STATE["day_rate_src"].get(sym) or {}
         devs = []
         for day, r in STATE["day_rates"][sym].items():
             m = mr.get(day)
-            if m:
+            if m and src.get(day, "implied") == "implied":
                 devs.append(abs(r - m) / m * 100)
         if devs:
             devs.sort()
