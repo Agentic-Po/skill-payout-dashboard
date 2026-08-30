@@ -7,15 +7,15 @@
   "public": true,
   "kind": "ledger",
   "row_schema": "timestamp, transaction_hash, log_index, block_number, from.hash, to.hash, token.address_hash, total.value, total.decimals",
-  "rows": 106769,
+  "rows": 106775,
   "rows_closed": 70790,
-  "bytes": 47111746,
+  "bytes": 47114398,
   "coverage": {
    "from": "2026-04-24T22:13:15",
-   "to": "2026-08-30T03:00:37"
+   "to": "2026-08-30T04:11:45"
   },
-  "generated_iso": "2026-08-30T04:20:19Z",
-  "max_row_ts": "2026-08-30T03:00:37",
+  "generated_iso": "2026-08-30T04:27:13Z",
+  "max_row_ts": "2026-08-30T04:11:45",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
   "provenance": "Blockscout v2 token-transfers (filter=from) \u2192 eth_getLogs fallback \u2192 24h cross-check",
@@ -37,7 +37,7 @@
    "from": "2026-04-24T20:07:19",
    "to": "2026-08-29T18:02:21"
   },
-  "generated_iso": "2026-08-30T04:20:19Z",
+  "generated_iso": "2026-08-30T04:27:13Z",
   "max_row_ts": "2026-08-29T18:02:21",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
@@ -53,15 +53,15 @@
   "public": true,
   "kind": "ledger",
   "row_schema": "ts, val (MENTE token amount, float), from, tx, log_index, transaction_hash",
-  "rows": 101761,
+  "rows": 101771,
   "rows_closed": 83145,
-  "bytes": 29965102,
+  "bytes": 29967918,
   "coverage": {
    "from": "2026-04-12T19:58:25",
-   "to": "2026-08-30T03:53:05"
+   "to": "2026-08-30T04:23:39"
   },
-  "generated_iso": "2026-08-30T04:20:19Z",
-  "max_row_ts": "2026-08-30T03:53:05",
+  "generated_iso": "2026-08-30T04:27:13Z",
+  "max_row_ts": "2026-08-30T04:23:39",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
   "provenance": "Blockscout v2 token-transfers into the Cognition Credits collector \u2192 eth_getLogs fallback \u2192 24h cross-check",
@@ -76,15 +76,15 @@
   "public": true,
   "kind": "derived",
   "row_schema": "timestamp_utc, direction, token, amount, rate_usd, rate_source, usd, size_band, counterparty, counterparty_label, tx_hash, log_index, class_coarse, class_fine",
-  "rows": 106832,
+  "rows": 106838,
   "rows_closed": 70852,
-  "bytes": 22691742,
+  "bytes": 22693014,
   "coverage": {
    "from": "2026-04-24T20:07:19",
-   "to": "2026-08-30T03:00:37"
+   "to": "2026-08-30T04:11:45"
   },
-  "generated_iso": "2026-08-30T04:20:19Z",
-  "max_row_ts": "2026-08-30T03:00:37",
+  "generated_iso": "2026-08-30T04:27:13Z",
+  "max_row_ts": "2026-08-30T04:11:45",
   "expected_cadence_minutes": 15,
   "update_cadence": "rewritten in full every refresh",
   "provenance": "refresh.py, from transfers/ + transfers_in/ priced at the day-pinned rate",
@@ -106,7 +106,7 @@
    "from": "2026-04-24",
    "to": "2026-08-29"
   },
-  "generated_iso": "2026-08-30T04:20:19Z",
+  "generated_iso": "2026-08-30T04:27:13Z",
   "max_row_ts": "2026-08-29",
   "expected_cadence_minutes": 1440,
   "update_cadence": "one immutable entry per token per day",
@@ -130,7 +130,7 @@
    "from": "2026-01-30T12:44:05",
    "to": "2026-07-17T16:30:57"
   },
-  "generated_iso": "2026-08-30T04:20:19Z",
+  "generated_iso": "2026-08-30T04:27:13Z",
   "max_row_ts": "2026-07-17T16:30:57",
   "expected_cadence_minutes": null,
   "update_cadence": "static archive \u2014 frozen",
@@ -148,19 +148,19 @@
   "row_schema": "schema_version, scope, facts, infer, server, stripe_snap, insights, open_items, gaps, registry, sink",
   "rows": 1,
   "rows_closed": 1,
-  "bytes": 150796,
+  "bytes": 156396,
   "coverage": {
    "from": "2026-04-24",
-   "to": "2026-08-30T03:00:37"
+   "to": "2026-08-30T04:11:45"
   },
-  "generated_iso": "2026-08-30T04:20:19Z",
-  "max_row_ts": "2026-08-30T03:00:37",
+  "generated_iso": "2026-08-30T04:27:13Z",
+  "max_row_ts": "2026-08-30T04:11:45",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
   "provenance": "refresh.py \u2014 the versioned contract; a strict subset of what index.html embeds",
   "not_included": "no per-wallet detector signals (those stay in guard_private.json) and no raw transfer rows",
   "live": true,
-  "source_generated_iso": "2026-08-30T04:04:21Z"
+  "source_generated_iso": "2026-08-30T04:24:31Z"
  },
  {
   "name": "stats_history",
@@ -170,15 +170,15 @@
   "public": true,
   "kind": "derived",
   "row_schema": "ts, recon, invoke, equip, growth, moca, creators, rate, balance, mente_balance, runway7, runway_adj",
-  "rows": 698,
+  "rows": 699,
   "rows_closed": 235,
-  "bytes": 149081,
+  "bytes": 149395,
   "coverage": {
    "from": "2026-07-13T00:00",
-   "to": "2026-08-30T04:04"
+   "to": "2026-08-30T04:24"
   },
-  "generated_iso": "2026-08-30T04:20:19Z",
-  "max_row_ts": "2026-08-30T04:04",
+  "generated_iso": "2026-08-30T04:27:13Z",
+  "max_row_ts": "2026-08-30T04:24",
   "expected_cadence_minutes": 15,
   "update_cadence": "one append per refresh (~4x/hour)",
   "provenance": "refresh.py append-only snapshot; git history of the hourly commits is the immutable trail",
