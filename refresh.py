@@ -395,6 +395,37 @@ except Exception as e:
 # can tell the two apart; every day already persisted before this change is
 # implied by construction and is stamped as such, never rewritten. "Closed days
 # never reprice" is unchanged: only days ABSENT from day_rates may be filled.
+#
+# BAND (revised after QA, 2026-08-30): a market close is no longer banded
+# against `ref`, the last rate the backward walk happened to accept — that
+# anchor can be 42 days newer than the day being priced (MENTE: 08-25 then
+# 07-14), where a flat 5x band admits essentially any print. It is now banded
+# against the CALENDAR-NEAREST known day rate, with a tolerance that scales
+# with the gap: a 10 %/day compounded drift budget (1.10 ** gap_days), floored
+# at one day and capped at the old 5x so the band never gets looser than it
+# used to be. 10 %/day is deliberately generous for a liquid pair — it is an
+# outlier/broken-print detector, not a volatility model — and it reaches the 5x
+# cap at ~17 days. Beyond MARKET_MAX_GAP_DAYS there is no defensible anchor at
+# all, so the day is refused outright and stamped "market-unbanded".
+# Refusals are RECORDED in day_rate_src ("market-rejected" / "market-unbanded")
+# so an auditor can tell a thrown-away close from a day that never had one —
+# these stamps sit on days ABSENT from day_rates, and day_rate() only reads src
+# for days present in it, so pricing is unaffected.
+MARKET_DRIFT_PER_DAY = 0.10      # compounded per calendar day of gap
+MARKET_BAND_CAP = 5.0            # never looser than the original flat 5x band
+MARKET_MAX_GAP_DAYS = 45         # beyond this, refuse to band at all
+
+def _market_band(day, known):
+    """(anchor_day, anchor_rate, gap_days, factor) for the nearest known rate."""
+    if not known:
+        return None
+    dd = datetime.strptime(day, "%Y-%m-%d")
+    a = min(known, key=lambda k: (abs((datetime.strptime(k, "%Y-%m-%d") - dd).days), k))
+    gap = abs((datetime.strptime(a, "%Y-%m-%d") - dd).days)
+    factor = min(MARKET_BAND_CAP, (1 + MARKET_DRIFT_PER_DAY) ** max(gap, 1))
+    return a, known[a], gap, factor
+
+MARKET_REFUSED = []              # (sym, day, why, close, anchor_day, anchor_rate, gap)
 STATE.setdefault("day_rate_src", {})
 for sym in TOKENS:
     persisted = STATE["day_rates"][sym]
@@ -421,17 +452,51 @@ for sym in TOKENS:
                 persisted[d] = round(ref, 10)
                 src[d] = "implied"
         elif d != today_utc:
-            # Same 5x sanity band the live rate fetch uses, anchored on the last
-            # rate this walk accepted — a market close outside it is a broken
-            # pool print, not a price move, and is refused (the day then falls
-            # through to carry-forward as before).
+            # Market leg. Banded against the calendar-nearest KNOWN day rate
+            # with a gap-scaled drift budget (see MARKET_* above). A close
+            # outside the band is a broken pool print, not a price move, and is
+            # refused; the day then falls through to carry-forward as before,
+            # but the refusal is stamped so it is not silent.
             m = (STATE["market_rates"].get(sym) or {}).get(d)
-            if m and ref / 5 < m < ref * 5:
+            if not m:
+                continue
+            band = _market_band(d, persisted)
+            if band is None:
+                MARKET_REFUSED.append((sym, d, "market-unbanded", m, None, None, None))
+                src[d] = "market-unbanded"
+                continue
+            adj, arate, gap, factor = band
+            if gap > MARKET_MAX_GAP_DAYS:
+                MARKET_REFUSED.append((sym, d, "market-unbanded", m, adj, arate, gap))
+                src[d] = "market-unbanded"
+            elif arate / factor < m < arate * factor:
                 persisted[d] = round(m, 10)
                 src[d] = "market"
                 ref = m
-            elif m:
-                print(sym, d, "market rate rejected (out of 5x band):", m, "vs ref", ref)
+            else:
+                MARKET_REFUSED.append((sym, d, "market-rejected", m, adj, arate, gap))
+                src[d] = "market-rejected"
+
+# One greppable line per refusal plus a count — a rejection cascade must not
+# scroll past unnoticed (it silently reverts days to carry-forward pricing,
+# which is exactly what the market leg exists to eliminate).
+for sym, d, why, m, adj, arate, gap in MARKET_REFUSED:
+    print(f"DATA-QUALITY: {sym} {d} {why}: close={m} anchor={adj} rate={arate} gap={gap}d")
+if MARKET_REFUSED:
+    print(f"DATA-QUALITY: {len(MARKET_REFUSED)} market close(s) refused "
+          f"({sum(1 for x in MARKET_REFUSED if x[2] == 'market-rejected')} out-of-band, "
+          f"{sum(1 for x in MARKET_REFUSED if x[2] == 'market-unbanded')} unbandable) — "
+          f"those days fall back to carry-forward pricing")
+STATE["market_refused"] = [{"sym": s, "day": d, "why": w, "close": m,
+                            "anchor_day": adj, "anchor_rate": arate, "gap_days": g}
+                           for s, d, w, m, adj, arate, g in MARKET_REFUSED]
+
+# day_rates and day_rate_src must not drift apart: every priced day carries a
+# provenance stamp. (src also holds refusal stamps for days NOT in day_rates,
+# so the invariant is one-directional.)
+for _s in TOKENS:
+    _missing = set(STATE["day_rates"][_s]) - set(STATE["day_rate_src"].get(_s, {}))
+    assert not _missing, f"{_s}: day_rates days without a day_rate_src stamp: {sorted(_missing)[:5]}"
 
 def day_rate(sym, ts):
     """Return (rate, source) for a timestamp."""
