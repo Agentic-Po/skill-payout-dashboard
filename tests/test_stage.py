@@ -23,6 +23,12 @@ ROOT = os.path.dirname(HERE)
 
 NESTED_PY = os.path.join(ROOT, ".creds_probe", "keys.py")
 STRAY = os.path.join(ROOT, "transfers", "LEAK_probe.json")
+COUPON_STRAY = os.path.join(ROOT, "coupon_out", "LEAK_probe.json")
+# Every dataset directory in the catalog must be staged file-by-file. Listed
+# by name so a new dataset dir that stops being staged is a red test, not a
+# silently unpublished ledger.
+SHARD_DIRS = ("transfers/", "transfers_in/", "cognition_in/",
+              "coupon_out/", "coupon_in/")
 
 
 def _stage():
@@ -33,14 +39,17 @@ def _stage():
 
 
 def main():
-    assert not os.path.exists(NESTED_PY) and not os.path.exists(STRAY), \
+    seeds = (NESTED_PY, STRAY, COUPON_STRAY)
+    assert not any(os.path.exists(p) for p in seeds), \
         "probe files already exist — refusing to clobber"
     os.makedirs(os.path.dirname(NESTED_PY), exist_ok=True)
     open(NESTED_PY, "w").write("TOKEN = 1\n")
     open(STRAY, "w").write('{"leak": 1}\n')
+    open(COUPON_STRAY, "w").write('{"leak": 1}\n')
     try:
         files, warns = _stage()
-        for probe in (".creds_probe/keys.py", "transfers/LEAK_probe.json"):
+        for probe in (".creds_probe/keys.py", "transfers/LEAK_probe.json",
+                      "coupon_out/LEAK_probe.json"):
             assert probe not in files, f"{probe} was STAGED — allowlist is too wide"
             assert probe in warns, f"{probe} staged-or-not was not WARNED about"
             print(f"ok {probe}: not staged, warned")
@@ -48,14 +57,21 @@ def main():
         bare = [f for f in files if f.endswith("/")]
         assert not bare, f"stage() emitted directories: {bare}"
         print("ok stage list contains no bare directories")
-        # And the real shards are still there, as individual files.
-        shard = [f for f in files if f.startswith("transfers/") and f.endswith(".json")]
-        assert shard, "no transfers/ shard files in the stage list"
-        print(f"ok {len(shard)} transfers/ shard file(s) staged individually")
+        # And every dataset's real shards are still there, as individual files.
+        for d in SHARD_DIRS:
+            shard = [f for f in files if f.startswith(d) and f.endswith(".json")]
+            assert shard, f"no {d} shard files in the stage list"
+            print(f"ok {len(shard)} {d} shard file(s) staged individually")
+        # The coupon page's own artifacts must be staged too — a new file that
+        # is never committed is the failure mode PUBLISH_EXTRA exists to stop.
+        for f in ("coupon.html", "template_coupon.html", "coupon_data.json"):
+            assert f in files, f"{f} is not in the stage list — add it to PUBLISH_EXTRA"
+        print("ok coupon.html / template_coupon.html / coupon_data.json staged")
     finally:
         shutil.rmtree(os.path.dirname(NESTED_PY), ignore_errors=True)
-        if os.path.exists(STRAY):
-            os.remove(STRAY)
+        for p in (STRAY, COUPON_STRAY):
+            if os.path.exists(p):
+                os.remove(p)
     print("test_stage: PASS")
     return 0
 

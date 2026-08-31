@@ -15,6 +15,9 @@ GitHub Actions cron (3,18,33,48 * * * *  — 4x/hour, best-effort)
   └─ refresh.py
        ├─ chain fetch: Blockscout v2 → eth_getLogs fallback → 24h cross-check
        │  (monthly shards in transfers/, transfers_in/, cognition_in/)
+       ├─ same fetch path, second wallet: the Coupon Distributor
+       │  (coupon_out/, coupon_in/ — a wallet funded outside the treasury,
+       │   in NO treasury figure; renders coupon.html + coupon_data.json)
        ├─ day-pinned rate oracle (day_rates.json — closed days never reprice)
        ├─ balance reconciliation (block-pinned, per-token drift fences)
        ├─ renders index.html (+ frozen legacy.html) from template.html
@@ -50,7 +53,7 @@ in `stripe_snapshot.json`).
 
 | Where | What | Why |
 |---|---|---|
-| committed | data.json, index.html, legacy.html, shards, CSV, day_rates.json, stats_history.json | public by design — strict subset of the page |
+| committed | data.json, index.html, legacy.html, coupon.html, coupon_data.json, shards, CSV, day_rates.json, stats_history.json | public by design — strict subset of the page |
 | Actions cache (`alert-state-*`) | alert_state.json (via `state.py`, atomic single-writer), guard_private.json | detector state & per-wallet signal rows are **never** committed — publishing them hands abusers a calibration oracle. Worst case on cache loss: one duplicate alert, never silence. |
 | repo secrets | TELEGRAM_*, LEDGER_*, HEALTHCHECK_URL, POSTHOG_API_KEY | never in code or artifacts |
 

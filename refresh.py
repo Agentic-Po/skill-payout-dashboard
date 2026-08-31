@@ -16,7 +16,7 @@ import csv, json, math, os, statistics, sys, time, urllib.request
 import posthog_source
 import shards
 # taxonomy lives in classify.py — the ONE classifier shared with notify/alerts
-from classify import band, classify_usd, BAND_LABEL, BAND_KEYS, STRIPE_FINE
+from classify import band, classify_usd, pin_rate, BAND_LABEL, BAND_KEYS, STRIPE_FINE
 from datetime import datetime, timezone, timedelta
 from collections import Counter, defaultdict
 
@@ -170,14 +170,15 @@ def block_ts(bn):
             int(b["timestamp"], 16), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000000Z")
     return _block_ts_cache[bn]
 
-def rpc_transfer_fallback(wallet, direction, token_addrs, from_block):
+def rpc_transfer_fallback(wallet, direction, token_addrs, from_block, to_block=None):
     """Fetch Transfer logs via eth_getLogs and shape them like Blockscout v2
     items (only the fields shards.slim keeps). Addresses come back lowercase —
-    canonicalized against cached casing downstream."""
+    canonicalized against cached casing downstream.
+    to_block caps the scan below chain head (reorg lag); None = head."""
     topic_w = "0x" + "0" * 24 + wallet[2:].lower()
     topics = ([TRANSFER_TOPIC, topic_w] if direction == "from"
               else [TRANSFER_TOPIC, None, topic_w])
-    latest = int(rpc("eth_blockNumber", []), 16)
+    latest = to_block or int(rpc("eth_blockNumber", []), 16)
     logs, start, chunk = [], from_block, 9000
     while start <= latest:
         end = min(start + chunk - 1, latest)
@@ -212,7 +213,14 @@ def rpc_transfer_fallback(wallet, direction, token_addrs, from_block):
 # become permanent and invisible) — the run renders from the last good cache.
 # Caches are monthly shard dirs of slimmed rows (see shards.py) so no file
 # can ever approach GitHub's 100 MB limit again.
-def refresh_cache(base_url, dir_path, pages=100):
+def refresh_cache(base_url, dir_path, pages=100, wallet=WALLET, token_addrs=None,
+                  from_block=0, to_block=None):
+    """wallet/token_addrs/from_block/to_block parameterise the eth_getLogs legs
+    so a SECOND wallet (the coupon distributor) reuses this pacing/retry/dedup
+    path instead of forking it. from_block is the floor the log legs resume
+    from when the cache has no block to resume from (a first backfill);
+    to_block caps them below head. Defaults reproduce the treasury behaviour."""
+    token_addrs = token_addrs or [t["addr"] for t in TOKENS.values()]
     shards.migrate_legacy(dir_path)
     old = shards.load(dir_path)
     seen = {key(i) for i in old}
@@ -233,14 +241,14 @@ def refresh_cache(base_url, dir_path, pages=100):
         # Blockscout v2 down — refetch the gap straight from the chain. Real
         # log indexes keep keys compatible, so dedup against the cache is safe.
         print(f"v2 crawl failed for {dir_path} ({e}) — trying eth_getLogs fallback")
-        newest_blk = max([i.get("block_number", 0) for i in old] + [0])
+        newest_blk = max([i.get("block_number", 0) for i in old] + [from_block])
         if not newest_blk:
             print(f"WARNING: no cached block to resume from for {dir_path} — keeping previous cache")
             return old, 0, False
         try:
             direction = "to" if "filter=to" in base_url else "from"
-            items = rpc_transfer_fallback(WALLET, direction,
-                                          [t["addr"] for t in TOKENS.values()], newest_blk)
+            items = rpc_transfer_fallback(wallet, direction, token_addrs,
+                                          newest_blk, to_block)
             overlapped = True
             print(f"fallback fetched {len(items)} logs for {dir_path} from block {newest_blk}")
         except Exception as e2:
@@ -256,12 +264,17 @@ def refresh_cache(base_url, dir_path, pages=100):
     # chain logs every run and merge anything the crawl didn't return.
     try:
         got = {key(i) for i in items}
+        # Cached blocks only, NOT from_block: this leg re-verifies the trailing
+        # ~24h, so with an empty cache there is nothing to re-verify. A first
+        # backfill gets its full-range completeness proof from a dedicated,
+        # STATE-banked leg instead (see the coupon section) — one scan, once,
+        # recorded, rather than an implicit full-history scan on every caller.
         newest_blk = max([i.get("block_number", 0) for i in old] + [0])
         if newest_blk:
             direction = "to" if "filter=to" in base_url else "from"
-            xcheck = rpc_transfer_fallback(WALLET, direction,
-                                           [t["addr"] for t in TOKENS.values()],
-                                           max(newest_blk - 43200, 1))
+            xcheck = rpc_transfer_fallback(wallet, direction, token_addrs,
+                                           max(newest_blk - 43200, from_block, 1),
+                                           to_block)
             extra = [i for i in xcheck if key(i) not in got and key(i) not in seen]
             if extra:
                 print(f"cross-check recovered {len(extra)} transfer(s) missing from the crawl for {dir_path}")
@@ -342,9 +355,11 @@ for sym, t in ([] if OFFLINE else list(TOKENS.items())):
         except Exception as e:
             print(sym, "dexscreener fallback failed:", e)
 BALANCE = {}
-def balance_at(addr, sym, block="latest"):
+def balance_at(addr, sym, block="latest", holder=WALLET):
+    """holder defaults to the treasury; the coupon page passes its own wallet
+    so there is ONE balance helper, not a second eth_call path."""
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [
-        {"to": addr, "data": "0x70a08231" + "0" * 24 + WALLET[2:].lower()}, block]}).encode()
+        {"to": addr, "data": "0x70a08231" + "0" * 24 + holder[2:].lower()}, block]}).encode()
     last_err = None
     for url in RPC_ENDPOINTS:
         try:
@@ -902,6 +917,10 @@ for d in days:
 # in RESTATEMENTS.md. Fed the SAME priced rows the page renders from, so the
 # ledger cannot diverge from what publishes.
 import digests as _digests
+# TREASURY rows only. Coupon-distributor days are deliberately NOT sealed
+# here: the ledger's shas were computed over this wallet's outflow, so
+# feeding a second wallet's days in would restate every sealed day at once.
+# The coupon page is a separate read-only surface with its own artifacts.
 _dig_records = _digests.records_for_closed_days(rows, today)
 try:
     _digests.enforce(_dig_records,
@@ -1828,6 +1847,308 @@ tpl = open(os.path.join(HERE, "template.html")).read()
 out = os.path.join(HERE, "index.html")
 open(out, "w").write("<!doctype html>\n<html lang=\"en\">\n" + tpl.replace("/*__DATA__*/", json.dumps(data)) + "\n</html>")
 print("wrote", out, "| rows:", len(rows), "| range:", facts["range"], "| recon:", recon)
+
+# ================= COUPON DISTRIBUTOR — claim page =================
+# A SECOND wallet, funded outside the treasury and never touching it: block
+# 48,303,358 is a mint from 0x0…0 (LayerZero bridge mint pattern) straight to
+# this wallet, and every outbound row since is a coupon claim. It gets its own
+# page, its own shards and its own coupon_data.json — the treasury data.json
+# contract is untouched. MOCA only. Claims are NOT payouts, so classify.py's
+# taxonomy is deliberately not applied; the only thing shared is pin_rate, so
+# USD here and USD on the main page can never come from two pricing paths.
+COUPON_WALLET = "0xb15afc65532f8ec4d39db521ad7eb5b9e9ef5acf"
+COUPON_FROM_BLOCK = 48_300_000
+COUPON_HEAD_LAG = 30          # blocks left uncrawled at the tip (reorg lag)
+COUPON_GENESIS = "2026-07-07"
+COUPON_BASE = f"https://base.blockscout.com/api/v2/addresses/{COUPON_WALLET}/token-transfers?filter=from"
+CP_OUT_DIR = os.path.join(HERE, "coupon_out")
+CP_IN_DIR = os.path.join(HERE, "coupon_in")
+PREV_COUPON = None
+if OFFLINE:
+    _cp_prev = os.path.join(HERE, "coupon_data.json")
+    if not os.path.exists(_cp_prev):
+        raise SystemExit("FATAL: --offline needs an on-disk coupon_data.json from a previous run")
+    PREV_COUPON = json.load(open(_cp_prev))
+
+# Incremental cursor, persisted next to the other non-rate crawl state in
+# day_rates.json. It records the highest block banked per direction, capped
+# COUPON_HEAD_LAG behind head so a reorg-able tip is never recorded as
+# crawled. The crawl resumes from max(newest cached block, COUPON_FROM_BLOCK)
+# — the same overlap rule the treasury legs use — and the cursor is the
+# durable record of that point: a cursor running AHEAD of the cache means
+# rows were lost, and the line below says so instead of silently re-crawling.
+cp_cursor = STATE.setdefault("coupon", {}).setdefault("next_block", {})
+if OFFLINE:
+    cp_full = shards.load(CP_OUT_DIR)
+    cp_full_in = shards.load(CP_IN_DIR)
+    cp_complete = bool((PREV_COUPON.get("scope") or {}).get("complete", True))
+    print(f"OFFLINE: coupon cache {len(cp_full)} out / {len(cp_full_in)} in, "
+          f"complete={cp_complete} (carried from prior run)")
+cp_head = None
+if not OFFLINE:
+    try:
+        cp_head = int(rpc("eth_blockNumber", []), 16) - COUPON_HEAD_LAG
+    except Exception as e:
+        print("DATA-QUALITY: coupon head-block fetch failed, crawling to tip:", e)
+    cp_full, cp_new, cp_ok = refresh_cache(
+        COUPON_BASE, CP_OUT_DIR, pages=60, wallet=COUPON_WALLET,
+        token_addrs=[TOKENS["MOCA"]["addr"]], from_block=COUPON_FROM_BLOCK,
+        to_block=cp_head)
+    cp_full_in, cp_new_in, cp_ok_in = refresh_cache(
+        COUPON_BASE.replace("filter=from", "filter=to"), CP_IN_DIR, pages=60,
+        wallet=COUPON_WALLET, token_addrs=[TOKENS["MOCA"]["addr"]],
+        from_block=COUPON_FROM_BLOCK, to_block=cp_head)
+    cp_complete = cp_ok and cp_ok_in
+    for _dir, _rows_, _okk in (("out", cp_full, cp_ok), ("in", cp_full_in, cp_ok_in)):
+        _banked = max([i.get("block_number", 0) for i in _rows_] + [COUPON_FROM_BLOCK])
+        _prev_cur = cp_cursor.get(_dir)
+        if _prev_cur and _prev_cur > _banked + 1:
+            print(f"DATA-QUALITY: coupon_{_dir} cursor {_prev_cur} is ahead of the "
+                  f"newest banked block {_banked} — cache lost rows, re-crawling from cache")
+        if _okk:
+            cp_cursor[_dir] = min(_banked + 1, (cp_head + 1) if cp_head else _banked + 1)
+    print(f"coupon: fetched {cp_new} new OUT / {cp_new_in} new IN, cache {len(cp_full)} out / "
+          f"{len(cp_full_in)} in, complete={cp_complete}, cursor={cp_cursor}")
+
+    # ONE-TIME COMPLETENESS PROOF, banked in STATE so it runs exactly once per
+    # direction. A crawler that only reads Blockscout v2 cannot see v2's own
+    # holes: the first coupon backfill (2026-08-31, during a v2 500-storm)
+    # returned 820 of 822 claims — three transfers, each a high log_index in a
+    # busy block (49,282,089 · 50,265,943 · 50,482,602), were simply absent
+    # from every page, and only the private-ledger cross-check found them.
+    # eth_getLogs is the independent second source (the same helper the outage
+    # fallback uses), scanned across the WHOLE range once; after that
+    # refresh_cache's trailing-24h cross-check carries the invariant forward.
+    # A failure raises rather than banking the flag, so a hole is never frozen
+    # into the cache by a leg that silently did not run.
+    cp_verified = STATE["coupon"].setdefault("verified_from", {})
+    for _dirn, _dirp in (("from", CP_OUT_DIR), ("to", CP_IN_DIR)):
+        if cp_verified.get(_dirn) == COUPON_FROM_BLOCK:
+            continue
+        _cache = shards.load(_dirp)
+        _seen = {key(i) for i in _cache}
+        _add = [shards.slim(i) for i in
+                rpc_transfer_fallback(COUPON_WALLET, _dirn, [TOKENS["MOCA"]["addr"]],
+                                      COUPON_FROM_BLOCK, cp_head)
+                if key(i) not in _seen]
+        if _add:
+            _cache = sorted(_add + _cache, key=lambda i: i["timestamp"], reverse=True)
+            shards.save(_dirp, _cache, months={shards.month_of(r) for r in _add})
+            print(f"DATA-QUALITY: coupon '{_dirn}' full-range verification recovered "
+                  f"{len(_add)} transfer(s) the v2 crawl never returned")
+        cp_verified[_dirn] = COUPON_FROM_BLOCK
+        if _dirn == "from":
+            cp_full = _cache
+        else:
+            cp_full_in = _cache
+    # STATE was already written above, before this crawl existed in the run's
+    # order; re-persist it so the cursor and the verification stamp survive.
+    # Deliberately a SECOND write rather than moving the first one down: a
+    # failure anywhere in this section must not cost the run its newly
+    # computed closed-day rates.
+    json.dump(STATE, open(RATES_PATH, "w"), indent=0)
+
+# Addresses are lowercased throughout this section (rows.py's reasoning: the
+# v2 crawl returns EIP-55, the eth_getLogs legs return lowercase, and every
+# aggregate here keys on the address).
+def cp_norm(items, side):
+    """Slimmed shard rows -> priced claim rows. MOCA only; other tokens sent
+    to this wallet are kept raw in the shards and excluded here."""
+    outr = []
+    for i in items:
+        if i["token"]["address_hash"].lower() != TOKENS["MOCA"]["addr"]:
+            continue
+        dec = int(i["total"].get("decimals") or DECIMALS["MOCA"])
+        wei = int(i["total"]["value"])
+        ts = i["timestamp"][:19]
+        val = wei / 10 ** dec
+        outr.append({"ts": ts, "wei": wei, "val": val,
+                     "usd": val * pin_rate(STATE["day_rates"]["MOCA"], ts[:10], RATE["MOCA"]),
+                     "addr": i[side]["hash"].lower(), "tx": i["transaction_hash"],
+                     "li": i.get("log_index", ""), "blk": i.get("block_number", 0)})
+    outr.sort(key=lambda r: r["ts"], reverse=True)
+    return outr
+
+cp_claims = cp_norm(cp_full, "to")
+cp_in = cp_norm(cp_full_in, "from")
+cp_excluded_in = len(cp_full_in) - len(cp_in)
+
+# Display-only size buckets. NOT the payout taxonomy — claims are not payouts.
+# Denominated in MOCA, not USD, because coupons are minted at fixed MOCA face
+# values (three across the whole ledger: 1,170 / 5,550 / 6,195) while MOCA
+# itself moved $0.0072–$0.0091 over the same days: a USD boundary would split
+# ONE coupon size across two buckets on price drift alone. The two currently
+# empty buckets are headroom, so a new face value lands somewhere legible
+# instead of in a catch-all.
+CP_BUCKETS = [("c1", "< 1,000 MOCA", 0.0), ("c2", "1,000–1,999", 1000.0),
+              ("c3", "2,000–4,999", 2000.0), ("c4", "5,000–5,999", 5000.0),
+              ("c5", "≥ 6,000", 6000.0)]
+CP_BUCKET_KEYS = [b[0] for b in CP_BUCKETS]
+CP_BUCKET_LABEL = {b[0]: b[1] for b in CP_BUCKETS}
+
+def cp_bucket(val):
+    hit = CP_BUCKETS[0][0]
+    for bk, _lab, lo in CP_BUCKETS:
+        if val >= lo:
+            hit = bk
+    return hit
+
+cp_today = now.strftime("%Y-%m-%d")
+cp_daily = []
+for d in sorted({r["ts"][:10] for r in cp_claims} | {f["ts"][:10] for f in cp_in}):
+    ds = [r for r in cp_claims if r["ts"][:10] == d]
+    di = [f for f in cp_in if f["ts"][:10] == d]
+    bn, bm, bu = Counter(), defaultdict(float), defaultdict(float)
+    bw = defaultdict(set)
+    for r in ds:
+        b = cp_bucket(r["val"])
+        bn[b] += 1; bm[b] += r["val"]; bu[b] += r["usd"]; bw[b].add(r["addr"])
+    cp_daily.append({"d": d, "partial": d == cp_today,
+                     "n": len(ds), "moca": round(sum(r["val"] for r in ds), 4),
+                     "usd": round(sum(r["usd"] for r in ds), 2),
+                     "claimants": len({r["addr"] for r in ds}),
+                     "in_moca": round(sum(f["val"] for f in di), 4),
+                     "in_usd": round(sum(f["usd"] for f in di), 2),
+                     "buckets": {k: {"n": bn[k], "moca": round(bm[k], 2),
+                                     "usd": round(bu[k], 2), "w": len(bw[k])} for k in bn}})
+
+cp_recip = defaultdict(lambda: {"n": 0, "moca": 0.0, "usd": 0.0, "first": "9999", "last": "0"})
+for r in cp_claims:
+    a = cp_recip[r["addr"]]
+    a["n"] += 1; a["moca"] += r["val"]; a["usd"] += r["usd"]
+    a["first"] = min(a["first"], r["ts"]); a["last"] = max(a["last"], r["ts"])
+cp_moca_out = sum(r["val"] for r in cp_claims)
+cp_ranked = sorted(cp_recip.items(), key=lambda kv: -kv[1]["moca"])
+# Top-N claimants: address + amount + count only. On-chain facts, publishable
+# by the same rule as the main page's top_recipients — and NOTHING else: no
+# label field exists on these rows, so none can be filled in later.
+cp_top = [{"addr": a, "n": v["n"], "moca": round(v["moca"], 2), "usd": round(v["usd"], 2),
+           "first": v["first"][:10], "last": v["last"][:10],
+           "share": round(v["moca"] / cp_moca_out * 100, 2) if cp_moca_out else 0}
+          for a, v in cp_ranked[:10]]
+cp_max_claims_per_addr = max(
+    (sum(1 for r in cp_claims if r["addr"] == a) for a in {r["addr"] for r in cp_claims}),
+    default=0)
+cp_top5_pct = (round(sum(v["moca"] for _a, v in cp_ranked[:5]) / cp_moca_out * 100, 1)
+               if cp_moca_out else 0)
+cp_top10_pct = (round(sum(v["moca"] for _a, v in cp_ranked[:10]) / cp_moca_out * 100, 1)
+                if cp_moca_out else 0)
+
+# inflow ledger: the bridge mint is the row whose sender is the zero address —
+# a structural on-chain fact, deliberately NOT an identity label.
+ZERO_ADDR = "0x" + "0" * 40
+cp_in_agg = defaultdict(lambda: {"n": 0, "moca": 0.0, "usd": 0.0, "first": "9999", "last": "0"})
+for f in cp_in:
+    a = cp_in_agg[f["addr"]]
+    a["n"] += 1; a["moca"] += f["val"]; a["usd"] += f["usd"]
+    a["first"] = min(a["first"], f["ts"]); a["last"] = max(a["last"], f["ts"])
+cp_inflows = sorted(({"addr": a, "n": v["n"], "moca": round(v["moca"], 2),
+                      "usd": round(v["usd"], 2), "first": v["first"][:10],
+                      "last": v["last"][:10],
+                      "kind": "bridge mint" if a == ZERO_ADDR else "transfer"}
+                     for a, v in cp_in_agg.items()), key=lambda x: -x["moca"])
+
+# live balance — same eth_call helper the treasury uses, different holder
+CP_BAL = None
+if OFFLINE:
+    CP_BAL = (PREV_COUPON.get("totals") or {}).get("balance_moca")
+else:
+    try:
+        # as-of cp_head, not "latest": the crawl stops COUPON_HEAD_LAG blocks
+        # behind the tip, and a tip-block balance made in-out-balance miss by
+        # exactly one uncrawled claim (QA D1, 2026-08-31)
+        CP_BAL = balance_at(TOKENS["MOCA"]["addr"], "MOCA",
+                            hex(cp_head) if cp_head else "latest",
+                            holder=COUPON_WALLET)
+    except Exception as e:
+        print("coupon balance fetch failed:", e)
+
+cp_7d = [r for r in cp_claims if r["ts"] > cut7]
+cp_moca_7d = sum(r["val"] for r in cp_7d)
+cp_totals = {
+    "claims": len(cp_claims), "claimants": len({r["addr"] for r in cp_claims}),
+    "moca_out": round(cp_moca_out, 4), "usd_out": round(sum(r["usd"] for r in cp_claims), 2),
+    "moca_in": round(sum(f["val"] for f in cp_in), 4),
+    "usd_in": round(sum(f["usd"] for f in cp_in), 2),
+    "mint_moca": round(sum(f["val"] for f in cp_in if f["addr"] == ZERO_ADDR), 4),
+    "balance_moca": round(CP_BAL, 4) if CP_BAL is not None else None,
+    "balance_usd": round(CP_BAL * RATE["MOCA"], 2) if CP_BAL is not None else None,
+    "claims_7d": len(cp_7d), "moca_7d": round(cp_moca_7d, 4),
+    "weeks_left": (round(CP_BAL / cp_moca_7d, 1)
+                   if CP_BAL is not None and cp_moca_7d > 0 else None),
+    "excluded_in_tx": cp_excluded_in,
+}
+# in - out must equal the as-of balance exactly (MOCA has no event-less burn
+# class); a nonzero delta means a lost or phantom shard row and must be LOUD,
+# never silently published (house rule 8)
+if cp_totals["balance_moca"] is not None:
+    cp_totals["recon_delta_moca"] = round(
+        cp_totals["moca_in"] - cp_totals["moca_out"] - cp_totals["balance_moca"], 4)
+    if abs(cp_totals["recon_delta_moca"]) > 0.0001:
+        print(f"DATA-QUALITY: coupon ledger does not close: in-out-balance = "
+              f"{cp_totals['recon_delta_moca']} MOCA")
+else:
+    cp_totals["recon_delta_moca"] = None
+
+# Plain-English strip, computed HERE from the same values the page renders —
+# the page injects the text and never recomputes a figure (tests/test_parity.py
+# holds every $ / MOCA figure in it to coupon_data to the cent).
+_cs = [f"The coupon wallet has distributed {cp_totals['moca_out']:,.0f} MOCA "
+       f"(≈${cp_totals['usd_out']:,.2f}) across {cp_totals['claims']:,} claims "
+       f"to {cp_totals['claimants']:,} unique wallets since its funding on {COUPON_GENESIS}."]
+if cp_totals["balance_moca"] is not None:
+    _hold = (f"It holds {cp_totals['balance_moca']:,.0f} MOCA "
+             f"(≈${cp_totals['balance_usd']:,.2f})")
+    # weeks are denominated by the 7d CLAIM pace; with no claims in 7 days
+    # there is no pace to divide by, so the clause is dropped rather than
+    # guessed (same rule as the main page's exec summary).
+    _cs.append(_hold + (f" — about {cp_totals['weeks_left']:,.1f} week"
+                        f"{'' if cp_totals['weeks_left'] == 1 else 's'} of claims at the "
+                        f"current pace." if cp_totals["weeks_left"] else "."))
+else:
+    _cs.append("Its live balance could not be read this run.")
+_cp_age_h = (datetime.now(timezone.utc) - now).total_seconds() / 3600
+_cp_degraded = _cp_age_h > 2.5          # same threshold as the page banner
+if _cp_degraded:
+    _cs.insert(0, f"Data is {round(_cp_age_h)} hours old — figures may lag.")
+cp_summary = {"text": " ".join(_cs), "degraded": _cp_degraded,
+              "data_age_hours": round(_cp_age_h, 1)}
+
+coupon_data = {
+    "schema_version": 1,
+    "scope": {"wallet": COUPON_WALLET, "token": {"MOCA": TOKENS["MOCA"]["addr"]},
+              "generated": now.strftime("%Y-%m-%d %H:%M"),
+              "generated_iso": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "genesis_day": COUPON_GENESIS, "complete": cp_complete,
+              "excluded_in_tx": cp_excluded_in,
+              "rate": RATE["MOCA"], "rate_src": RATE_SRC["MOCA"],
+              "source": "Blockscout (Base) token-transfer API for this wallet, both "
+                        "directions, with an eth_getLogs fallback; balance via eth_call; "
+                        "historical USD via the same persisted day-pinned MOCA rates "
+                        "(day_rates.json) the treasury page uses",
+              "cadence": "rebuilt on every refresh (~4x/hour), same run as the treasury page",
+              "note": "This wallet only. It was funded outside the treasury — the first "
+                      "event is a mint from the zero address (bridge mint pattern) — and no "
+                      "row here touches the treasury wallet, so nothing on this page is "
+                      "double-counted on the treasury dashboard."},
+    "summary": cp_summary,
+    "totals": cp_totals,
+    "buckets": {"keys": CP_BUCKET_KEYS, "labels": CP_BUCKET_LABEL},
+    "daily": cp_daily,
+    "inflows": cp_inflows,
+    "top": cp_top,
+    "concentration": {"top5_pct": cp_top5_pct, "top10_pct": cp_top10_pct,
+                      "max_claims_per_addr": cp_max_claims_per_addr},
+    "range": {"from": cp_claims[-1]["ts"][:10] if cp_claims else None,
+              "to": cp_claims[0]["ts"][:19] if cp_claims else None},
+}
+json.dump(coupon_data, open(os.path.join(HERE, "coupon_data.json"), "w"), default=str)
+cp_tpl = open(os.path.join(HERE, "template_coupon.html")).read()
+open(os.path.join(HERE, "coupon.html"), "w").write(
+    "<!doctype html>\n<html lang=\"en\">\n"
+    + cp_tpl.replace("/*__DATA__*/", json.dumps(coupon_data)) + "\n</html>")
+print(f"wrote coupon.html | {cp_totals['claims']} claims · {cp_totals['moca_out']:,.0f} MOCA "
+      f"· {cp_totals['claimants']} claimants · balance {cp_totals['balance_moca']}")
 
 # --- data catalog (LAST: it measures files, so every one must be written) ---
 # The spec placed this right after data.json; it has to run at the END instead,

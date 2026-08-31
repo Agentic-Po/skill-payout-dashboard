@@ -35,6 +35,11 @@ jobs:
             guard_private.json
           key: alert-state-${{ github.run_id }}
           restore-keys: alert-state-
+      # One invocation builds BOTH pages: the treasury crawl + index.html and
+      # the coupon-distributor crawl + coupon.html. Deliberately no second
+      # workflow and no second cron — the coupon wallet is ~1 claim/hour and
+      # does not justify its own schedule, and sharing the run keeps both
+      # pages stamped with the same generated_iso.
       - name: Refresh data and rebuild page
         env:
           POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}

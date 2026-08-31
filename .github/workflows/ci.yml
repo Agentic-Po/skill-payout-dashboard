@@ -52,3 +52,9 @@ jobs:
       # red CI + a deliberate CONSUMERS.md / schema_version bump.
       - name: Consumer contract tests
         run: python3 tests/test_contract.py
+      # Coupon crawl vs the private coupon ledger. CI has no access to that
+      # repo, so this SKIPS clean here (exit 0, loud message) and is run
+      # locally with COUPON_LEDGER_PATH set; the step exists so the skip is
+      # visible rather than the check being forgotten.
+      - name: Coupon cross-crawler reconciliation (skips without the private ledger)
+        run: python3 tests/test_coupon_reconcile.py

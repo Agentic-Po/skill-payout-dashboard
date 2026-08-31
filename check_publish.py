@@ -59,6 +59,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # only ever matches a ROOT-level file.
 PUBLISH_EXTRA = [
     "index.html", "legacy.html", "dashboard.html", "template.html", "template_legacy.html",
+    # coupon claim page: built artifact, its template, and the separate data
+    # block it embeds (kept out of data.json so the v2 contract is untouched)
+    "coupon.html", "template_coupon.html", "coupon_data.json",
     "*.py", "tests/*.py",
     # the render-exec gate's committed DOM shim (Cycle-3 Loop 2, item 1) —
     # listed explicitly or the stage step warns and silently never commits it
@@ -101,7 +104,9 @@ LEAKED_NAME_RES = [re.compile("ja" + "son" + r"\s+o" + "ng", re.I),
 # Every public/derived artifact gets the denied-field scan.
 DENIED_TARGETS = ["index.html", "legacy.html", "data.json", "catalog.json",
                   "DATASETS.md", "README.md", "stats_history.json",
-                  "transfers_export.csv", "day_digests.json", "RESTATEMENTS.md"]
+                  "transfers_export.csv", "day_digests.json", "RESTATEMENTS.md",
+                  # the coupon page is a public artifact like any other
+                  "coupon.html", "coupon_data.json"]
 
 # Tokens that betray monitoring status when they sit next to an address.
 STATUS_TOKENS = [r'["\']?ent["\']?\s*:', r'["\']?acf["\']?\s*:',
@@ -209,7 +214,9 @@ STRUCTURAL_LABEL_RES = [
 LABEL_KEYS = ("label", "role", "note", "counterparty_label")
 # Reviewed path exemptions (same discipline as ORACLE_KEY_ALLOW):
 #   scope.note — methodology prose next to scope.wallet; identity-free after
-#     the v2 redaction, and still covered by the text scans above.
+#     the v2 redaction, and still covered by the text scans above. The same
+#     path exists in coupon_data.json (same field, same role) and is covered
+#     by the same entry — both are scope prose, neither names anybody.
 LABEL_KEY_ALLOW = {"scope.note"}
 
 
@@ -423,12 +430,17 @@ def scan():
             bad += _label_leaks(_parsed, "data.json")
         except json.JSONDecodeError as e:
             bad.append(f"data.json did not parse for the structural scan: {e}")
-    _cj = os.path.join(HERE, "catalog.json")
-    if os.path.exists(_cj):
-        try:
-            bad += _label_leaks(json.load(open(_cj)), "catalog.json")
-        except json.JSONDecodeError as e:
-            bad.append(f"catalog.json did not parse for the structural scan: {e}")
+    for _rel in ("catalog.json", "coupon_data.json"):
+        _cj = os.path.join(HERE, _rel)
+        if os.path.exists(_cj):
+            try:
+                _p2 = json.load(open(_cj))
+                bad += _label_leaks(_p2, _rel)
+                if _rel == "coupon_data.json":
+                    bad += [h.replace("data.json:", "coupon_data.json:")
+                            for h in _oracle_keys(_p2)]
+            except json.JSONDecodeError as e:
+                bad.append(f"{_rel} did not parse for the structural scan: {e}")
     # (d) retired-straggler per-entry detail — tx hashes and entries[] only.
     _rt = []
     for rel in ("data.json", "index.html"):

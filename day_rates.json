@@ -139,7 +139,7 @@
 },
 "last_accepted_rate": {
 "MOCA": 0.0077424,
-"MENTE": 0.01631
+"MENTE": 0.01632
 },
 "recon": {
 "MOCA": -16161.7,
@@ -548,5 +548,15 @@
 "2026-04-24": "market"
 }
 },
-"market_refused": []
+"market_refused": [],
+"coupon": {
+"next_block": {
+"out": 50681448,
+"in": 50521461
+},
+"verified_from": {
+"from": 48300000,
+"to": 48300000
+}
+}
 }

@@ -38,13 +38,19 @@ def main():
     # 1. real ledger verifies against a full recompute
     led = digests.load_ledger(os.path.join(ROOT, "day_digests.json"))
     assert led, "day_digests.json is missing or empty — seed it (python3 digests.py --seed)"
-    assert set(led) == set(records), \
-        f"ledger days != recomputed closed days: only-ledger={sorted(set(led)-set(records))} only-recomputed={sorted(set(records)-set(led))}"
+    # enforce() leaves the most recent closed days unsealed for a 1-day
+    # indexer-lag grace — those may legitimately be recomputed-but-unsealed
+    in_grace = {d for d in records if digests._days_between(d, today) < 2}
+    assert set(led) == set(records) - in_grace or set(led) == set(records), \
+        f"ledger days != recomputed closed days: only-ledger={sorted(set(led)-set(records))} only-recomputed={sorted(set(records)-set(led)-in_grace)}"
     for day, rec in records.items():
+        if day not in led:
+            continue          # unsealed grace day
         got = digests.day_sha(rec)
         assert led[day]["sha"] == got, f"{day}: sealed {led[day]['sha']} != recomputed {got}"
         assert led[day].get("first_written_iso"), f"{day}: no first_written_iso"
-    print(f"ok ledger verifies: {len(records)} closed days match their seals")
+    print(f"ok ledger verifies: {len(led)} sealed days match "
+          f"({len(records) - len(led)} in sealing grace)")
 
     victim = sorted(records)[len(records) // 2]
     with tempfile.TemporaryDirectory() as td:

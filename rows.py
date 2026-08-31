@@ -16,6 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 CHAIN = "base"
 TREASURY = "0xbd956171f5b50936f0ad1c4db80c022bd2442519"      # lowercase, see _lc
+COUPON = "0xb15afc65532f8ec4d39db521ad7eb5b9e9ef5acf"        # coupon distributor
 
 
 def _token_map():
@@ -48,8 +49,10 @@ def _row(token, block, ts_epoch, tx, li, frm, to, wei, src):
 def canonical_rows(source, path=None):
     """Yield canonical rows for one source.
 
-    source: "treasury_out" | "treasury_in" | "cognition_in" | "moca_ledger"
-    path:   required for "moca_ledger" (the clone's data/ directory);
+    source: "treasury_out" | "treasury_in" | "coupon_out" | "coupon_in"
+            | "cognition_in" | "moca_ledger"
+    path:   required for "moca_ledger" (the clone's data/ directory) and
+            accepted for "coupon_ledger" (the private coupon jsonl dir);
             ignored otherwise.
 
     PRECISION CAVEAT (cognition_in): those rows are pre-slimmed and carry
@@ -61,14 +64,16 @@ def canonical_rows(source, path=None):
     cognition_in wei for an equality reconciliation; use it for sums only.
     """
     import shards
-    if source == "moca_ledger":
+    if source in ("moca_ledger", "coupon_ledger"):
         if not path:
-            raise ValueError("moca_ledger needs the clone's data/ path")
-        yield from _moca_ledger(path)
+            raise ValueError(f"{source} needs the clone's data directory path")
+        yield from _jsonl_ledger(path, source)
         return
     toks = _token_map()
-    if source in ("treasury_out", "treasury_in"):
-        d = "transfers" if source == "treasury_out" else "transfers_in"
+    SHARD_DIR = {"treasury_out": "transfers", "treasury_in": "transfers_in",
+                 "coupon_out": "coupon_out", "coupon_in": "coupon_in"}
+    if source in SHARD_DIR:
+        d = SHARD_DIR[source]
         for i in shards.load(os.path.join(HERE, d)):
             sym = toks.get(_lc(i["token"]["address_hash"]))
             if not sym:
@@ -85,9 +90,11 @@ def canonical_rows(source, path=None):
         raise ValueError(f"unknown source {source!r}")
 
 
-def _moca_ledger(data_dir):
-    """moca-ledger daily jsonl: block, ts (epoch), tx, li, from, to, value (wei
-    string). MOCA-only by construction — the crawler watches one contract."""
+def _jsonl_ledger(data_dir, source):
+    """The private crawlers' daily jsonl: block, ts (epoch), tx, li, from, to,
+    value (wei string), token. MOCA-only by construction — each crawler
+    watches one contract. Used by both moca_ledger (treasury cross-check) and
+    coupon_ledger (coupon cross-check)."""
     for fn in sorted(os.listdir(data_dir)):
         if not fn.endswith(".jsonl"):
             continue
@@ -98,7 +105,7 @@ def _moca_ledger(data_dir):
                     continue
                 r = json.loads(line)
                 yield _row("MOCA", r["block"], r["ts"], r["tx"], r["li"],
-                           r["from"], r["to"], r["value"], "moca_ledger")
+                           r["from"], r["to"], r["value"], source)
 
 
 class StaleData(Exception):

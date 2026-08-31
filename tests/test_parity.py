@@ -128,6 +128,100 @@ def _exec_sentence_checks(D):
     return checked
 
 
+def _coupon_checks():
+    """Coupon page parity. Same discipline as the treasury half: the totals
+    are RECOMPUTED here from coupon_out/ + classify.pin_rate — never imported
+    from refresh.py — and the summary sentence is read out of the BUILT
+    coupon.html, so a page whose text drifted from its own data block fails.
+
+    pin_rate is called on day_rates ALONE, with no open_day_rate leg: that is
+    exactly how refresh.py prices claims, and a test that priced the open day
+    differently would disagree with the page every day before midnight.
+    """
+    C = json.load(open(os.path.join(ROOT, "coupon_data.json")))
+    dr = json.load(open(os.path.join(ROOT, "day_rates.json")))
+    rates = dict(dr["day_rates"].get("MOCA", {}))
+    moca = C["scope"]["token"]["MOCA"].lower()
+    n = usd = qty = 0.0
+    wallets = set()
+    for i in shards.load(os.path.join(ROOT, "coupon_out")):
+        if i["token"]["address_hash"].lower() != moca:
+            continue
+        val = int(i["total"]["value"]) / 10 ** int(i["total"].get("decimals") or 18)
+        n += 1
+        qty += val
+        usd += val * pin_rate(rates, i["timestamp"][:10], C["scope"]["rate"])
+        wallets.add(i["to"]["hash"].lower())
+    T = C["totals"]
+    assert int(n) == T["claims"], f"coupon claims {int(n)} != published {T['claims']}"
+    assert len(wallets) == T["claimants"], \
+        f"coupon claimants {len(wallets)} != published {T['claimants']}"
+    assert abs(qty - T["moca_out"]) <= 1e-4, \
+        f"coupon MOCA out {qty:,.4f} != published {T['moca_out']:,.4f}"
+    assert abs(usd - T["usd_out"]) <= TOL, \
+        f"coupon USD out ${usd:,.4f} != published ${T['usd_out']:,.4f}"
+    print(f"ok coupon totals recomputed from shards: {T['claims']:,} claims · "
+          f"{T['moca_out']:,.0f} MOCA · ${T['usd_out']:,.2f} · {T['claimants']:,} wallets")
+    checked = 4
+
+    html = open(os.path.join(ROOT, "coupon.html"), errors="replace").read()
+    m = re.search(r'"summary":\s*\{\s*"text":\s*"((?:[^"\\]|\\.)*)"', html)
+    assert m, "coupon.html embeds no summary text — rebuild the page"
+    text = json.loads('"' + m.group(1) + '"')
+    assert text == C["summary"]["text"], \
+        f"coupon summary drifted between coupon.html and coupon_data.json:\n  page {text!r}\n  data {C['summary']['text']!r}"
+
+    def num(pat):
+        mm = re.search(pat, text)
+        assert mm, f"coupon sentence pattern {pat!r} missing from: {text!r}"
+        return float(mm.group(1).replace(",", ""))
+
+    # tolerance per figure: USD is rendered to the cent, MOCA and the counts
+    # are rendered with no decimals, so a whole unit of rounding is expected.
+    for pat, want, tol, name in (
+            (r"distributed ([\d,]+) MOCA", T["moca_out"], 1.0, "MOCA distributed"),
+            (r"MOCA \(≈\$([\d,]+\.\d{2})\)", T["usd_out"], TOL, "USD distributed"),
+            (r"across ([\d,]+) claims", T["claims"], 0, "claims"),
+            (r"to ([\d,]+) unique wallets", T["claimants"], 0, "unique wallets")):
+        got = num(pat)
+        assert abs(got - want) <= tol, \
+            f"coupon sentence {name} {got:,.2f} != coupon_data {want:,.2f}"
+        print(f"ok coupon sentence: {name} {got:,.2f} == coupon_data")
+        checked += 1
+    assert f"since its funding on {C['scope']['genesis_day']}" in text, \
+        f"coupon sentence does not state the genesis day {C['scope']['genesis_day']}"
+    checked += 1
+    if T["balance_moca"] is not None:
+        held = num(r"It holds ([\d,]+) MOCA")
+        assert abs(held - T["balance_moca"]) <= 1.0, \
+            f"coupon 'holds' {held:,.0f} MOCA != balance_moca {T['balance_moca']:,.0f}"
+        print(f"ok coupon sentence: holds {held:,.0f} MOCA == balance_moca")
+        checked += 1
+        # weeks are the balance divided by the 7d CLAIM pace, and the clause is
+        # ABSENT when there were no claims in 7 days — never a guessed number.
+        mw = re.search(r"about ([\d,.]+) weeks? of claims", text)
+        assert bool(mw) == bool(T["weeks_left"]), \
+            f"weeks clause present={bool(mw)} but weeks_left={T['weeks_left']}"
+        if mw:
+            got = float(mw.group(1).replace(",", ""))
+            assert abs(got - T["balance_moca"] / T["moca_7d"]) < 0.05 + 1e-9, \
+                f"coupon weeks {got} != balance / 7d claim pace"
+            print(f"ok coupon sentence: {got} weeks == balance / 7d claim pace")
+            checked += 1
+    has_prefix = bool(re.search(r"^Data is \d+ hours old — figures may lag\.", text))
+    assert has_prefix == bool(C["summary"].get("degraded")), \
+        f"coupon degraded prefix present={has_prefix} but degraded={C['summary'].get('degraded')}"
+    print(f"ok coupon degraded prefix consistent (degraded={bool(C['summary'].get('degraded'))})")
+    checked += 1
+    # concentration is an aggregate of the same ranking the table publishes
+    top5 = round(sum(t["moca"] for t in C["top"][:5]) / T["moca_out"] * 100, 1)
+    assert abs(top5 - C["concentration"]["top5_pct"]) <= 0.1, \
+        f"top-5 concentration {C['concentration']['top5_pct']}% != recomputed {top5}%"
+    print(f"ok coupon concentration: top 5 hold {C['concentration']['top5_pct']}% of claimed MOCA")
+    checked += 1
+    return checked
+
+
 def main():
     D, rows = _load()
     # schema v2 = the identity-redacted contract. Every figure check below is
@@ -170,6 +264,7 @@ def main():
     print(f"ok glossary documents all {len(GLOSSARY_KEYS)} declared figures")
 
     checked += _exec_sentence_checks(D)
+    checked += _coupon_checks()
 
     print(f"test_parity: PASS ({checked} figure checks)")
     return 0

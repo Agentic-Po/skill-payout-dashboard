@@ -33,7 +33,21 @@ last count — the LIVE numbers are always each repo's machine-generated
    the plain-English executive block the page shows above the hero strip,
    computed server-side from the same `facts` values. Consumers that
    asserted an exact top-level key set must add it; nothing else changed.
-6. **PostHog warehouse path** (documented, run locally — credentials never in
+6. **Coupon claims feed**: `coupon_data.json` (schema_version 1) is a SEPARATE
+   file, published beside `data.json` and embedded verbatim in `coupon.html`.
+   It covers the Coupon Distributor wallet only — a wallet funded outside the
+   treasury (its first event is a bridge mint from the zero address) whose rows
+   appear in NO treasury figure, so the two feeds never double-count. Keys:
+   `scope, summary, totals, buckets, daily, inflows, top, concentration,
+   range`. It carries aggregates plus the top-10 claimant totals — never a
+   per-claim row and never a full claimant list; read rows from the
+   `coupon_out` / `coupon_in` datasets through `rows.py`
+   (`canonical_rows("coupon_out")`) instead. USD in it is priced with the same
+   `classify.pin_rate` against the same `day_rates.json` the treasury page
+   uses; the display size buckets are MOCA-denominated and are a page-local
+   presentation choice, NOT a taxonomy — do not classify against them.
+   `data.json`'s top-level key set is deliberately unchanged by any of this.
+7. **PostHog warehouse path** (documented, run locally — credentials never in
    CI): export canonical rows to Parquet → R2 bucket `po-import-bucket`
    (`<dataset>/snapshot_<YYYYMMDD>.parquet`) → register via
    `POST /api/projects/459477/warehouse_tables/`. See the vault note

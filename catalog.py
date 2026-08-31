@@ -97,6 +97,13 @@ def _data_stamps(rel):
     return [rng.get("from") or "", rng.get("to") or ""]
 
 
+def _coupon_stamps(rel):
+    """coupon_data.json is one document over a window, like data.json."""
+    d = json.load(open(os.path.join(HERE, rel)))
+    rng = d.get("range", {})
+    return [rng.get("from") or "", rng.get("to") or ""]
+
+
 def _hist_stamps(rel):
     return [h["ts"] for h in json.load(open(os.path.join(HERE, rel)))]
 
@@ -120,6 +127,25 @@ PUBLIC = [
          update_cadence="every refresh (~4x/hour)", expected_cadence_minutes=15,
          provenance="Blockscout v2 token-transfers into the Cognition Credits collector → eth_getLogs fallback → 24h cross-check",
          not_included="MENTE only, collector-inbound only; rows are pre-slimmed and val is a float token amount, not wei — see rows.py for the precision caveat"),
+    dict(name="coupon_out", path=["coupon_out/"], kind="ledger", live=True,
+         measure=lambda: _shard_stamps("coupon_out"),
+         row_schema="timestamp, transaction_hash, log_index, block_number, from.hash, to.hash, token.address_hash, total.value, total.decimals",
+         update_cadence="every refresh (~4x/hour)", expected_cadence_minutes=15,
+         provenance="Blockscout v2 token-transfers (filter=from) for the Coupon Distributor wallet → eth_getLogs fallback → 24h cross-check",
+         not_included="outbound only; inbound lives in coupon_in/. A separate wallet from the treasury — no row here appears in transfers/ and no figure on the treasury page counts it"),
+    dict(name="coupon_in", path=["coupon_in/"], kind="ledger", live=True,
+         measure=lambda: _shard_stamps("coupon_in"),
+         row_schema="timestamp, transaction_hash, log_index, block_number, from.hash, to.hash, token.address_hash, total.value, total.decimals",
+         update_cadence="every refresh (~4x/hour)", expected_cadence_minutes=15,
+         provenance="Blockscout v2 token-transfers (filter=to) for the Coupon Distributor wallet → eth_getLogs fallback → 24h cross-check",
+         not_included="every token the wallet received is stored, but only MOCA is priced and counted; the first row is a mint from the zero address (bridge mint), not a treasury transfer"),
+    dict(name="coupon_data", path=["coupon_data.json"], kind="derived", live=True,
+         measure=lambda: _coupon_stamps("coupon_data.json"),
+         row_schema="schema_version, scope, summary, totals, buckets, daily, inflows, top, concentration, range",
+         update_cadence="every refresh (~4x/hour)", expected_cadence_minutes=15,
+         source_generated=lambda: _data_generated("coupon_data.json"),
+         provenance="refresh.py — exactly what coupon.html embeds, from coupon_out/ + coupon_in/ priced at the day-pinned MOCA rate",
+         not_included="aggregates and the top-10 claimant totals only — no per-claim rows and no claimant list beyond the top 10"),
     dict(name="transfers_export", path=["transfers_export.csv"], kind="derived", live=True,
          measure=lambda: _csv_stamps("transfers_export.csv"),
          row_schema="timestamp_utc, direction, token, amount, rate_usd, rate_source, usd, size_band, counterparty, tx_hash, log_index, class_coarse, class_fine",
@@ -128,7 +154,7 @@ PUBLIC = [
          not_included="no cognition_in rows and no SWARM-era rows; no counterparty labels since data.json schema_version 2 (identity labels are private — see CONSUMERS.md)"),
     dict(name="day_rates", path=["day_rates.json"], kind="oracle", live=True,
          measure=lambda: _day_rate_stamps("day_rates.json"),
-         row_schema="day_rates[symbol][YYYY-MM-DD] -> USD rate; day_rate_src[symbol][YYYY-MM-DD] -> 'implied'|'market'; plus last_accepted_rate, recon, pending_rate, open_day_rate, market_rates",
+         row_schema="day_rates[symbol][YYYY-MM-DD] -> USD rate; day_rate_src[symbol][YYYY-MM-DD] -> 'implied'|'market'; plus last_accepted_rate, recon, pending_rate, open_day_rate, market_rates, coupon.next_block (the coupon crawl's per-direction block cursor)",
          update_cadence="one immutable entry per token per day", expected_cadence_minutes=1440,
          provenance="two sources, marked per day in day_rate_src: 'implied' — the day-implied payout rate from that day's $0.10 invoke cluster, anchored by the live Blockscout exchange rate; 'market' — that day's GeckoTerminal pool close, used only for a CLOSED day the implied oracle could not price (no >=5-row cluster) and only inside the same 5x sanity band as the live rate. Closed days are never recomputed either way",
          not_included="no intraday rates and no pre-crawl days — a day with no payouts AND no market close gets no entry and is carried forward/back by classify.pin_rate"),
@@ -164,14 +190,18 @@ PRIVATE = [
 def build_entries():
     gen = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     out = []
+    # Single-document datasets: one JSON file summarising a window, not a row
+    # store — their "rows" is 1 by definition, and their coverage is the range
+    # they summarise (measure() returns that range's endpoints).
+    SINGLE_DOC = {"data", "coupon_data"}
     for d in PUBLIC:
         stamps = d["measure"]()
         rows, rows_closed, lo, hi = _measured([s for s in stamps if s])
         out.append({
             "name": d["name"], "path": d["path"], "public": True, "kind": d["kind"],
             "row_schema": d["row_schema"],
-            "rows": 1 if d["name"] == "data" else rows,
-            "rows_closed": 1 if d["name"] == "data" else rows_closed,
+            "rows": 1 if d["name"] in SINGLE_DOC else rows,
+            "rows_closed": 1 if d["name"] in SINGLE_DOC else rows_closed,
             "bytes": sum(_size(p) for p in d["path"]),
             "coverage": {"from": lo, "to": hi},
             "generated_iso": gen, "max_row_ts": hi,

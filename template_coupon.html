@@ -1,0 +1,282 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Coupon Claims — Coupon Distributor wallet (MOCA)</title>
+<style>
+/* Palette and layout primitives are the main page's (template.html); the
+   band/oracle/monitor-specific rules are dropped — this page has none. */
+:root{
+  --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#6f6e69;
+  --line:#e6e5e0; --acc:#1a5fb0;
+  --c-moca:#2a78d6; --c-in:#008300; --warn:#9a5800; --warnbg:#fdf6ec;
+  --band1:#00907c; --band2:#4f8fdd; --band3:#3f3fb8; --band4:#a855d6; --band5:#8f1770;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#9d9c96;
+  --line:#2e2e2b; --acc:#3987e5;
+  --c-moca:#3987e5; --c-in:#3fa93f; --warn:#e8a44a; --warnbg:#241c10;
+  --band1:#12a389; --band2:#3d63d6; --band3:#8f7bea; --band4:#8f3ec4; --band5:#d557b3;
+}}
+:root[data-theme="dark"]{
+  --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#9d9c96;
+  --line:#2e2e2b; --acc:#3987e5;
+  --c-moca:#3987e5; --c-in:#3fa93f; --warn:#e8a44a; --warnbg:#241c10;
+  --band1:#12a389; --band2:#3d63d6; --band3:#8f7bea; --band4:#8f3ec4; --band5:#d557b3;
+}
+:root[data-theme="light"]{
+  --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#6f6e69;
+  --line:#e6e5e0; --acc:#1a5fb0;
+  --c-moca:#2a78d6; --c-in:#008300; --warn:#9a5800; --warnbg:#fdf6ec;
+  --band1:#00907c; --band2:#4f8fdd; --band3:#3f3fb8; --band4:#a855d6; --band5:#8f1770;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+a{color:var(--acc);text-decoration:none}
+a:hover{text-decoration:underline}
+a:visited{color:var(--acc)}
+.card a{font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.card td a{font-weight:inherit;text-decoration:none}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,"SF Pro Text",Segoe UI,sans-serif;margin:0;padding:28px 20px 60px}
+.wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1{font-size:21px;margin:0;letter-spacing:-.01em}
+.sub{color:var(--ink2);font-size:13px;margin-top:4px}
+.mono{font-family:ui-monospace,SF Mono,Menlo,monospace;font-variant-numeric:tabular-nums}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.tile .k{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3)}
+.tile .v{font-size:24px;font-weight:650;margin-top:4px;font-variant-numeric:tabular-nums}
+.tile .d{font-size:12px;color:var(--ink2);margin-top:2px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 18px}
+.card h2{font-size:14px;margin:0 0 2px}
+.card .note{font-size:12px;color:var(--ink2);margin:0 0 12px}
+.sect{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink3);font-weight:650;margin:8px 0 -8px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink2);margin-bottom:10px}
+.bandchip{display:inline-block;font-size:10px;font-weight:650;padding:1px 7px;border-radius:4px;color:#fff;font-variant-numeric:tabular-nums}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:var(--ink3);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:7px 8px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+td.r,th.r{text-align:right}
+tr:last-child td{border-bottom:none}
+td a{color:var(--acc);text-decoration:none}
+.scroll{overflow-x:auto;max-height:70vh;overflow-y:auto}
+.scroll thead th{position:sticky;top:0;background:var(--surface);z-index:2}
+svg a{cursor:pointer}svg a:hover text{text-decoration:underline}svg a:hover rect{stroke-width:2.5}
+.mrow td{background:color-mix(in srgb,var(--ink) 5%,var(--surface));font-weight:650;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2)}
+.pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);color:var(--ink2)}
+.tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--bg);font-size:12px;padding:6px 9px;border-radius:6px;opacity:0;transition:opacity .1s;z-index:9;white-space:pre-line;font-variant-numeric:tabular-nums}
+.tip table{border-collapse:collapse;font-size:12px}
+.tip td{padding:1px 6px 1px 0;border:none;color:var(--bg);font-variant-numeric:tabular-nums}
+.tip .bandchip{font-size:10px;padding:0 6px;min-width:44px;text-align:center}
+.scopebox{font-size:12.5px;color:var(--ink2);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 16px;display:flex;flex-wrap:wrap;gap:4px 24px}
+.scopebox b{color:var(--ink)}
+.showmore{cursor:pointer;font-size:13px;color:var(--acc);background:none;border:none;padding:8px 0}
+@media (max-width:640px){
+ body{padding:16px 10px 40px}
+ .tile .v{font-size:20px}
+ th,td{padding:5px 5px}
+}
+</style>
+<div class="wrap">
+  <header>
+    <h1>Coupon Claims — Coupon Distributor wallet (MOCA)</h1>
+    <div class="sub mono"><a id="hdrAddr" href="#" target="_blank">wallet</a> on Base · updated <span id="gen"></span> UTC · <a href="coupon_data.json">coupon_data.json</a> · <a href="index.html" title="Treasury Distribution wallet — the main dashboard">&larr; Treasury dashboard</a> · <a href="https://github.com/Agentic-Po/skill-payout-dashboard/blob/main/DATASETS.md" target="_blank" title="Machine-computed data catalog — rows, sizes, coverage, provenance">data catalog</a></div>
+  </header>
+
+  <!-- Plain-English strip: text computed SERVER-SIDE in refresh.py from the
+       same totals the tables render. This script injects it, never recomputes. -->
+  <div class="card" id="couponStrip" style="border-left:6px solid var(--c-moca);font-size:15px"></div>
+
+  <div class="card">
+    <h2>Where the MOCA comes from and where it goes</h2>
+    <p class="note">Every box links to that wallet's DeBank history on Base. The claimants box links to this wallet's own history — the 800+ individual claimant wallets are the outbound side of it.</p>
+    <div class="scroll"><svg width="100%" viewBox="0 0 1080 300" style="min-width:900px">
+      <defs>
+        <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--ink3)"/></marker>
+        <marker id="arrG" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--c-in)"/></marker>
+      </defs>
+      <g font-size="13" fill="var(--ink)" id="flowG"></g>
+    </svg></div>
+  </div>
+
+  <div class="scopebox" id="scope"></div>
+
+  <p class="sect">Claims — observed on-chain</p>
+  <div class="tiles" id="ctiles"></div>
+
+  <div class="card">
+    <h2>Daily claims</h2>
+    <p class="note">Newest first. The mix bar splits each day's claimed MOCA by coupon size band — the labels describe the amount only, not its purpose. USD prices each day at that day's pinned MOCA rate. The current UTC day is partial and marked. Showing the latest 21 days; expand for full history since <span id="d0"></span>.</p>
+    <div class="legend" id="bleg"></div>
+    <div class="scroll"><table id="dailyT"></table></div>
+    <button class="showmore" id="moreDays">Show full history &#9662;</button>
+  </div>
+
+  <div class="card">
+    <h2>Claimant concentration</h2>
+    <p class="note" id="concNote"></p>
+    <div class="scroll"><table id="topT"></table></div>
+  </div>
+
+  <div class="card">
+    <h2>Inflows — how this wallet was funded</h2>
+    <p class="note">Funded outside the treasury: the first event is a mint from the zero address (bridge mint pattern), not a treasury transfer.</p>
+    <div class="scroll"><table id="inT"></table></div>
+  </div>
+
+  <p class="note" id="foot" style="max-width:1120px"></p>
+</div>
+<div class="tip" id="tip"></div>
+<script>
+const DATA = /*__DATA__*/;
+// ---- freshness banner: same behaviour as the main page, and for the same
+// reason — it runs in the viewer's browser, so it shows even when the
+// pipeline is completely dead.
+(function(){
+  const SC=DATA.scope||{};
+  const box=document.createElement("div");
+  box.style.cssText="max-width:1080px;margin:0 auto 14px;display:flex;flex-direction:column;gap:8px";
+  function banner(txt,color){const d=document.createElement("div");
+    d.style.cssText="border:1.5px solid "+color+";color:"+color+";border-radius:8px;padding:10px 14px;font-weight:650;font-size:13.5px;background:var(--surface)";
+    d.textContent=txt;box.appendChild(d);}
+  const stamp=SC.generated_iso||((SC.generated||"").replace(" ","T")+":00Z");
+  const t=Date.parse(stamp);
+  if(!isNaN(t)){
+    const ageH=(Date.now()-t)/3.6e6;
+    if(ageH>2.5) banner("⚠ Data is "+(ageH<48?Math.round(ageH)+" hours":Math.round(ageH/24)+" days")+" old — the refresh pipeline has not published since "+(SC.generated||stamp)+" UTC. Treat all figures as stale.","var(--warn)");
+  }
+  if(SC.complete===false) banner("⚠ Data incomplete: this refresh rendered from a cached/partial chain fetch — recent claims may be missing.","var(--warn)");
+  if(box.children.length)document.body.insertBefore(box,document.body.firstChild);
+})();
+const SC=DATA.scope, T=DATA.totals, BK=DATA.buckets.keys, BL=DATA.buckets.labels;
+const fmt=n=>n.toLocaleString("en-US",{maximumFractionDigits:1});
+const fmt0=n=>n.toLocaleString("en-US",{maximumFractionDigits:0});
+const usd2=n=>"$"+n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+const shortA=a=>a.slice(0,8)+"…"+a.slice(-4);
+const debank=a=>"https://debank.com/profile/"+a+"/history?chain=base&token=";
+const tip=document.getElementById("tip");
+let pinned=null;
+function showTip(e,txt,html){if(html){tip.innerHTML=txt;}else{tip.textContent=txt;}
+ const w=html?300:220;
+ tip.style.left=Math.min((e.clientX||60)+14,window.innerWidth-w)+"px";tip.style.top=((e.clientY||120)-10)+"px";tip.style.opacity=1;}
+function hideTip(){if(!pinned)tip.style.opacity=0;}
+function bindTips(root){root.querySelectorAll("[data-tip],[data-tiphtml]").forEach(el=>{
+ el.setAttribute("tabindex","0");
+ const G=()=>el.dataset.tiphtml||el.dataset.tip, H=()=>!!el.dataset.tiphtml;
+ el.addEventListener("mousemove",e=>{if(!pinned)showTip(e,G(),H())});
+ el.addEventListener("mouseleave",hideTip);
+ el.addEventListener("focus",e=>{const r=el.getBoundingClientRect();showTip({clientX:r.left+40,clientY:r.top+20},G(),H())});
+ el.addEventListener("blur",()=>{pinned=null;tip.style.opacity=0;});
+ el.addEventListener("click",e=>{if(pinned===el){pinned=null;tip.style.opacity=0;}else{pinned=el;showTip(e,G(),H());}});
+});}
+document.addEventListener("click",e=>{if(pinned&&!pinned.contains(e.target)){pinned=null;tip.style.opacity=0;}},true);
+document.getElementById("gen").textContent=SC.generated;
+const hdr=document.getElementById("hdrAddr");
+hdr.setAttribute("href",debank(SC.wallet));
+hdr.textContent=shortA(SC.wallet);
+// plain-English strip — injected verbatim from the server-computed text.
+// textContent, not innerHTML: the sentence is prose, and the page must never
+// be able to reformat a figure it did not compute.
+document.getElementById("couponStrip").textContent=
+ (DATA.summary&&DATA.summary.text)?DATA.summary.text:"";
+
+// ---- flow diagram: [bridge mint + other inflows] -> distributor -> claimants
+(function(){
+  const IN=DATA.inflows||[];
+  const mint=IN.filter(x=>x.kind==="bridge mint");
+  const other=IN.filter(x=>x.kind!=="bridge mint");
+  const mintM=mint.reduce((s,x)=>s+x.moca,0), otherM=other.reduce((s,x)=>s+x.moca,0);
+  function box(x,y,w,h,addr,title,sub,sub2,stroke){
+    return '<a href="'+debank(addr)+'" target="_blank" rel="noopener">'
+      +'<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="8" fill="none" stroke="'+stroke+'" stroke-width="1.5"/>'
+      +'<text x="'+(x+w/2)+'" y="'+(y+26)+'" text-anchor="middle" font-weight="650">'+title+'</text>'
+      +'<text x="'+(x+w/2)+'" y="'+(y+44)+'" text-anchor="middle" font-size="11" fill="var(--ink2)">'+sub+'</text>'
+      +'<text x="'+(x+w/2)+'" y="'+(y+61)+'" text-anchor="middle" font-size="11" fill="var(--ink2)">'+(sub2||"")+'</text>'
+      +'</a>';
+  }
+  let g="";
+  g+=box(30,30,250,74,mint.length?mint[0].addr:SC.wallet,"Bridge mint",
+         (mint.length?shortA(mint[0].addr):"0x0000…0000")+" · mint from zero address",
+         fmt0(mintM)+" MOCA","var(--c-in)");
+  g+=box(30,160,250,74,other.length?other[0].addr:SC.wallet,"Other inflows",
+         (other.length===1?shortA(other[0].addr):other.length+" source wallets"),
+         fmt0(otherM)+" MOCA over "+other.reduce((s,x)=>s+x.n,0)+" transfers","var(--c-in)");
+  g+='<line x1="280" y1="67" x2="414" y2="120" stroke="var(--c-in)" stroke-width="1.5" marker-end="url(#arrG)"/>';
+  g+='<line x1="280" y1="197" x2="414" y2="150" stroke="var(--c-in)" stroke-width="1.5" marker-end="url(#arrG)"/>';
+  g+=box(420,98,250,84,SC.wallet,"Coupon Distributor",shortA(SC.wallet)+" · this page",
+         (T.balance_moca!==null&&T.balance_moca!==undefined?"holds "+fmt0(T.balance_moca)+" MOCA ≈ "+usd2(T.balance_usd):"balance unavailable"),"var(--c-moca)");
+  g+='<line x1="670" y1="140" x2="804" y2="140" stroke="var(--ink3)" stroke-width="1.5" marker-end="url(#arr)"/>';
+  g+='<text x="737" y="128" text-anchor="middle" font-size="11" fill="var(--ink2)">claims</text>';
+  g+=box(810,98,250,84,SC.wallet,"Claimants",fmt0(T.claimants)+" unique wallets",
+         fmt0(T.moca_out)+" MOCA ≈ "+usd2(T.usd_out)+" over "+fmt0(T.claims)+" claims","var(--ink3)");
+  g+='<text x="935" y="206" text-anchor="middle" font-size="11" fill="var(--ink3)">the link opens this wallet\'s own outbound history</text>';
+  g+='<text x="545" y="212" text-anchor="middle" font-size="11" fill="var(--ink2)">lifetime in '+fmt0(T.moca_in)+' MOCA · out '+fmt0(T.moca_out)+' MOCA</text>';
+  if(T.recon_delta_moca!==null&&T.recon_delta_moca!==undefined&&Math.abs(T.recon_delta_moca)>0.0001){
+    g+='<text x="545" y="226" text-anchor="middle" font-size="10" fill="var(--warn,#b45309)">⚠ ledger and balance disagree by '+T.recon_delta_moca.toLocaleString()+' MOCA</text>';}
+  document.getElementById("flowG").innerHTML=g;
+})();
+
+// scope box
+document.getElementById("scope").innerHTML=
+ "<span><b>Scope:</b> one wallet · MOCA only ("+SC.excluded_in_tx+" inbound transfers of other tokens excluded)</span>"+
+ "<span><b>Claim range:</b> "+(DATA.range.from||"?")+" → "+(DATA.range.to||"?")+" UTC · funded from "+SC.genesis_day+(SC.complete?"":" · <b style='color:var(--warn)'>⚠ fetch incomplete this run</b>")+"</span>"+
+ "<span><b>Rate:</b> MOCA $"+SC.rate.toFixed(6)+" ("+SC.rate_src+") live; historical days priced at their own pinned rate</span>"+
+ "<span><b>Source:</b> "+SC.source+"</span>"+
+ "<span><b>Updates:</b> "+SC.cadence+"</span>"+
+ "<span><b>Note:</b> "+SC.note+"</span>";
+
+// tiles
+const ctiles=[
+ ["Claimed — all time", fmt0(T.moca_out)+" MOCA", usd2(T.usd_out)+" · "+fmt0(T.claims)+" claims"],
+ ["Unique claimants", fmt0(T.claimants), (T.claims-T.claimants>0?fmt0(T.claims-T.claimants)+" repeat claims":"one claim per wallet so far")],
+ ["Wallet balance", T.balance_moca!==null&&T.balance_moca!==undefined?fmt0(T.balance_moca)+" MOCA":"n/a", T.balance_usd!==null&&T.balance_usd!==undefined?usd2(T.balance_usd)+" at the live rate":"balance fetch failed this run"],
+ ["Claims — 7d", fmt0(T.claims_7d), fmt0(T.moca_7d)+" MOCA in the last 7 days"],
+ ["Weeks of claims left", T.weeks_left!==null&&T.weeks_left!==undefined?fmt(T.weeks_left)+" weeks":"n/a", "balance ÷ 7-day claim pace — projection, not a countdown"],
+ ["Funded in", fmt0(T.moca_in)+" MOCA", "incl. "+fmt0(T.mint_moca)+" MOCA bridge mint · "+usd2(T.usd_in)],
+];
+document.getElementById("ctiles").innerHTML=ctiles.map(t=>'<div class="tile"><div class="k">'+t[0]+'</div><div class="v">'+t[1]+'</div><div class="d">'+t[2]+'</div></div>').join("");
+
+// daily claims table with the coupon-size mix bar
+const BC={c1:"var(--band1)",c2:"var(--band2)",c3:"var(--band3)",c4:"var(--band4)",c5:"var(--band5)"};
+document.getElementById("bleg").innerHTML=BK.map(k=>'<span class="bandchip" style="background:'+BC[k]+'">'+BL[k]+'</span>').join(" ");
+// the earliest DAY in the table, which is the funding day — earlier than the
+// first claim, so this must not be DATA.range.from (that is the claim range)
+document.getElementById("d0").textContent=(DATA.daily[0]||{}).d||DATA.range.from||"?";
+const revDaily=DATA.daily.slice().reverse();
+function buildRows(list){
+ const dmax=Math.max.apply(null,list.map(d=>d.moca).concat([1]));
+ return list.map(d=>{
+  const bar=BK.map(k=>{const v=(d.buckets[k]||{}).moca||0;return v?'<div style="height:10px;background:'+BC[k]+';width:'+(v/dmax*100)+'%;border-right:1px solid var(--surface)"></div>':"";}).join("");
+  const rowsT=BK.filter(k=>d.buckets[k]).map(k=>'<tr><td><span class="bandchip" style="background:'+BC[k]+'">'+BL[k]+'</span></td><td style="text-align:right">'+d.buckets[k].n+' claims</td><td style="text-align:right"><b>'+fmt0(d.buckets[k].moca)+' MOCA</b></td><td style="text-align:right">'+d.buckets[k].w+' wallets</td></tr>').join("");
+  const tipTxt="<b>"+d.d+"</b> — "+fmt0(d.moca)+" MOCA claimed<table>"+(rowsT||"<tr><td>no claims</td></tr>")+"</table>";
+  return '<tr data-tiphtml="'+tipTxt.replace(/"/g,"&quot;")+'" style="'+(d.partial?"opacity:.75":"")+'"><td class="mono">'+d.d+(d.partial?' <span class="pill">partial day</span>':"")+'</td><td class="r mono">'+d.n+'</td><td class="r mono">'+fmt0(d.moca)+'</td><td class="r mono">'+usd2(d.usd)+'</td><td style="width:24%;min-width:130px"><div style="display:flex;border-radius:3px;overflow:hidden">'+bar+'</div></td><td class="r mono">'+d.claimants+'</td><td class="r mono" style="color:'+(d.in_moca?"var(--c-in)":"var(--ink3)")+'">'+(d.in_moca?fmt0(d.in_moca):"—")+'</td></tr>';
+ });}
+const dHead='<thead><tr><th>Day (UTC)</th><th class="r">Claims</th><th class="r">MOCA out</th><th class="r">USD</th><th>Coupon-size mix</th><th class="r">Claimants</th><th class="r">MOCA in</th></tr></thead>';
+const dailyT=document.getElementById("dailyT");
+function withMonthSeps(list,html){const out=[];let cur=null;
+ list.forEach((d,i)=>{const m=d.d.slice(0,7);if(cur!==null&&m!==cur)out.push('<tr class="mrow"><td colspan="7">'+m+'</td></tr>');else if(i===0)out.push('<tr class="mrow"><td colspan="7">'+m+'</td></tr>');cur=m;out.push(html[i]);});
+ return out.join("");}
+function renderDaily(all){const list=all?revDaily:revDaily.slice(0,21);dailyT.innerHTML=dHead+"<tbody>"+withMonthSeps(list,buildRows(list))+"</tbody>";bindTips(dailyT);}
+renderDaily(false);
+let allDays=false;
+const moreDays=document.getElementById("moreDays");
+moreDays.addEventListener("click",()=>{allDays=!allDays;renderDaily(allDays);moreDays.textContent=allDays?"Show less ▴":"Show full history ▾";});
+if(revDaily.length<=21) moreDays.style.display="none";
+
+// claimant concentration — aggregates plus the top 10 as on-chain facts
+document.getElementById("concNote").innerHTML=
+ "Top 5 claimants hold <b>"+DATA.concentration.top5_pct+"%</b> of all claimed MOCA (top 10: "+DATA.concentration.top10_pct+"%). "+
+ (DATA.concentration.max_claims_per_addr===1?"No address has claimed more than once — the spread reflects coupon face values, not repeat claiming. ":"")+
+ "The table lists the ten largest claimant addresses with their on-chain totals — address, amount and claim count only.";
+document.getElementById("topT").innerHTML='<thead><tr><th>#</th><th>Claimant</th><th class="r">MOCA</th><th class="r">USD</th><th class="r">Claims</th><th class="r">Share</th><th>First</th><th>Last</th></tr></thead><tbody>'+
+ DATA.top.map((c,i)=>'<tr><td class="mono">'+(i+1)+'</td><td class="mono"><a href="'+debank(c.addr)+'" target="_blank" rel="noopener">'+shortA(c.addr)+'</a></td><td class="r mono">'+fmt0(c.moca)+'</td><td class="r mono">'+usd2(c.usd)+'</td><td class="r mono">'+c.n+'</td><td class="r mono">'+c.share.toFixed(2)+'%</td><td class="mono">'+c.first+'</td><td class="mono">'+c.last+'</td></tr>').join("")+'</tbody>';
+
+// inflow ledger
+document.getElementById("inT").innerHTML='<thead><tr><th>Source</th><th>Kind</th><th class="r">MOCA</th><th class="r">USD</th><th class="r">Transfers</th><th>First</th><th>Last</th></tr></thead><tbody>'+
+ DATA.inflows.map(s=>'<tr><td class="mono"><a href="'+debank(s.addr)+'" target="_blank" rel="noopener">'+shortA(s.addr)+'</a></td><td>'+s.kind+'</td><td class="r mono">'+fmt0(s.moca)+'</td><td class="r mono">'+usd2(s.usd)+'</td><td class="r mono">'+s.n+'</td><td class="mono">'+s.first+'</td><td class="mono">'+s.last+'</td></tr>').join("")+'</tbody>';
+
+document.getElementById("foot").innerHTML=
+ "Data source: "+SC.source+". Updated "+SC.cadence+"; this page was built "+SC.generated+" UTC. "+
+ "Figures are computed server-side and injected — nothing on this page is recalculated in the browser. "+
+ 'Machine-readable copy: <a href="coupon_data.json">coupon_data.json</a> · raw shards and coverage in the '+
+ '<a href="https://github.com/Agentic-Po/skill-payout-dashboard/blob/main/DATASETS.md" target="_blank">data catalog</a> · '+
+ '<a href="index.html">treasury dashboard</a>.';
+</script>
