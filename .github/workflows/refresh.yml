@@ -4,7 +4,16 @@ on:
     - cron: "3,18,33,48 * * * *"   # 4x/hour on off-peak minutes: GitHub's
       # scheduler delivers best-effort (observed 8-85%% since 2026-08-26), so
       # asking 4x yields ~hourly in practice; notify.py rate-limits the
-      # Telegram digest to one per ~hour regardless of how many runs land
+      # Telegram digest to one per ~hour regardless of how many runs land.
+      #
+      # 4x/hour is only defensible while the job is SHORT. It stopped being
+      # short (22 min on 2026-08-31, ~55+ min/hour of runner occupancy — the
+      # pattern that got another repo cron-deprioritized on 2026-08-26) and was
+      # brought back to ~2.5 min end-to-end by the crawl-cursor work in
+      # refresh.py. refresh.py now prints a "PHASE TIMING:" line as its last
+      # log line: if the total in that line creeps back over ~5 min, fix the
+      # phase it names or drop this cron to 2x/hour ("8,38 * * * *") — do not
+      # leave a 4x schedule on a long job.
   workflow_dispatch:
 permissions:
   contents: write

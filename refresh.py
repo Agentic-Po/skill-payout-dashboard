@@ -23,6 +23,27 @@ from collections import Counter, defaultdict
 _T0 = time.time()   # run-duration telemetry (digest-only; see end of file)
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+# ---- phase timing (Cycle-3: cron fair-use deprioritization, 2026-08-31) ----
+# The run grew from ~4 min to 20-31 min one leg at a time, and nothing in the
+# logs said which leg. phase(name) closes the span since the previous call and
+# banks it under `name`; the accumulated map is printed as ONE line at the end
+# of the run ("PHASE TIMING: ...") so drift is visible in Actions logs without
+# re-instrumenting. Named spans only — the unaccounted remainder shows up as
+# the gap between the phase sum and the total, which is printed too.
+# Public-artifact safety: this is stdout only. It is never written to any
+# artifact; the aggregate duration alone continues to go to alert_state.json
+# (private, Actions cache) exactly as before.
+_PHASES = {}
+_ph_last = _T0
+def phase(name):
+    """Close the span since the last phase() call and bank it under `name`."""
+    global _ph_last
+    t = time.time()
+    # accumulate UNROUNDED — rounding here made the "other" remainder come out
+    # slightly negative when many small phases each rounded up.
+    _PHASES[name] = _PHASES.get(name, 0.0) + (t - _ph_last)
+    _ph_last = t
+
 # ---- --offline: rebuild pages + derived artifacts from on-disk state ----
 # (Cycle-3 Loop 3.) No crawling, no RPC, no rate/balance/PostHog fetches:
 # rows come from the committed shards, rates/balances/sink/server are reused
@@ -107,14 +128,42 @@ STATE.setdefault("day_rates", {s: {} for s in TOKENS})
 STATE.setdefault("last_accepted_rate", {})
 STATE.setdefault("recon", {})
 
+# Blockscout v2 circuit breaker (perf, 2026-08-31). get()'s retry ladder sleeps
+# 2+4+6 = 12s before giving up, and v2 outages are platform-wide: when it is
+# down it is down for every leg, so a single run paid that ladder six times
+# over (~72s of pure sleep) to re-learn the same fact, then used the eth_getLogs
+# fallback each time anyway.
+# After TWO legs have each exhausted the full ladder, v2 is treated as down for
+# the REST OF THIS RUN and further calls fail fast on one attempt. This does not
+# skip anything: every leg still tries v2 first, every leg still falls back
+# exactly as before, and a single success re-arms the ladder (v2 recovering
+# mid-run is handled). The state is per-process — nothing is banked, so the next
+# run always starts by giving v2 the full benefit of the doubt.
+_V2_FAILS = [0]
+V2_TRIP = 2
+
 def get(url, tries=4):
+    # Scoped to Blockscout v2 ONLY. get() is also the GeckoTerminal and
+    # DexScreener client, and those are unrelated services — a v2 outage must
+    # not shorten their retries, nor their failures trip v2's breaker.
+    v2 = "base.blockscout.com/api/v2/" in url
+    if v2 and _V2_FAILS[0] >= V2_TRIP:
+        tries = 1                  # v2 already proven down this run — no waiting
     for a in range(tries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "curl/8.4.0", "Accept": "application/json"})
             with urllib.request.urlopen(req, timeout=60) as r:
-                return json.load(r)
+                out = json.load(r)
+            if v2:
+                _V2_FAILS[0] = 0   # v2 answered — re-arm the full ladder
+            return out
         except Exception:
             if a == tries - 1:
+                if v2:
+                    _V2_FAILS[0] += 1
+                    if _V2_FAILS[0] == V2_TRIP:
+                        print("Blockscout v2 failed twice — fast-failing v2 for the rest "
+                              "of this run; every leg still uses its eth_getLogs fallback")
                 raise
             time.sleep(2 * (a + 1))
 
@@ -153,28 +202,124 @@ def rpc(method, params, tries=3):
                 time.sleep(1)
     raise last_err
 
+def rpc_batch(calls):
+    """JSON-RPC 2.0 batch: one POST for many calls, results keyed by request id.
+    Returns {id: result} and OMITS ids that errored — the caller must treat a
+    missing id as "not fetched" and fall back, never as a value. Endpoint order
+    and the Blockscout-last rule are the same as rpc().
+    Batching is an optimisation only: every caller below still has a working
+    one-at-a-time path, because a provider may cap or refuse batches."""
+    payload = json.dumps([{"jsonrpc": "2.0", "id": n, "method": m, "params": p}
+                          for n, (m, p) in enumerate(calls)]).encode()
+    for url in RPC_ENDPOINTS:
+        try:
+            req = urllib.request.Request(url, data=payload,
+                headers={"Content-Type": "application/json", "User-Agent": "curl/8.4.0"})
+            with urllib.request.urlopen(req, timeout=60) as r:
+                res = json.load(r)
+            if not isinstance(res, list):
+                continue          # provider does not do batches — next endpoint
+            out = {e["id"]: e["result"] for e in res
+                   if isinstance(e, dict) and e.get("result") is not None}
+            if out:
+                return out
+        except Exception:
+            continue
+    return {}
+
 # --offline hard kill-switch: every HTTP/RPC path in this file funnels
-# through get()/rpc(), so rebinding them guarantees no code path (including
-# a future one) can crawl during an offline rebuild — sections that would
-# have fetched are also explicitly gated below to reuse prior state instead.
+# through get()/rpc()/rpc_batch(), so rebinding them guarantees no code path
+# (including a future one) can crawl during an offline rebuild — sections that
+# would have fetched are also explicitly gated below to reuse prior state
+# instead. rpc_batch() opens its own sockets rather than going through rpc(),
+# so it is defined ABOVE this switch and rebound here too; a batch helper added
+# below this line would silently escape the gate.
 if OFFLINE:
     def _no_net(*a, **k):
         raise RuntimeError("--offline: network access is disabled")
-    get = rpc = _no_net
+    get = rpc = rpc_batch = _no_net
 
 _block_ts_cache = {}
+def _fmt_ts(hex_ts):
+    return datetime.fromtimestamp(int(hex_ts, 16), tz=timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%S.000000Z")
+
+def block_ts_prefetch(bns):
+    """Warm _block_ts_cache for many blocks with batched eth_getBlockByNumber.
+    This is the hot path: shaping a log costs one block timestamp, and a busy
+    24h window carries hundreds of logs — sequentially that was minutes of pure
+    round-trip latency (profiled at 464s for the cognition leg alone).
+    Best-effort by construction: whatever a batch does not return is simply left
+    uncached and block_ts() fetches it singly, so the result is identical either
+    way."""
+    todo = sorted({b for b in bns if b not in _block_ts_cache})
+    # 10, not 100: mainnet.base.org answers a 100-call batch with
+    # {"error": "maximum 10 calls in 1 batch"} and drops the whole thing, which
+    # would silently degrade every lookup back to one-at-a-time. Measured
+    # 2026-08-31: 10 blocks in one batch = 1.3s, versus ~0.9s EACH sequentially.
+    for n in range(0, len(todo), 10):
+        chunk = todo[n:n + 10]
+        got = rpc_batch([("eth_getBlockByNumber", [hex(b), False]) for b in chunk])
+        for idx, b in enumerate(chunk):
+            blk = got.get(idx)
+            if blk and blk.get("timestamp"):
+                _block_ts_cache[b] = _fmt_ts(blk["timestamp"])
+        if n + 10 < len(todo):
+            time.sleep(0.1)     # same pacing courtesy as the eth_getLogs loop
+
 def block_ts(bn):
     if bn not in _block_ts_cache:
         b = rpc("eth_getBlockByNumber", [hex(bn), False])
-        _block_ts_cache[bn] = datetime.fromtimestamp(
-            int(b["timestamp"], 16), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000000Z")
+        _block_ts_cache[bn] = _fmt_ts(b["timestamp"])
     return _block_ts_cache[bn]
 
-def rpc_transfer_fallback(wallet, direction, token_addrs, from_block, to_block=None):
+# --- eth_getLogs cross-check cursors (perf, 2026-08-31) ---
+# The trailing cross-check legs used to rescan a fixed 43,200-block (~24h)
+# window EVERY run. At 4 runs/hour that re-downloads and re-shapes the same
+# logs ~96 times each, and the shaping cost is one eth_getBlockByNumber per
+# log (block_ts) — measured as the dominant cost of the whole refresh.
+# A block that a PREVIOUS run already scanned with eth_getLogs and merged is
+# proven against the independent chain source; rescanning it proves nothing
+# new. So each leg banks the highest block it has scanned, in STATE (committed
+# in day_rates.json, so it survives runners), and resumes from there minus a
+# deliberate overlap.
+# The overlap is NOT a reorg allowance in the usual sense (Base reorgs are
+# 1-2 blocks); it is slack for an RPC node that was itself lagging when the
+# earlier scan ran. 3,600 blocks (~2h) still re-verifies every block ~8 times
+# at 4 runs/hour, versus 96 — completeness is unchanged, cost is not.
+# A missing/zero cursor falls back to the original full 24h window, so a fresh
+# runner or a wiped STATE degrades to the old behaviour, never to less.
+XCHECK_WINDOW = 43200            # ~24h of 2s Base blocks — the fallback window
+XCHECK_OVERLAP = 3600            # ~2h re-verified every run on top of the cursor
+STATE.setdefault("xcheck", {})
+
+def xcheck_from(name, default_start):
+    """Resume block for cross-check leg `name` = the LATER of (a) the banked
+    cursor rewound by XCHECK_OVERLAP and (b) default_start, the original fixed
+    window. Later, not earlier: everything below the cursor is already proven
+    by a prior eth_getLogs scan, so starting there scans strictly less work for
+    the same coverage. With no cursor this returns default_start unchanged."""
+    cur = STATE["xcheck"].get(name) or 0
+    return max(default_start, cur - XCHECK_OVERLAP if cur else 0, 1)
+
+def xcheck_done(name, blk):
+    """Bank a completed scan. Monotonic: a leg that scanned less than a
+    previous run (e.g. a to_block cap) must not move the cursor backwards."""
+    if blk:
+        STATE["xcheck"][name] = max(STATE["xcheck"].get(name) or 0, int(blk))
+
+def rpc_transfer_fallback(wallet, direction, token_addrs, from_block, to_block=None,
+                          skip_keys=None):
     """Fetch Transfer logs via eth_getLogs and shape them like Blockscout v2
     items (only the fields shards.slim keeps). Addresses come back lowercase —
     canonicalized against cached casing downstream.
-    to_block caps the scan below chain head (reorg lag); None = head."""
+    to_block caps the scan below chain head (reorg lag); None = head.
+    skip_keys: tx:log_index keys the CALLER will discard anyway. Filtering them
+    here — before shaping — is what makes the cross-check cheap: shaping calls
+    block_ts(), one RPC round-trip per log, and in the steady state every log
+    in the window is already cached. Callers that need every log (the outage
+    fallback for the uncached sink) simply pass nothing. This cannot change any
+    caller's result: every current caller filters on exactly these keys."""
     topic_w = "0x" + "0" * 24 + wallet[2:].lower()
     topics = ([TRANSFER_TOPIC, topic_w] if direction == "from"
               else [TRANSFER_TOPIC, None, topic_w])
@@ -192,10 +337,24 @@ def rpc_transfer_fallback(wallet, direction, token_addrs, from_block, to_block=N
             continue
         start = end + 1
         time.sleep(0.2)
-    items = []
+    # Two passes, deliberately. Pass 1 drops everything the caller will discard
+    # (skip_keys) and everything malformed, so pass 2 shapes only rows that
+    # survive. Between them, one batched prefetch warms every block timestamp
+    # the surviving rows need — turning N sequential eth_getBlockByNumber calls
+    # into ceil(N/100) round-trips.
+    keep = []
     for lg in logs:
         if lg.get("removed") or len(lg.get("topics", [])) < 3:
             continue
+        # key() shape, computed from the raw log — no RPC needed. Drop
+        # already-known logs BEFORE block_ts() below, which is the expensive part.
+        if skip_keys is not None and \
+                f"{lg['transactionHash']}:{int(lg['logIndex'], 16)}" in skip_keys:
+            continue
+        keep.append(lg)
+    block_ts_prefetch(int(lg["blockNumber"], 16) for lg in keep)
+    items = []
+    for lg in keep:
         bn = int(lg["blockNumber"], 16)
         items.append({"timestamp": block_ts(bn),
                       "transaction_hash": lg["transactionHash"],
@@ -248,7 +407,7 @@ def refresh_cache(base_url, dir_path, pages=100, wallet=WALLET, token_addrs=None
         try:
             direction = "to" if "filter=to" in base_url else "from"
             items = rpc_transfer_fallback(wallet, direction, token_addrs,
-                                          newest_blk, to_block)
+                                          newest_blk, to_block, skip_keys=seen)
             overlapped = True
             print(f"fallback fetched {len(items)} logs for {dir_path} from block {newest_blk}")
         except Exception as e2:
@@ -272,13 +431,23 @@ def refresh_cache(base_url, dir_path, pages=100, wallet=WALLET, token_addrs=None
         newest_blk = max([i.get("block_number", 0) for i in old] + [0])
         if newest_blk:
             direction = "to" if "filter=to" in base_url else "from"
+            # Cursor-resumed window (see xcheck_from): the old fixed 24h window
+            # is the floor, so with no cursor this is byte-for-byte the old scan.
+            _xname = os.path.basename(dir_path.rstrip(os.sep))
+            _xhead = to_block or int(rpc("eth_blockNumber", []), 16)
+            _xstart = xcheck_from(_xname, max(newest_blk - XCHECK_WINDOW, from_block, 1))
             xcheck = rpc_transfer_fallback(wallet, direction, token_addrs,
-                                           max(newest_blk - 43200, from_block, 1),
-                                           to_block)
+                                           _xstart, _xhead, skip_keys=got | seen)
+            # skip_keys already dropped these; the filter stays as the invariant
+            # (and keeps the leg correct if skip_keys is ever removed).
             extra = [i for i in xcheck if key(i) not in got and key(i) not in seen]
             if extra:
                 print(f"cross-check recovered {len(extra)} transfer(s) missing from the crawl for {dir_path}")
             items += extra
+            # Bank ONLY after the scan returned and its extras were merged into
+            # `items` — an exception above leaves the cursor where it was, so
+            # the next run rescans rather than banking an unverified range.
+            xcheck_done(_xname, _xhead)
     except Exception as e:
         print(f"log cross-check skipped for {dir_path}: {e}")
     add, _k = [], set()
@@ -307,6 +476,7 @@ else:
     data_complete = ok_out and ok_in
     print(f"fetched {n_new} new OUT / {n_new_in} new IN, cache {len(full)} out / {len(full_in)} in, complete={data_complete}")
 
+phase("setup+treasury_crawl")
 # --- live rates, decimals + balances per token (validated) ---
 RATE, RATE_SRC, BALANCE, DECIMALS = {}, {}, {}, {}
 if OFFLINE:
@@ -354,6 +524,7 @@ for sym, t in ([] if OFFLINE else list(TOKENS.items())):
                 STATE["last_accepted_rate"][sym] = r2
         except Exception as e:
             print(sym, "dexscreener fallback failed:", e)
+phase("rates")
 BALANCE = {}
 def balance_at(addr, sym, block="latest", holder=WALLET):
     """holder defaults to the treasury; the coupon page passes its own wallet
@@ -435,6 +606,7 @@ rows = sorted(filter(None, (norm(i) for i in full)), key=lambda r: r["ts"], reve
 inflows = sorted(filter(None, (norm(i, True) for i in full_in)), key=lambda r: r["ts"], reverse=True)
 excluded_in = len(full_in) - len(inflows)
 
+phase("balances")
 # --- market daily closes (era-aware pool OHLCV via GeckoTerminal) ---
 # Fetched BEFORE the day-rate oracle because the oracle now uses these closes as
 # its second leg: a closed day with no $0.10 invoke cluster is priced by that
@@ -475,6 +647,7 @@ try:
 except Exception as e:
     print("market rate fetch failed:", e)
 
+phase("market_ohlcv")
 # --- day-anchored rate oracle ---
 # Persisted day rates are immutable. New (unseen) days are computed walking
 # BACKWARD from the most recent day — the live rate is a good anchor at the
@@ -677,6 +850,7 @@ try:
 except Exception as e:
     print("market cross-check failed:", e)
 
+phase("rate_oracle")
 # --- cognition consumption (collector wallet inbound = minds spending MENTE) ---
 COLLECTOR = "0xd85096fAeC1aC03075667B4C1a1661F5623Bf111"
 COG_DIR = os.path.join(HERE, "cognition_in")
@@ -685,16 +859,26 @@ cognition = None
 if os.path.isdir(COG_DIR):
     cog = shards.load(COG_DIR, ts_key="ts")
     # incremental top-up: newest pages until overlap (same banking pattern)
+    # Highest block this leg's eth_getLogs scan reached, banked by the caller
+    # only after the rows are saved (a banked cursor over unsaved rows would
+    # freeze a hole).
+    _cog_scanned = [0]
     def _cog_fallback(seen_c, newest_c):
         # cog rows carry no block number — estimate the resume block from the
         # newest cached timestamp (Base ≈ 2s blocks) minus a 24h safety margin
         # (also re-verifies the trailing day against a possibly hole-y v2
         # index); dedup by tx:log_index absorbs the overlap.
+        # This is by far the heaviest cross-check (~500 MENTE transfers/day into
+        # the collector), so it gets the same cursor resume + skip_keys as the
+        # transfer legs: the window below is the floor, never the ceiling.
         latest_blk = int(rpc("eth_blockNumber", []), 16)
         age_s = (datetime.now(timezone.utc)
                  - datetime.fromisoformat(newest_c).replace(tzinfo=timezone.utc)).total_seconds()
-        from_blk = max(1, latest_blk - int(age_s / 2) - 43200)
-        items = rpc_transfer_fallback(COLLECTOR, "to", [TOKENS["MENTE"]["addr"]], from_blk)
+        from_blk = max(1, latest_blk - int(age_s / 2) - XCHECK_WINDOW)
+        from_blk = xcheck_from("cognition_in", from_blk)
+        items = rpc_transfer_fallback(COLLECTOR, "to", [TOKENS["MENTE"]["addr"]], from_blk,
+                                      skip_keys=seen_c)
+        _cog_scanned[0] = latest_blk
         return [{"ts": i["timestamp"][:19], "val": int(i["total"]["value"]) / 10 ** DECIMALS["MENTE"],
                  "from": canon(i["from"]["hash"]), "tx": i["transaction_hash"],
                  "log_index": i["log_index"], "transaction_hash": i["transaction_hash"]}
@@ -728,6 +912,9 @@ if os.path.isdir(COG_DIR):
         if got_c:
             cog = sorted(got_c + cog, key=lambda i: i["ts"], reverse=True)
             shards.save(COG_DIR, cog, months={shards.month_of(c, "ts") for c in got_c}, ts_key="ts")
+        # rows are on disk (or there were none) — only now is the scanned range
+        # safe to bank as proven.
+        xcheck_done("cognition_in", _cog_scanned[0])
     except Exception as e:
         print("cognition v2 fetch failed:", e, "— trying eth_getLogs fallback")
         try:
@@ -735,6 +922,7 @@ if os.path.isdir(COG_DIR):
             if got_c:
                 cog = sorted(got_c + cog, key=lambda i: i["ts"], reverse=True)
                 shards.save(COG_DIR, cog, months={shards.month_of(c, "ts") for c in got_c}, ts_key="ts")
+            xcheck_done("cognition_in", _cog_scanned[0])
             print(f"cognition fallback added {len(got_c)} rows")
         except Exception as e2:
             print("cognition fallback failed (using cache):", e2)
@@ -807,6 +995,7 @@ if os.path.isdir(COG_DIR):
                  "daily": [{"d": d0, "n": v["n"], "mente": round(v["mente"], 1), "minds": len(v["minds"])}
                            for d0, v in sorted(cog_daily.items())[-30:]]}
 
+phase("cognition")
 # --- Generation-1 economy: the SWARM era (closed history, computed from
 # swarm_era.json + CoinGecko daily prices; both files are static archives) ---
 swarm_era = None
@@ -1306,6 +1495,7 @@ if os.path.exists(_snap_path):
 infer = {"S": S, "creators": creators[:25], "ce_total": ce_total, "fine_table": fine_table, "guard": guard,
          "retired_public": retired_public}
 
+phase("layer1+digests+layer2")
 # ================= SERVER-RECORDED TIER (PostHog, optional) =================
 # Middle trust tier: platform-recorded events (client-confirmed top-ups, mind
 # awakenings, WAU/MAU). Not on-chain truth, but independent of size-inference.
@@ -1373,6 +1563,7 @@ scope = {"wallet": WALLET, "tokens": {s: TOKENS[s]["addr"] for s in TOKENS},
                  "out of scope for this wallet's ledger — that wallet's own ledger is being banked "
                  "privately, so no coupon leg appears in any figure on this page."}
 
+phase("posthog")
 # ---- computed guided-view layer: insights, open items, gaps (panel-designed) ----
 # out_di already covers every category — the old formula re-added
 # nonstandard/micro on top and published an inflated pace (QA, loop 3)
@@ -1409,6 +1600,7 @@ gaps = [
 ]
 guard["dist_pace"] = dist_pace
 
+phase("guided_view")
 # ================= COLLECTOR OUTFLOW — recycle vs idle sink =================
 # Collected MENTE used to recycle back into this treasury daily. On 2026-06-19 that
 # leg was redirected to a holding wallet that has never sent anything out. Both legs
@@ -1419,35 +1611,82 @@ try:
     if OFFLINE:
         raise RuntimeError("offline — sink/rebate reused from prior data.json below")
     SINK_GENESIS_BLOCK = 47_400_000  # 2026-06-16, safely before the sink's first sweep (Jun 19)
+    # The sink leg used to be uncached "because it's small (~1 tx/day)". Small
+    # in ROWS, not in work: every run re-walked its whole v2 history, and on any
+    # v2 500 the fallback rescanned ~3.3M blocks from genesis with eth_getLogs.
+    # Profiled 2026-08-31 at 554.8s — the single largest phase of a 1360s run,
+    # and Blockscout v2 500s often enough that this is the normal case, not an
+    # outage case.
+    # So the sink now banks its rows in STATE (day_rates.json — an EXISTING
+    # committed file, so no new artifact and no PUBLISH_EXTRA entry), exactly
+    # like every other crawl leg, and resumes instead of restarting.
+    # Redaction: the banked row deliberately does NOT carry the counterparty
+    # address. The only thing any consumer asks of it is "was this the
+    # collector?", so that question is answered at fetch time and stored as a
+    # bool. day_rates.json is a PUBLIC artifact; this keeps unknown swap
+    # counterparties (DEX routers, DATops wallets) out of it entirely — strictly
+    # less exposure than the pre-cache code, which held them in memory only.
+    _sink_st = STATE.setdefault("sink", {}).setdefault("rows", {})
+    def _sink_row(ts, val, cp, blk, k):
+        return {"ts": ts[:19], "val": val, "col": cp.lower() == COLLECTOR.lower(),
+                "blk": blk, "k": k}
     def _sweep(direction):
+        cached = _sink_st.get(direction) or []
+        seen = {r["k"] for r in cached}
+        # cached is stored newest-first; with an EMPTY cache newest is "" and the
+        # overlap test below can never fire, so a first/seeding run walks the
+        # full page range exactly as the uncached code did.
+        newest = cached[0]["ts"] if cached else ""
         acc, params = [], ""
         try:
             for _ in range(20):
                 dd = get(f"https://base.blockscout.com/api/v2/addresses/{SINK}/token-transfers?filter={direction}" + params)
                 b = dd.get("items", [])
-                acc += [{"ts": i["timestamp"][:19],
-                         "val": int(i["total"]["value"]) / 10 ** int(i["total"].get("decimals") or DECIMALS["MENTE"]),
-                         "cp": (i["from"] if direction == "to" else i["to"])["hash"]}
+                acc += [_sink_row(i["timestamp"],
+                                  int(i["total"]["value"]) / 10 ** int(i["total"].get("decimals") or DECIMALS["MENTE"]),
+                                  (i["from"] if direction == "to" else i["to"])["hash"],
+                                  i.get("block_number", 0), key(i))
                         for i in b if i["token"].get("address_hash", "").lower() == TOKENS["MENTE"]["addr"]]
-                if not b or not dd.get("next_page_params"):
+                # same overlap rule as every other leg: stop once this page is
+                # entirely older than what is already banked.
+                if not b or not dd.get("next_page_params") or (cached and b[-1]["timestamp"][:19] < newest):
                     break
                 params = "&" + "&".join(f"{k}={v}" for k, v in dd["next_page_params"].items())
                 time.sleep(0.1)
-            return acc
         except Exception as _e:
-            # the sink has no cache (it's small: ~1 tx/day) — refetch its whole
-            # history from the chain when Blockscout v2 is down
-            print(f"sink v2 fetch failed ({_e}) — eth_getLogs fallback")
-            items = rpc_transfer_fallback(SINK, direction, [TOKENS["MENTE"]["addr"]], SINK_GENESIS_BLOCK)
-            return [{"ts": i["timestamp"][:19],
-                     "val": int(i["total"]["value"]) / 10 ** DECIMALS["MENTE"],
-                     "cp": canon((i["from"] if direction == "to" else i["to"])["hash"])}
-                    for i in items]
+            # v2 down — go to the chain, but resume from the highest block this
+            # leg has already SCANNED, not from genesis. Two candidates, take
+            # the later: the newest banked row's block, and the xcheck cursor.
+            # The cursor matters because the sink is ~1 tx/day: without it a
+            # week-quiet sink resumes from a week-old row and rescans ~300k
+            # blocks every run, even though every one of them was already
+            # scanned and found empty. "Found nothing" is a result worth
+            # banking, and only the cursor records it.
+            _xn = "sink_" + direction
+            _resume = xcheck_from(_xn, max([r.get("blk", 0) for r in cached]
+                                           + [SINK_GENESIS_BLOCK]))
+            print(f"sink v2 fetch failed ({_e}) — eth_getLogs fallback from block {_resume}")
+            _head = int(rpc("eth_blockNumber", []), 16)
+            acc = [_sink_row(i["timestamp"],
+                             int(i["total"]["value"]) / 10 ** DECIMALS["MENTE"],
+                             (i["from"] if direction == "to" else i["to"])["hash"],
+                             i.get("block_number", 0), key(i))
+                   for i in rpc_transfer_fallback(SINK, direction, [TOKENS["MENTE"]["addr"]],
+                                                  _resume, _head, skip_keys=seen)]
+            xcheck_done(_xn, _head)
+        merged, _mk = list(cached), set(seen)
+        for r in acc:
+            if r["k"] not in _mk:
+                _mk.add(r["k"])
+                merged.append(r)
+        merged.sort(key=lambda r: r["ts"], reverse=True)
+        _sink_st[direction] = merged
+        return merged
 
     _in, _out = _sweep("to"), _sweep("from")
     _sd = defaultdict(float)
     for r in _in:
-        if r["cp"].lower() == COLLECTOR.lower():
+        if r["col"]:
             _sd[r["ts"][:10]] += r["val"]
     _rd = defaultdict(float)                       # the old leg: collector -> treasury
     for f in inflows:
@@ -1573,6 +1812,7 @@ if OFFLINE:
     # run's published block wholesale, rebate monitor included.
     sink = PREV.get("sink")
 
+phase("sink_rebate")
 # ================= ADDRESS REGISTRY =================
 # Every material participant in the loop, with the FULL address. The rest of the
 # page truncates to 0xXXXXXXXX…XXXX, which is unsafe here: the collector has a
@@ -1686,6 +1926,7 @@ json.dump(data, open(os.path.join(HERE, "data.json"), "w"), default=str)
 
 json.dump(STATE, open(RATES_PATH, "w"), indent=0)
 
+phase("registry+data.json")
 # --- per-tx export with rate provenance ---
 with open(os.path.join(HERE, "transfers_export.csv"), "w", newline="") as fh:
     w = csv.writer(fh)
@@ -1703,6 +1944,7 @@ with open(os.path.join(HERE, "transfers_export.csv"), "w", newline="") as fh:
         w.writerow([f["ts"], "IN", f["tok"], f"{f['val']:.6f}", f"{f['rate']:.8f}", f["rsrc"], f"{f['usd']:.4f}",
                     "", f["from"], f["tx"], f.get("li", ""), "", ""])
 
+phase("export_csv")
 # --- snapshot history (append-only; git history is the immutable trail) ---
 # NOT appended on --offline rebuilds: stats_history's timestamp cadence is
 # the weekly digest's refresh-uptime measurement (Cycle-3 Loop 3, item 3),
@@ -1724,6 +1966,7 @@ if not OFFLINE:
     json.dump(hist, open(hist_path, "w"))
 
 
+phase("stats_history")
 # ==================== LEGACY VIEW (continuity for execs) ====================
 # Renders legacy.html with the original MOCA-only layout + method (live-rate
 # USD, old category folding, heuristic organic share). Kept while stakeholders
@@ -1848,6 +2091,7 @@ out = os.path.join(HERE, "index.html")
 open(out, "w").write("<!doctype html>\n<html lang=\"en\">\n" + tpl.replace("/*__DATA__*/", json.dumps(data)) + "\n</html>")
 print("wrote", out, "| rows:", len(rows), "| range:", facts["range"], "| recon:", recon)
 
+phase("render_index+legacy")
 # ================= COUPON DISTRIBUTOR — claim page =================
 # A SECOND wallet, funded outside the treasury and never touching it: block
 # 48,303,358 is a mint from 0x0…0 (LayerZero bridge mint pattern) straight to
@@ -1929,7 +2173,7 @@ if not OFFLINE:
         _seen = {key(i) for i in _cache}
         _add = [shards.slim(i) for i in
                 rpc_transfer_fallback(COUPON_WALLET, _dirn, [TOKENS["MOCA"]["addr"]],
-                                      COUPON_FROM_BLOCK, cp_head)
+                                      COUPON_FROM_BLOCK, cp_head, skip_keys=_seen)
                 if key(i) not in _seen]
         if _add:
             _cache = sorted(_add + _cache, key=lambda i: i["timestamp"], reverse=True)
@@ -2150,6 +2394,7 @@ open(os.path.join(HERE, "coupon.html"), "w").write(
 print(f"wrote coupon.html | {cp_totals['claims']} claims · {cp_totals['moca_out']:,.0f} MOCA "
       f"· {cp_totals['claimants']} claimants · balance {cp_totals['balance_moca']}")
 
+phase("coupon")
 # --- data catalog (LAST: it measures files, so every one must be written) ---
 # The spec placed this right after data.json; it has to run at the END instead,
 # because transfers_export.csv and stats_history.json are written below that
@@ -2162,6 +2407,7 @@ import catalog
 # either way, so --check stays deterministic).
 catalog.build(fetch_peer=not OFFLINE)
 
+phase("catalog")
 # --- refresh-run duration (Cycle-3 Loop 3, item 3) ---
 # Digest-only ops telemetry: banked in alert_state.json (Actions cache,
 # gitignored, PRIVATE — never a field in any public artifact; the weekly
@@ -2177,3 +2423,13 @@ if not OFFLINE:
                 "dur_s": round(time.time() - _T0, 1)})
     _state.update({"refresh_runs": _rr[-800:]})   # 4/h * 24 * 7 = 672 max + slack
     print(f"refresh run duration: {_rr[-1]['dur_s']}s ({len(_rr)} run(s) banked, private)")
+
+# ONE timing line, always (offline included — an offline rebuild is the cheap
+# baseline to compare a network run against). `other` is the unaccounted
+# remainder so the parts always sum to the whole and a new unmarked leg cannot
+# hide. Printed last so it is the final thing in the Actions log.
+_ph_total = time.time() - _T0
+_PHASES["other"] = _ph_total - sum(_PHASES.values())
+print("PHASE TIMING: total=%.1fs | %s" % (
+    _ph_total, " ".join("%s=%.1fs" % (k, v) for k, v in
+                        sorted(_PHASES.items(), key=lambda kv: -kv[1]))))
