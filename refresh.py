@@ -540,12 +540,14 @@ for sym in TOKENS:
             m = (STATE["market_rates"].get(sym) or {}).get(d)
             if not m:
                 continue
-            band = _market_band(d, persisted)
-            if band is None:
+            # local name must NOT be "band" — that shadows classify.band at
+            # module scope and crashed the first post-midnight run (2026-08-31)
+            mband = _market_band(d, persisted)
+            if mband is None:
                 MARKET_REFUSED.append((sym, d, "market-unbanded", m, None, None, None))
                 src[d] = "market-unbanded"
                 continue
-            adj, arate, gap, factor = band
+            adj, arate, gap, factor = mband
             if gap > MARKET_MAX_GAP_DAYS:
                 MARKET_REFUSED.append((sym, d, "market-unbanded", m, adj, arate, gap))
                 src[d] = "market-unbanded"
