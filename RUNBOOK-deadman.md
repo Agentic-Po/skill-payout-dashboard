@@ -171,3 +171,21 @@ liveness check right after a cache miss ("no send attempts recorded yet" in
 the step log) as unproven, not as healthy. The healthchecks.io dead-man and
 the daily digest's `alerts: N sent / M failed (24h)` line are the
 cross-checks that do not share this reset.
+
+## 7. Scheduler-independent trigger (Cloudflare Worker, 2026-09-01)
+
+GitHub `schedule:` crons are best-effort and were starved account-wide on
+2026-08-26 and 2026-08-31. The Worker `dashboard-cron-worker` (Po's Cloudflare
+account, code in ~/Documents/dashboard-cron-worker on Po's Mac) fires a
+contractual Cron Trigger at :07/:37 and POSTs a workflow_dispatch for
+"Refresh dashboard"; dispatched runs start within seconds regardless of cron
+starvation. The repo's own 4x/hour cron stays as a second leg; the workflow
+concurrency group dedupes overlap.
+- Secrets on the Worker: GH_TOKEN (fine-grained PAT, this repo only, Actions
+  read/write — rotate via `npx wrangler secret put GH_TOKEN <
+  ~/.moca-ledger/gh_dispatch_pat`), TEST_KEY (manual-test header; key in
+  ~/.moca-ledger/worker_test_key).
+- Manual test: POST to the workers.dev URL with header `x-test-key: <key>` →
+  "dispatched" and a run appears within ~30 s.
+- If the PAT expires/revokes the Worker logs 401s and cadence falls back to
+  GitHub's own crons — the healthchecks.io dead-man is still the alerting leg.
