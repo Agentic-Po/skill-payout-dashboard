@@ -478,6 +478,9 @@ else:
 
 phase("setup+treasury_crawl")
 # --- live rates, decimals + balances per token (validated) ---
+# how far a live quote may sit from the latest market close before it is
+# treated as stale rather than as a price move (see the blockscout note below)
+MARKET_AGREE = 0.06
 RATE, RATE_SRC, BALANCE, DECIMALS = {}, {}, {}, {}
 if OFFLINE:
     # the run that published data.json already validated these — reuse them
@@ -495,6 +498,19 @@ for sym, t in ([] if OFFLINE else list(TOKENS.items())):
         tok = get(f"https://base.blockscout.com/api/v2/tokens/{t['addr']}")
         DECIMALS[sym] = int(tok.get("decimals") or 18)
         r = float(tok.get("exchange_rate") or 0)
+        # Blockscout's exchange_rate goes STALE and sits on one frozen constant
+        # for days (2026-09-01: 0.0077424 for 12+ h while the market traded
+        # ~0.00845 — an 8-11% error that moved the published balance ~$3-4K
+        # every time the run flipped between this source and DexScreener).
+        # A quote is only trusted if it agrees with the most recent market
+        # close (GeckoTerminal daily, already fetched) within MARKET_AGREE.
+        _mkt = None
+        _mrs = (STATE.get("market_rates") or {}).get(sym) or {}
+        if _mrs:
+            _mkt = _mrs[max(_mrs)]
+        if _mkt and not (_mkt * (1 - MARKET_AGREE) < r < _mkt * (1 + MARKET_AGREE)):
+            print(f"{sym} rate rejected as stale: blockscout {r} vs market close {_mkt}")
+            r = 0
         if 0 < r and anchor / 5 < r < anchor * 5:
             RATE[sym], RATE_SRC[sym] = r, "blockscout"
             # re-anchor only after two consecutive in-band quotes, so one bad
