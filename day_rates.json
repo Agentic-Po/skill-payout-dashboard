@@ -574,11 +574,11 @@
 }
 },
 "xcheck": {
-"transfers": 50886676,
-"transfers_in": 50886678,
-"cognition_in": 50886679,
-"coupon_out": 50886695,
-"coupon_in": 50886695,
+"transfers": 50886976,
+"transfers_in": 50886978,
+"cognition_in": 50886980,
+"coupon_out": 50886997,
+"coupon_in": 50886997,
 "sink_to": 50876277,
 "sink_from": 50876277
 },
