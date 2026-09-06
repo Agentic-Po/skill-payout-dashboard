@@ -145,7 +145,7 @@
 },
 "last_accepted_rate": {
 "MOCA": 0.008857,
-"MENTE": 0.0167
+"MENTE": 0.01671
 },
 "recon": {
 "MOCA": -16161.7,
@@ -582,17 +582,31 @@
 }
 },
 "xcheck": {
-"transfers": 50932874,
-"transfers_in": 50932877,
-"cognition_in": 50932878,
-"coupon_out": 50932894,
-"coupon_in": 50932894,
+"transfers": 50933774,
+"transfers_in": 50933776,
+"cognition_in": 50933778,
+"coupon_out": 50933795,
+"coupon_in": 50933795,
 "sink_to": 50876277,
 "sink_from": 50876277
 },
 "sink": {
 "rows": {
 "to": [
+{
+"ts": "2026-09-06T01:00:25",
+"val": 13146.8,
+"col": true,
+"blk": 50933539,
+"k": "0xf4be7735ecd77294fc82b4203ae659333033de2692fe2fbf27ca41e41225d107:232"
+},
+{
+"ts": "2026-09-06T01:00:15",
+"val": 43242.4,
+"col": true,
+"blk": 50933534,
+"k": "0x911e9e074bc4978012b08582fcaf1537960a2c4c22cbc58a2290603f951b7ac5:583"
+},
 {
 "ts": "2026-09-05T01:00:27",
 "val": 19542.4,
