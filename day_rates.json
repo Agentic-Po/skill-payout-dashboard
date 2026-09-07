@@ -146,7 +146,7 @@
 },
 "last_accepted_rate": {
 "MOCA": 0.00876162,
-"MENTE": 0.01674
+"MENTE": 0.01672
 },
 "recon": {
 "MOCA": -16161.7,
@@ -590,11 +590,11 @@
 }
 },
 "xcheck": {
-"transfers": 51002152,
-"transfers_in": 51002153,
-"cognition_in": 51002154,
-"coupon_out": 51002172,
-"coupon_in": 51002172,
+"transfers": 51003049,
+"transfers_in": 51003050,
+"cognition_in": 51003051,
+"coupon_out": 51003067,
+"coupon_in": 51003067,
 "sink_to": 51000403,
 "sink_from": 51000403
 },
