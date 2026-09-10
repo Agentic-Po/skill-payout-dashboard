@@ -592,7 +592,7 @@
 "coupon": {
 "next_block": {
 "out": 51122881,
-"in": 51122462
+"in": 51131756
 },
 "verified_from": {
 "from": 48300000,
@@ -600,11 +600,11 @@
 }
 },
 "xcheck": {
-"transfers": 51130857,
-"transfers_in": 51130873,
-"cognition_in": 51130892,
-"coupon_out": 51130932,
-"coupon_in": 51130932,
+"transfers": 51131757,
+"transfers_in": 51131771,
+"cognition_in": 51131790,
+"coupon_out": 51131820,
+"coupon_in": 51131820,
 "sink_to": 51088609,
 "sink_from": 51088609
 },
