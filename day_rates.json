@@ -599,7 +599,7 @@
 "market_refused": [],
 "coupon": {
 "next_block": {
-"out": 51219899,
+"out": 51220374,
 "in": 51131756
 },
 "verified_from": {
@@ -608,11 +608,11 @@
 }
 },
 "xcheck": {
-"transfers": 51219955,
-"transfers_in": 51219970,
-"cognition_in": 51219987,
-"coupon_out": 51220015,
-"coupon_in": 51220015,
+"transfers": 51220368,
+"transfers_in": 51220384,
+"cognition_in": 51220401,
+"coupon_out": 51220421,
+"coupon_in": 51220421,
 "sink_to": 51088609,
 "sink_from": 51088609
 },
