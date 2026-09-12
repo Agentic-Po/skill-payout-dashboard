@@ -608,17 +608,38 @@
 }
 },
 "xcheck": {
-"transfers": 51192196,
-"transfers_in": 51192211,
-"cognition_in": 51192227,
-"coupon_out": 51192251,
-"coupon_in": 51192251,
+"transfers": 51192952,
+"transfers_in": 51192967,
+"cognition_in": 51192983,
+"coupon_out": 51193016,
+"coupon_in": 51193016,
 "sink_to": 51088609,
 "sink_from": 51088609
 },
 "sink": {
 "rows": {
 "to": [
+{
+"ts": "2026-09-12T01:00:37",
+"val": 19454.8,
+"col": true,
+"blk": 51192745,
+"k": "0xff2a0770b7ed406ac624fe0169df15d2bd89fb65db89a25d6cdd5f9d38ee922c:156"
+},
+{
+"ts": "2026-09-12T01:00:27",
+"val": 748.4,
+"col": true,
+"blk": 51192740,
+"k": "0x8e8f2bbea68c579e162a4dfe669e89e61ad04a4869a8e155bacc9a3195c6de37:295"
+},
+{
+"ts": "2026-09-12T01:00:17",
+"val": 31789.6,
+"col": true,
+"blk": 51192735,
+"k": "0x226ee43d939942bf6564c056581c42a1ceea556a90753e8cadb50e570f55b735:229"
+},
 {
 "ts": "2026-09-11T01:00:27",
 "val": 19927.6,
