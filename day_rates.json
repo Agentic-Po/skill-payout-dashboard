@@ -165,7 +165,7 @@
 "open_day_rate": {
 "MOCA": {
 "d": "2026-09-14",
-"rate": 0.0183910042
+"rate": 0.0183914878
 }
 },
 "market_rates": {
@@ -607,7 +607,7 @@
 "market_refused": [],
 "coupon": {
 "next_block": {
-"out": 51304025,
+"out": 51305409,
 "in": 51131756
 },
 "verified_from": {
@@ -616,11 +616,11 @@
 }
 },
 "xcheck": {
-"transfers": 51304557,
-"transfers_in": 51304574,
-"cognition_in": 51304592,
-"coupon_out": 51304617,
-"coupon_in": 51304617,
+"transfers": 51305458,
+"transfers_in": 51305474,
+"cognition_in": 51305490,
+"coupon_out": 51305516,
+"coupon_in": 51305516,
 "sink_to": 51088609,
 "sink_from": 51088609
 },
