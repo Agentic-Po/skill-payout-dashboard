@@ -93,12 +93,23 @@ DENIED = [_key("ent"), _key("acf"), _key("burst"), _key("flags"),
           r"retired_ledger", r"@gmail", r"@animoca",
           # schema v2: the CSV label column is gone and must stay gone.
           r"counterparty_label",
-          # Creator Rewards v2 (2026-09-15): the legacy top-up ledger, the
+          # Creator Rewards v2 (2026-09-15): the system-top-up ledger, the
           # per-wallet repeat rule and every cap-detector artifact are
           # detector state — private file + Telegram only.
-          r"legacy_ledger", r"repeat_wallets", r"cap_table", r"cap_probe",
+          r"system_topup_ledger", r"repeat_wallets", r"cap_table", r"cap_probe",
           r"cap_hits", r"cap_state", r"fanout_hours", r"grid_agreement",
-          r"hours_at_90pct", r"max_h60_units", r"max_clock_units"]
+          r"hours_at_90pct", r"max_h60_units", r"max_clock_units",
+          # Iteration 2026-09-15 (C4/C5/C1/C7): MONITORING STATUS counts moved
+          # private, the cap switch-on instant and every paid-vs-free basis
+          # are gone from the public contract — exact key names, so an
+          # accidental re-emission is red before commit. Word-level checks on
+          # assembled prose live in tests/test_redact.py.
+          _key("flagged_n"), _key("monitored_n"), _key("at_risk_usd"),
+          _key("cap_on_utc"), _key("cap_usd"), _key("implied_user_spend_24h"),
+          _key("funding_split"), _key("swarm_split"), _key("subsidy_ratio"),
+          _key("ratio_weeks"), _key("period_subsidy_ratio"),
+          _key("period_unbacked_dist_usd"), _key("acct_map"), _key("steward"),
+          _key("mindset"), _key("pattern_monitor"), _key("burn24"), _key("burn_prev"), _key("topup_needed"), _key("promised_usd"), _key("fx_drift_pct"), _key("runway_days")]
 
 # Known-leaked person names (Cycle-3 Loop 1). Case-insensitive, assembled
 # from parts so this scanner file is never itself a grep hit for the names it
@@ -138,10 +149,13 @@ NEAR = 200      # chars, for non-object formats (CSV rows, HTML text)
 # inside the legitimate public aggregate "flagged_n" — a substring walk would
 # fail every clean build on data we deliberately publish.
 ORACLE_KEYS = {"ent", "acf", "burst", "tol", "flagged", "flags", "status",
-               # Creator Rewards v2 cap detector / legacy-ledger keys, as EMITTED
+               # Creator Rewards v2 cap detector / system-top-up ledger keys, as EMITTED
                "cap_table", "cap_hits", "cap_probe", "cap_state", "max_h60_units",
                "max_clock_units", "hours_at_90pct", "fanout_hours", "grid_agreement",
-               "legacy_ledger", "repeat_wallets"}
+               "system_topup_ledger", "repeat_wallets",
+               # monitoring-status counts and the cap instant (private since 2026-09-15)
+               "flagged_n", "monitored_n", "at_risk_usd", "cap_on_utc", "cap_usd",
+               "pattern_monitor", "acct_map", "steward", "mindset"}
 
 # Reviewed exact paths where one of the above names is NOT a monitoring
 # verdict. Each entry is a deliberate, human-reviewed exemption; a new path
@@ -255,7 +269,7 @@ def _label_leaks(obj, src, path="", hits=None):
 
 def _retired_leak(texts):
     """Ledger tx hashes / entries[] structure must never publish — for BOTH
-    private ledgers (retired stragglers and legacy $1 top-ups).
+    private ledgers (retired stragglers and system free top-ups).
 
     Scoped per the 2026-08-30 QA finding: NOT a blanket address ban. Ledger
     recipients are ordinary payout recipients that legitimately appear in
@@ -267,7 +281,7 @@ def _retired_leak(texts):
         return []
     g = json.load(open(p)) or {}
     hashes = set()
-    for ledger in ("retired_ledger", "legacy_ledger"):
+    for ledger in ("retired_ledger", "system_topup_ledger"):
         for v in (g.get(ledger) or {}).values():
             hashes |= {h.get("tx", "").lower() for h in v.get("entries", []) if h.get("tx")}
     hits = []

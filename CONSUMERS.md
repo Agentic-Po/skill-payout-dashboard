@@ -19,14 +19,16 @@ last count — the LIVE numbers are always each repo's machine-generated
    **Signature change (2026-09-15):** `classify_usd` and `band` now REQUIRE
    the row's ISO timestamp as the second positional argument — the reward
    grid is era-aware (v1 $1 equip / $0.10 invoke until 2026-08-21T13:55Z; v2
-   $0.05 equip / $0.005 invoke from 2026-09-14T14:19Z; a $1 after the v1
-   close is `growth` / `$1 top-up (legacy)`). The era table is
+   $0.05 equip / $0.005 invoke from 2026-09-14T14:19Z; a ≈$1 after the v1
+   close is `growth` / `$1 system free top-up`). The era table is
    `classify.ERAS`; the row timestamp decides, never the run date. Callers
    that passed one argument get a `TypeError` rather than a silently wrong
-   class.
+   class. **Group ONLY through `classify.group_for(cat, fine)`** (2026-09-15):
+   `skill_rewards` · `credit_grants` · `system_topups` · `topups_delivered` ·
+   `ops` · `micro` — the six partition every row and close on `out_usd`.
 4. **Respect freshness**: call `rows.require_fresh(catalog, dataset, max_age_h)`
    before publishing anything derived; it raises on stale data.
-5. **Snapshot feeds**: `data.json` (schema_version 2) is the dashboard's full
+5. **Snapshot feeds**: `data.json` (schema_version 3) is the dashboard's full
    rendered dataset — same URL pattern as catalog.json. `transfers_export.csv`
    is the per-tx audit surface (tx_hash + log_index + canonical class).
    **schema_version 1 → 2 (2026-08-30)**: `transfers_export.csv` dropped the
@@ -53,7 +55,35 @@ last count — the LIVE numbers are always each repo's machine-generated
    header is unchanged; its `rate_source` vocabulary is `day-market`,
    `day-implied` (history only), `day-market (open)`, `carry-forward`,
    `carry-back`, `live`, and `class_fine` gained `invoke (retired)` and
-   `$1 top-up (legacy)`. The top-level key set is unchanged.
+   `$1 system free top-up`. The top-level key set is unchanged.
+   **schema_version 2 → 3 (2026-09-15, "vocabulary, grouping, privacy")**.
+   Removed: `infer.creators` (per-wallet all-history ranking — use
+   `facts.creator_wallets.windows.all`), `infer.legacy_public` (renamed
+   `infer.system_topup_public`, same shape; its `cat` and the CSV
+   `class_fine` value read `$1 system free top-up`, formerly
+   `$1 top-up (legacy)` — closed-day digests are unaffected, they hash the
+   coarse class only), `infer.guard.{flagged_n, monitored_n, at_risk_usd,
+   runway24, runway7, runway_total, burn24, burn_prev, burn7avg}` (monitoring
+   status is private; the unbacked-burn runway trio is replaced by
+   `facts.float`), `facts.rewards_v2.{cap_on_utc, implied_user_spend_24h}`
+   (+ `creators_*` → `creator_wallets_*`; `grid` added),
+   `facts.cognition.{funding_split, swarm_split}`, `stripe_snap.{period_
+   subsidy_ratio, period_unbacked_dist_usd}` and `server.{subsidy_ratio,
+   ratio_weeks, unbacked_7d}` — every paid-vs-free basis is gone and stays
+   gone (`check_publish --scan` denies the key names). Added:
+   `facts_window.groups` on every window/prev24/monthly entry
+   (`{group: {n, usd, wallets}}` via `group_for`), `facts.group_keys` /
+   `group_labels` / `group_to`, `facts.float` (`{basis, bal_usd, out_24h_usd,
+   out_prev24_usd, out_7d_avg_usd, days_24h_pace, days_7d_pace,
+   driver_24h}` — the ONE runway, total-outflow basis),
+   `facts.creator_wallets` (`{default, resumed_utc, paused_utc, windows:
+   {24h, 7d, since_resume, all}}`, each `{wallets, usd, equips, invokes,
+   top1/top5/top10_share_pct, median_usd|null, top[≤10]{addr, usd, equips,
+   invokes, first_seen(day)}, new_wallets (24h/7d only)}`), `facts.hourly[].g`
+   (per-group transfer counts, additive) and `facts.hourly[].cw` (creator
+   wallets paid that hour), `infer.fine_table[].group`, `gaps[].opened`.
+   `stats_history.runway7` / `runway_adj` now carry `facts.float.days_7d_pace`
+   (total-outflow basis) — a documented semantic change of a public series.
 6. **Coupon claims feed**: `coupon_data.json` (schema_version 1) is a SEPARATE
    file, published beside `data.json` and embedded verbatim in `coupon.html`.
    It covers the Coupon Distributor wallet only — a wallet funded outside the

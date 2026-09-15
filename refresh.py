@@ -17,8 +17,10 @@ import posthog_source
 import shards
 # taxonomy lives in classify.py — the ONE classifier shared with notify/alerts
 from classify import (band, classify_usd, pin_rate, era_for, BAND_LABEL, BAND_KEYS, STRIPE_FINE,
-                      RETIRED, LEGACY, RESUMED_UTC, CAP_ON_UTC)
+                      RETIRED, SYSTEM_TOPUP, RESUMED_UTC, PAUSED_UTC,
+                      GROUP_KEYS, GROUP_LABEL, GROUP_TO, group_for)
 from datetime import datetime, timezone, timedelta
+import urllib.error
 from collections import Counter, defaultdict
 
 _T0 = time.time()   # run-duration telemetry (digest-only; see end of file)
@@ -181,11 +183,14 @@ RPC_ENDPOINTS = ["https://mainnet.base.org", "https://base.drpc.org",
                  "https://base.blockscout.com/api/eth-rpc"]
 TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 
+_RPC_CALLS = [0]        # A6 telemetry: JSON-RPC round-trips this run
+
 def rpc(method, params, tries=3):
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
     last_err = None
     for url in RPC_ENDPOINTS:
         for a in range(tries):
+            _RPC_CALLS[0] += 1
             try:
                 req = urllib.request.Request(url, data=payload,
                     headers={"Content-Type": "application/json", "User-Agent": "curl/8.4.0"})
@@ -198,6 +203,23 @@ def rpc(method, params, tries=3):
                     return res["result"]
                 last_err = Exception(f"{url}: empty result")
                 break
+            except urllib.error.HTTPError as e:
+                # A6 (2026-09-15): public Base RPCs answer a too-wide eth_getLogs
+                # with an HTTP 4xx whose BODY is a JSON-RPC error (mainnet.base.org
+                # 413 "limited to a 2,000 range", drpc 400 "ranges over 10000
+                # blocks"). Treating that as a transport failure meant three
+                # 1-second sleeps per endpoint per range attempt — the whole
+                # ~30 s-per-cross-check cost. A 4xx with an rpc error body is an
+                # rpc-level refusal: move to the next endpoint immediately.
+                body = ""
+                try:
+                    body = e.read().decode(errors="replace")[:300]
+                except Exception:
+                    pass
+                last_err = Exception(f"{url}: HTTP {e.code} {body}")
+                if 400 <= e.code < 500 and e.code != 429 and '"error"' in body:
+                    break
+                time.sleep(1)
             except Exception as e:
                 last_err = e
                 time.sleep(1)
@@ -292,6 +314,14 @@ def block_ts(bn):
 # runner or a wiped STATE degrades to the old behaviour, never to less.
 XCHECK_WINDOW = 43200            # ~24h of 2s Base blocks — the fallback window
 XCHECK_OVERLAP = 3600            # ~2h re-verified every run on top of the cursor
+# A6 (2026-09-15): eth_getLogs span per call. mainnet.base.org (first endpoint)
+# refuses anything over 2,000 blocks; the old 9,000 start cost every leg three
+# refused rounds (9000 → 4500 → 2250) before the first call that could succeed,
+# each round walking all three endpoints with retry sleeps — measured as ~30 s
+# per cross-check while fetching 0 rows. Start under the cap; a refusal still
+# halves and is remembered for the rest of the run (LOGS_CHUNK is mutable).
+LOGS_CHUNK = [2000]
+XCHECK_WARN_S = 20               # soft warning only — never a hard fail
 STATE.setdefault("xcheck", {})
 
 def xcheck_from(name, default_start):
@@ -325,7 +355,8 @@ def rpc_transfer_fallback(wallet, direction, token_addrs, from_block, to_block=N
     topics = ([TRANSFER_TOPIC, topic_w] if direction == "from"
               else [TRANSFER_TOPIC, None, topic_w])
     latest = to_block or int(rpc("eth_blockNumber", []), 16)
-    logs, start, chunk = [], from_block, 9000
+    t_leg, calls0 = time.time(), _RPC_CALLS[0]
+    logs, start, chunk = [], from_block, LOGS_CHUNK[0]
     while start <= latest:
         end = min(start + chunk - 1, latest)
         try:
@@ -335,9 +366,18 @@ def rpc_transfer_fallback(wallet, direction, token_addrs, from_block, to_block=N
             if chunk <= 500:
                 raise
             chunk //= 2  # provider range/result cap — retry this span smaller
+            # A6: remember the narrower span for every later leg this run —
+            # the range cap is a property of the provider, not of this leg.
+            LOGS_CHUNK[0] = min(LOGS_CHUNK[0], chunk)
             continue
         start = end + 1
         time.sleep(0.2)
+    _dt = time.time() - t_leg
+    _n_calls = _RPC_CALLS[0] - calls0
+    print(f"eth_getLogs {direction} {wallet[:8]}… blocks {from_block:,}-{latest:,} "
+          f"({latest - from_block + 1:,}): {len(logs)} log(s) · {_n_calls} rpc call(s) · {_dt:.1f}s"
+          + (f" · SLOW (>{XCHECK_WARN_S}s) — check the RPC range cap / endpoint health"
+             if _dt > XCHECK_WARN_S else ""))
     # Two passes, deliberately. Pass 1 drops everything the caller will discard
     # (skip_keys) and everything malformed, so pass 2 shapes only rows that
     # survive. Between them, one batched prefetch warms every block timestamp
@@ -956,6 +996,7 @@ for r in rows:
     # classify HERE (not in Layer 2) so facts_window's economy/ops split can
     # see r["cat"] — adversary-caught ordering bug in council loop 3
     r["cat"], r["fine"], _ = classify_usd(r["usd"], r["ts"])
+    r["grp"] = group_for(r["cat"], r["fine"])
 for f in inflows:
     f["rate"], f["rsrc"] = day_rate(f["tok"], f["ts"])
     f["usd"] = f["val"] * f["rate"]
@@ -1075,51 +1116,9 @@ if os.path.isdir(COG_DIR):
         d0 = c["ts"][:10]
         e = cog_daily.setdefault(d0, {"n": 0, "mente": 0.0, "minds": set()})
         e["n"] += 1; e["mente"] += c["val"]; e["minds"].add(c["from"].lower())
-    # --- funding-source split: who pays for cognition? (Po's user-deposit detection) ---
-    # Per-wallet conservation: consumed_i − treasury_credits_i > 0 ⇒ the excess was
-    # funded by tokens the user brought (direct deposits, swaps, mind-to-mind).
-    # Credits are assumed spent FIRST, so user_funded is a strict lower bound.
-    _all_spend = defaultdict(float)   # USD consumed per wallet (any spender except treasury itself)
-    for c in cog:
-        if c["from"].lower() == treasury_l: continue
-        _all_spend[c["from"].lower()] += c["val"] * (STATE["day_rates"]["MENTE"].get(c["ts"][:10]) or RATE["MENTE"])
-    _credit = defaultdict(float)      # USD credited per wallet by this treasury (both tokens)
-    for r in rows:
-        _credit[r["to"].lower()] += r["usd"]
-    _user = _tre = 0.0; _n_excess = _n_never = 0
-    for w, sp_usd in _all_spend.items():
-        cr = _credit.get(w, 0.0)
-        ex = max(0.0, sp_usd - cr)
-        _user += ex
-        _tre += sp_usd - ex
-        if ex > 0.01:
-            _n_excess += 1
-            if cr == 0: _n_never += 1
-    funding_split = {"era": "MENTE", "consumed_usd": round(sum(_all_spend.values()), 0),
-                     "minds": len(_all_spend),
-                     "treasury_funded_usd": round(_tre, 0), "user_funded_usd": round(_user, 0),
-                     "user_pct": round(_user / sum(_all_spend.values()) * 100, 1) if _all_spend else 0,
-                     "minds_excess": _n_excess, "minds_never_credited": _n_never}
-    # SWARM era, same method, from the gen-1 crawl + daily CoinGecko prices
-    swarm_split = None
-    _sw_path, _sp_path = os.path.join(HERE, "swarm_era.json"), os.path.join(HERE, "swarm_prices.json")
-    if os.path.exists(_sw_path) and os.path.exists(_sp_path):
-        _se = json.load(open(_sw_path)); _sp = json.load(open(_sp_path))
-        _ss = defaultdict(float); _sr = defaultdict(float)
-        for r0 in _se["in"]:  _ss[r0["cp"].lower()] += r0["val"] * _sp.get(r0["ts"][:10], 0.001)
-        for r0 in _se["out"]: _sr[r0["cp"].lower()] += r0["val"] * _sp.get(r0["ts"][:10], 0.001)
-        _su = _st = 0.0; _sn = 0
-        for w, sp_usd in _ss.items():
-            ex = max(0.0, sp_usd - _sr.get(w, 0.0))
-            _su += ex; _st += sp_usd - ex
-            if ex > 0.01: _sn += 1
-        swarm_split = {"era": "SWARM", "consumed_usd": round(sum(_ss.values()), 0), "minds": len(_ss),
-                       "treasury_funded_usd": round(_st, 0), "user_funded_usd": round(_su, 0),
-                       "user_pct": round(_su / sum(_ss.values()) * 100, 1) if _ss else 0,
-                       "minds_excess": _sn}
-
-    cognition = {"funding_split": funding_split, "swarm_split": swarm_split,
-                 "total_n": len(spends), "total_mente": round(sum(c["val"] for c in spends), 0),
+    # (the per-wallet "who pays for cognition" split was removed 2026-09-15 —
+    # Po rule 5: no paid-vs-free source-of-cognition reasoning anywhere)
+    cognition = {"total_n": len(spends), "total_mente": round(sum(c["val"] for c in spends), 0),
                  "total_usd": _cog_usd(spends),
                  "usd_7d": _cog_usd([c for c in spends if c["ts"] > _c7]),
                  "n_24h": sum(1 for c in spends if c["ts"] > _c24),
@@ -1176,7 +1175,15 @@ def facts_window(rs, ins, label):
     # economy = classified payouts; ops = the residual (swaps/treasury moves),
     # computed as out - economy so the two ALWAYS sum to the total exactly
     economy_out = sum(r["usd"] for r in rs if r["cat"] != "nonstandard")
+    # one grouping layer (classify.group_for): every row lands in exactly one
+    # group, so the six sums close on out_usd to the cent (test_parity)
+    groups = {g: {"n": 0, "usd": 0.0, "w": set()} for g in GROUP_KEYS}
+    for r in rs:
+        g = groups[r["grp"]]
+        g["n"] += 1; g["usd"] += r["usd"]; g["w"].add(r["to"])
     return {"label": label,
+            "groups": {g: {"n": v["n"], "usd": round(v["usd"], 2), "wallets": len(v["w"])}
+                       for g, v in groups.items()},
             "out_usd": round(out_usd, 2), "in_usd": round(in_usd, 2),
             "economy_out_usd": round(economy_out, 2),
             "ops_out_usd": round(out_usd - economy_out, 2),
@@ -1324,14 +1331,21 @@ in_ledger = [{"day": d, "addr": a, "tok": t, "n": v["n"], "val": round(v["val"],
              for (d, a, t), v in sorted(_led.items(), reverse=True)]
 
 byh = defaultdict(Counter)
+byg = defaultdict(Counter)
+byw = defaultdict(set)
 for r in rows:
     if r["ts"] > cut7:
         byh[r["ts"][:13]][r["tok"]] += 1
+        byg[r["ts"][:13]][r["grp"]] += 1          # X4: per-group counts, additive
+        if r["grp"] == "skill_rewards":
+            byw[r["ts"][:13]].add(r["to"])
 h0 = datetime.fromisoformat(cut7[:13] + ":00:00").replace(tzinfo=timezone.utc)
 hourly, h = [], h0
 while h <= now:
     k = h.strftime("%Y-%m-%dT%H")
-    hourly.append({"h": k, **{sym: byh[k][sym] for sym in TOKENS}})
+    hourly.append({"h": k, **{sym: byh[k][sym] for sym in TOKENS},
+                   "g": {g: byg[k][g] for g in GROUP_KEYS if byg[k][g]},
+                   "cw": len(byw[k])})
     h += timedelta(hours=1)
 
 # balance reconciliation: cache-lifetime net flow vs live balance, per token.
@@ -1459,24 +1473,82 @@ large_inflows = [{"ts": f["ts"][:16], "tok": f["tok"], "val": round(f["val"], 0)
                  for f in inflows if f["usd"] >= 10000]
 
 # Creator Rewards v2 tile row (public, AGGREGATE ONLY). Deliberately carries
-# no cap figure, no headroom, no peak creator-hour and no utilisation — a
-# live cap gauge is a farmer's dashboard (detector data stays in
-# alert_state.json / guard_private.json). implied_user_spend is AI-inferred:
-# rewards are half the user price ($0.10 equip / $0.01 invoke), and the
-# chain cannot tell whether the user's credit was paid or gifted.
+# no cap figure, no cap switch-on instant, no headroom, no peak creator-hour
+# and no utilisation — a live cap gauge is a farmer's dashboard (detector
+# data stays in alert_state.json / guard_private.json). No implied user
+# spend either (2026-09-15): the chain cannot see how a user's credit was
+# funded, so no figure reasons about it. `grid` is the era's reward sizes,
+# read from classify.ERAS (the one table), never typed here.
 _v2 = [r for r in rows if r["ts"] >= RESUMED_UTC and r["fine"] in ("equip", "invoke")]
 _v2_24 = [r for r in _v2 if r["ts"] > cut24]
-rewards_v2 = {"resumed_utc": RESUMED_UTC + "Z", "cap_on_utc": CAP_ON_UTC + "Z",
+rewards_v2 = {"resumed_utc": RESUMED_UTC + "Z",
+              "grid": dict(era_for(RESUMED_UTC)["rewards"]),
               "usd_24h": round(sum(r["usd"] for r in _v2_24), 2),
               "usd_since_resume": round(sum(r["usd"] for r in _v2), 2),
               "n_equip_24h": sum(1 for r in _v2_24 if r["fine"] == "equip"),
               "n_invoke_24h": sum(1 for r in _v2_24 if r["fine"] == "invoke"),
-              "creators_24h": len({r["to"] for r in _v2_24}),
-              "creators_since_resume": len({r["to"] for r in _v2}),
-              "implied_user_spend_24h": round(2 * sum(r["usd"] for r in _v2_24), 2)}
+              "creator_wallets_24h": len({r["to"] for r in _v2_24}),
+              "creator_wallets_since_resume": len({r["to"] for r in _v2})}
+
+# ---- A1: Top creator wallets (public, computed from the SAME classified rows).
+# Four windows; all-time spans both reward eras and is labelled so on the
+# page (the v1 $1-equip era dominates it — an on-chain fact already public
+# in top_recipients). Per wallet: USD, equips, invokes, first-seen DAY (day
+# grain only). Aggregates: wallets paid, USD, top-1/5/10 share, median
+# (null when n < 10), new wallets (first-ever reward inside the window; 24h
+# and 7d only). Nothing here is appended to stats_history.json (public,
+# one row per run — a 30-min concentration series would be a farmer's
+# feedback loop). No cap, no hourly figure, no account grouping.
+_first_reward = {}
+for r in sorted((r for r in rows if r["grp"] == "skill_rewards"), key=lambda r: r["ts"]):
+    _first_reward.setdefault(r["to"].lower(), r["ts"][:10])
+def _cw_window(rs, new_lo=None):
+    per = defaultdict(lambda: {"usd": 0.0, "equip": 0, "invoke": 0})
+    for r in rs:
+        a = per[r["to"].lower()]
+        a["usd"] += r["usd"]
+        if r["cat"] == "equip":
+            a["equip"] += 1
+        elif r["cat"] == "invoke":
+            a["invoke"] += 1
+    ranked = sorted(per.items(), key=lambda kv: (-kv[1]["usd"], kv[0]))
+    tot = sum(v["usd"] for _, v in ranked)
+    usds = sorted(v["usd"] for _, v in ranked)
+    n = len(ranked)
+    def share(k):
+        return round(sum(v["usd"] for _, v in ranked[:k]) / tot * 100, 1) if tot and n else None
+    med = None
+    if n >= 10:
+        med = round((usds[n // 2] if n % 2 else (usds[n // 2 - 1] + usds[n // 2]) / 2), 4)
+    out = {"wallets": n, "usd": round(tot, 2),
+           "equips": sum(v["equip"] for _, v in ranked),
+           "invokes": sum(v["invoke"] for _, v in ranked),
+           "top1_share_pct": share(1), "top5_share_pct": share(5), "top10_share_pct": share(10),
+           "median_usd": med,
+           "top": [{"addr": a, "usd": round(v["usd"], 2), "equips": v["equip"],
+                    "invokes": v["invoke"], "first_seen": _first_reward.get(a)}
+                   for a, v in ranked[:10]]}
+    if new_lo is not None:
+        out["new_wallets"] = sum(1 for a in per if (_first_reward.get(a) or "") >= new_lo)
+    return out
+_rw = [r for r in rows if r["grp"] == "skill_rewards"]
+creator_wallets = {
+    "default": "since_resume",
+    "resumed_utc": RESUMED_UTC + "Z", "paused_utc": PAUSED_UTC + "Z",
+    "windows": {
+        "24h": _cw_window([r for r in _rw if r["ts"] > cut24], new_lo=cut24[:10]),
+        "7d": _cw_window([r for r in _rw if r["ts"] > cut7], new_lo=cut7[:10]),
+        "since_resume": _cw_window([r for r in _rw if r["ts"] >= RESUMED_UTC]),
+        "all": _cw_window(_rw),
+    }}
+# the all-time top-10 must be a strict subset of the public top_recipients
+# ranking's universe (recipient wallets), by construction — assert it
+for _t in creator_wallets["windows"]["all"]["top"]:
+    assert _t["addr"] in {r["to"].lower() for r in rows}
 
 facts = {"windows": windows, "prev24": prev24, "monthly": monthly, "daily": daily, "hourly": hourly,
-         "rewards_v2": rewards_v2,
+         "rewards_v2": rewards_v2, "creator_wallets": creator_wallets,
+         "group_labels": GROUP_LABEL, "group_keys": GROUP_KEYS, "group_to": GROUP_TO,
          "large_inflows": large_inflows,
          "balance_series": balance_series,
          "top_recipients": top_recip, "in_sources": in_sources, "in_ledger": in_ledger,
@@ -1504,6 +1576,8 @@ for r in rows:
     if r["cat"] in ("invoke", "equip"):
         cr[r["to"]][r["cat"]] += 1
         cr[r["to"]]["usd"] += r["usd"]
+# per-wallet all-history ranking: PRIVATE input to the pattern monitor only
+# (the public per-wallet view is facts.creator_wallets, C6 2026-09-15)
 creators = sorted(({"addr": a, "label": KNOWN.get(a.lower()), "invoke": d["invoke"], "equip": d["equip"],
                     "usd": round(d["usd"], 2)} for a, d in cr.items()), key=lambda x: -x["usd"])
 S["creators_n"] = len(creators)
@@ -1513,8 +1587,11 @@ fine_agg = defaultdict(lambda: {"n": 0, "usd": 0.0})
 for r in rows:
     fine_agg[r["fine"]]["n"] += 1
     fine_agg[r["fine"]]["usd"] += r["usd"]
-fine_table = sorted(({"fine": k, "n": v["n"], "usd": round(v["usd"], 2)} for k, v in fine_agg.items()),
-                    key=lambda x: -x["usd"])
+_fine_grp = {}
+for r in rows:
+    _fine_grp.setdefault(r["fine"], r["grp"])
+fine_table = sorted(({"fine": k, "group": _fine_grp.get(k), "n": v["n"], "usd": round(v["usd"], 2)}
+                     for k, v in fine_agg.items()), key=lambda x: -x["usd"])
 
 def gap_entropy(gaps):
     bins = [30, 120, 600, 3600, 21600]
@@ -1570,15 +1647,11 @@ grows.sort(key=lambda g: (g["status"] != "review", -g["usd"]))
 flagged = [g for g in grows if g["status"] == "review"]
 at_risk = round(sum(g["usd"] for g in flagged), 2)
 
-# projections. All burn/outflow figures use the same day-implied USD as the
-# facts layer (out_di equals the factual outflow; unbacked burn_di is a strict
-# subset of it); the balance side is valued at the live rate — bases stated on
-# the tiles.
-def burn_di(cut, hi=None):
-    """Unbacked classified burn: invoke/equip/credits/referrals, excluding
-    Stripe-sized deliveries (fiat-purchase-backed)."""
-    return sum(r["usd"] for r in rows if r["ts"] > cut and (hi is None or r["ts"] <= hi)
-               and r["cat"] in ("invoke", "equip", "growth") and r["fine"] not in STRIPE_FINE)
+# ---- X2 (2026-09-15): ONE runway, on TOTAL outflow. The old trio (runway7 on
+# "unbacked" burn, runway24, runway_total) gave four answers on the page and
+# reasoned about paid-vs-free backing (Po rule 5) — gone. facts.float is the
+# single source every surface renders (exec summary, hero strip, tile,
+# Telegram). Balance at the live rate; outflow at day-pinned USD.
 def out_di(cut, hi=None):
     """Total factual outflow (every category incl. nonstandard/micro)."""
     return sum(r["usd"] for r in rows if r["ts"] > cut and (hi is None or r["ts"] <= hi))
@@ -1586,23 +1659,39 @@ def out_di(cut, hi=None):
 # (and fire the low-float alarm) — keep runway unknown instead
 bal_known = any(BALANCE[s] is not None for s in TOKENS)
 bal_usd = sum((BALANCE[s] or 0) * RATE[s] for s in TOKENS)
-burn24 = burn_di(cut24)
-burn_prev = burn_di(cut48, cut24)
 span_days = max(min(7.0, (now - datetime.fromisoformat(rows[-1]["ts"]).replace(tzinfo=timezone.utc)).total_seconds() / 86400), 1.0) if rows else 7.0
-burn7avg = burn_di(cut7) / span_days
+out24 = out_di(cut24)
+out_prev = out_di(cut48, cut24)
 out7avg = out_di(cut7) / span_days
-runway24 = round(bal_usd / burn24, 1) if bal_known and burn24 > 0 else None
-runway7 = round(bal_usd / burn7avg, 1) if bal_known and burn7avg > 0 else None
-runway_total = round(bal_usd / out7avg, 1) if bal_known and out7avg > 0 else None
+_g24 = windows[0]["groups"]
+_drv = max(_g24.items(), key=lambda kv: kv[1]["usd"]) if out24 > 0 else None
+float_facts = {
+    "basis": "total outflow, day-pinned USD; balance at the live rate",
+    "bal_usd": round(bal_usd, 0),
+    "out_24h_usd": round(out24, 2), "out_prev24_usd": round(out_prev, 2),
+    "out_7d_avg_usd": round(out7avg, 2),
+    "days_24h_pace": round(bal_usd / out24, 1) if bal_known and out24 > 0 else None,
+    "days_7d_pace": round(bal_usd / out7avg, 1) if bal_known and out7avg > 0 else None,
+    "driver_24h": ({"group": _drv[0], "label": GROUP_LABEL[_drv[0]], "usd": _drv[1]["usd"],
+                    "n": _drv[1]["n"], "share_pct": round(_drv[1]["usd"] / out24 * 100, 1)}
+                   if _drv else None),
+}
+facts["float"] = float_facts
+runway7 = float_facts["days_7d_pace"]
 
-guard = {"flagged_n": len(flagged), "monitored_n": len(grows), "at_risk_usd": at_risk,
-         "loop_n": len(loop_wallets), "loop_usd": loop_usd,
+# C4 (2026-09-15): the pattern monitor's status counts (flagged / monitored /
+# at-risk) are MONITORING STATUS and never public again — a farmer watching
+# "0 flagged" flip to "3 flagged" is the calibration oracle the invariant
+# forbids. They ride alert_state.json (private, Actions cache) for the
+# daily/weekly digest; check_publish.py denies the exact key names.
+import state as _state
+_state.update({"pattern_monitor": {"flagged_n": len(flagged), "monitored_n": len(grows),
+                                   "at_risk_usd": at_risk, "ce_total_usd": ce_total,
+                                   "ts": now.strftime("%Y-%m-%dT%H:%M")}})
+guard = {"loop_n": len(loop_wallets), "loop_usd": loop_usd,
          "loop_gt10": loop_gt10, "loop_gt50": loop_gt50,
          "credit_recip_n": len(credit_recip),
-         "ce_total_usd": ce_total,
-         "runway24": runway24, "runway7": runway7, "runway_total": runway_total, "bal_usd": round(bal_usd, 0),
-         "burn24": round(burn24, 2), "burn_prev": round(burn_prev, 2),
-         "burn7avg": round(burn7avg, 2)}
+         "ce_total_usd": ce_total, "bal_usd": round(bal_usd, 0)}
 # Per-wallet detector rows (addresses + ent/acf/burst signal values) are a
 # calibration oracle — the Q3 flagged-wallets lesson. They now go ONLY to a
 # git-ignored private file (rides the Actions cache for reviewer access),
@@ -1623,16 +1712,16 @@ for _cat, _rule in RETIRED.items():
              and abs(r0["usd"] - _rule["point"]) / _rule["point"] <= _rule["tol"]]
     retired_ledger[_cat] = {"cutoff": _rule["cutoff"], "n": len(_hits),
                             "usd": round(sum(h["usd"] for h in _hits), 2), "entries": _hits}
-# Legacy $1 free top-up ledger (private): same tx-hash-level discipline plus
-# the per-wallet shape (one per wallet) the alerts leg checks.
-legacy_ledger = {}
-for _cat, _rule in LEGACY.items():
+# System free top-up (≈$1) ledger (private): same tx-hash-level discipline
+# plus the per-wallet shape (one per wallet) the alerts leg checks.
+system_topup_ledger = {}
+for _cat, _rule in SYSTEM_TOPUP.items():
     _hits = [{"ts": r0["ts"], "to": r0["to"], "tx": r0["tx"], "li": r0.get("li", ""),
               "usd": round(r0["usd"], 2)}
              for r0 in rows if r0["ts"] > _rule["since"]
              and abs(r0["usd"] - _rule["point"]) / _rule["point"] <= _rule["tol"]]
     _per = Counter(h["to"].lower() for h in _hits)
-    legacy_ledger[_cat] = {"since": _rule["since"], "fine": _rule["fine"], "n": len(_hits),
+    system_topup_ledger[_cat] = {"since": _rule["since"], "fine": _rule["fine"], "n": len(_hits),
                            "usd": round(sum(h["usd"] for h in _hits), 2),
                            "wallets": len(_per),
                            "repeat_wallets": sorted(a for a, c in _per.items() if c > _rule["max_per_wallet"]),
@@ -1663,7 +1752,7 @@ for _s, _days in grid_agreement.items():
             print(f"DATA-QUALITY: {_s} {_d} grid agreement {_g['agree']} (n={_g['n']}) < 0.5 — "
                   f"day rate {_g['rate']} may be wrong")
 json.dump({"generated": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "rows": grows,
-           "retired_ledger": retired_ledger, "legacy_ledger": legacy_ledger,
+           "retired_ledger": retired_ledger, "system_topup_ledger": system_topup_ledger,
            "grid_agreement": grid_agreement},
           open(os.path.join(HERE, "guard_private.json"), "w"))
 
@@ -1685,37 +1774,36 @@ for _rp in retired_public:
         f"retired_public {_rp['cat']}: usd != sum(entries)"
     assert set(_rp) == {"cat", "cutoff", "n", "usd", "last_seen"}, \
         "retired_public carries a field outside the published aggregate contract"
-# Public aggregate for the legacy $1 top-ups — same shape class, same
+# Public aggregate for the system free top-ups — same shape class, same
 # one-codepath rule. NO per-wallet field: the one-per-wallet rule is a
 # detector; the daily mix bar's per-day b1 wallet count is the public view.
-legacy_public = []
-for _cat, _v in legacy_ledger.items():
-    legacy_public.append({
+system_topup_public = []
+for _cat, _v in system_topup_ledger.items():
+    system_topup_public.append({
         "cat": _v["fine"], "since": min((h["ts"][:10] for h in _v["entries"]), default=None),
         "n": _v["n"], "usd": _v["usd"],
         "last_seen": max((h["ts"][:10] for h in _v["entries"]), default=None)})
-for _lp, (_cat, _src) in zip(legacy_public, legacy_ledger.items()):
-    assert _lp["n"] == len(_src["entries"]), f"legacy_public {_cat}: n != len(entries)"
+for _lp, (_cat, _src) in zip(system_topup_public, system_topup_ledger.items()):
+    assert _lp["n"] == len(_src["entries"]), f"system_topup_public {_cat}: n != len(entries)"
     assert _lp["usd"] == round(sum(h["usd"] for h in _src["entries"]), 2), \
-        f"legacy_public {_cat}: usd != sum(entries)"
+        f"system_topup_public {_cat}: usd != sum(entries)"
     assert set(_lp) == {"cat", "since", "n", "usd", "last_seen"}, \
-        "legacy_public carries a field outside the published aggregate contract"
+        "system_topup_public carries a field outside the published aggregate contract"
 
 # permanent Stripe snapshot (verified server-side revenue reference)
 stripe_snap = None
 _snap_path = os.path.join(HERE, "stripe_snapshot.json")
 if os.path.exists(_snap_path):
     stripe_snap = json.load(open(_snap_path))
-    # distribution over the same period, for a like-for-like subsidy ratio
-    _p0, _p1 = stripe_snap["period"]
-    _dist = sum(r["usd"] for r in rows if _p0 <= r["ts"][:10] <= _p1
-                and r["cat"] in ("invoke", "equip", "growth") and r["fine"] not in STRIPE_FINE)
-    stripe_snap["period_unbacked_dist_usd"] = round(_dist, 2)
-    _proceeds = stripe_snap.get("net_proceeds_est_usd") or (stripe_snap["net_usd"] - stripe_snap["fees_est_usd"])
-    stripe_snap["period_subsidy_ratio"] = round(_dist / _proceeds, 1) if _proceeds else None
+    # C7 (2026-09-15): no period subsidy ratio / unbacked distribution — a
+    # paid-vs-free basis (Po rule 5). The snapshot is an archive line now.
+    stripe_snap.pop("period_unbacked_dist_usd", None)
+    stripe_snap.pop("period_subsidy_ratio", None)
 
-infer = {"S": S, "creators": creators[:25], "ce_total": ce_total, "fine_table": fine_table, "guard": guard,
-         "retired_public": retired_public, "legacy_public": legacy_public}
+# infer.creators (per-wallet all-history ranking) retired 2026-09-15 (C6):
+# facts.creator_wallets is the one public per-wallet view, era-labelled.
+infer = {"S": S, "ce_total": ce_total, "fine_table": fine_table, "guard": guard,
+         "retired_public": retired_public, "system_topup_public": system_topup_public}
 
 phase("layer1+digests+layer2")
 # ================= SERVER-RECORDED TIER (PostHog, optional) =================
@@ -1742,28 +1830,15 @@ if _ph and _ph.get("daily"):
     # divergence control: our stripe-sized outflows over the same closed days
     stripe_out = round(sum(r["usd"] for r in rows if r["ts"][:10] in _closed and r["fine"] in STRIPE_FINE), 2)
     wau = _ph.get("wau")
-    cost_wau = round(burn7avg * 7 / wau, 2) if wau else None
-    unbacked_7d = round(sum(r["usd"] for r in rows if r["ts"][:10] in _closed
-                            and r["cat"] in ("invoke", "equip", "growth") and r["fine"] not in STRIPE_FINE), 2)
-    subsidy_ratio = round(unbacked_7d / ph_topup_usd, 1) if ph_topup_usd else None
-    # weekly ratio trend over all settled platform days (the slope is the thesis test)
-    _settled_all = sorted(d for d in _ph["daily"] if _ph["daily"][d].get("settled"))
-    ratio_weeks = []
-    for i in range(0, len(_settled_all) - 6, 7):
-        wk = _settled_all[len(_settled_all) - 7 - i:len(_settled_all) - i]
-        if len(wk) < 7: break
-        t = sum(_ph["daily"][d]["topup_usd"] for d in wk)
-        u = round(sum(r["usd"] for r in rows if r["ts"][:10] in wk
-                      and r["cat"] in ("invoke", "equip", "growth") and r["fine"] not in STRIPE_FINE), 2)
-        ratio_weeks.append({"end": wk[-1], "ratio": round(u / t, 1) if t else None, "topup": round(t, 2), "unbacked": u})
-    ratio_weeks.reverse()
+    # cost per WAU on TOTAL outflow (the one basis, X2) — no subsidy ratio and
+    # no unbacked/backed split any more (C7, Po rule 5)
+    cost_wau = round(out7avg * 7 / wau, 2) if wau else None
     server = {"days": [_closed[0], _closed[-1]] if _closed else None,
               "topup_usd": ph_topup_usd, "topups": ph_topups,
               "stripe_out_usd": stripe_out,
               "diverge_usd": round(stripe_out - ph_topup_usd, 2),
               "diverge_meta": {"owner": "Po", "opened": "2026-07-18",
                                "status": "open — not yet reconcilable: client-side events are lossy; blocked on the hm_events Stripe-webhook export to PostHog (asked of the data team)"},
-              "unbacked_7d": unbacked_7d, "subsidy_ratio": subsidy_ratio, "ratio_weeks": ratio_weeks,
               "awakens7": ph_awakens, "wau": wau, "mau": _ph.get("mau"),
               "cost_per_wau": cost_wau,
               "fetched": _ph.get("fetched"), "complete": _ph.get("complete", False),
@@ -1800,25 +1875,26 @@ insights = {
     "recipients": "10,000+ wallets hold verifiable on-chain earnings history — the property layer. (This table counts only transfers FROM this treasury wallet.)",
     "sources": "All inflow is deliberate ops — treasury refills and collector recycling. Every source wallet should carry a label; unlabeled = ask treasury ops.",
     "server": "The off-chain shadow (Stripe checkout events only): where it disagrees with the chain is exactly where our data gaps live — revenue figures are floors until the Stripe export lands.",
-    "aizone": f"Best-guess triage, never fact: distribution is mostly invoke-sized, ~{guard['runway_total'] or '?'} days of float at current pace, and ${guard['at_risk_usd']:,} ({round(guard['at_risk_usd']/guard['ce_total_usd']*100,1)}% of creator earnings) looks unusual — nothing confirmed.",
+    "aizone": f"Best-guess triage, never fact: every payout type below is inferred from transfer size on the row's own era grid (±8% v1 · ±12% v2); pattern signals are reviewed privately and never published. Float: ~{float_facts['days_7d_pace'] or '?'} days at the 7-day pace on total outflow.",
 }
 open_items = [
     {"item": "Confirm MENTE burn mechanism (event-less balance changes, ~$1,250 lifetime; sample txs 0x0080584a…, 0xc9f7afc5… in block 45862329)", "type": "clarify", "owner": "Po → MENTE team", "opened": "2026-07-19", "anchor": "scope"},
     {"item": "Reconcile Stripe-sized outflow vs recorded top-ups — the data platform team holds Stripe API access (feeds PostHog) and can close this end-to-end", "type": "follow-up", "owner": "Po → data platform team (Stripe API access confirmed)", "opened": "2026-07-18", "anchor": "serverCard"} if server else None,
     {"item": "Identify owner of 0xf605dBb5…1468f — the primary MENTE funder; three small early funders also remain unattributed", "type": "clarify", "owner": "Po + treasury ops", "opened": "2026-07-19", "anchor": "srcT"},
     {"item": "Formalize the recycle policy: collector→treasury flows are informal ops habit today — defining the rule defines who owns the economy's cash flow", "type": "clarify", "owner": "Po → platform lead", "opened": "2026-07-19", "anchor": "srcT"},
-    {"item": "Subsidy-ratio trend: watch whether the weekly ratio bends down as revenue features land", "type": "trend", "owner": "dashboard (auto)", "opened": "2026-07-19", "anchor": "serverCard"},
     {"item": "Manual heartbeat: wallet stays solvent only by hand-refills — standing replenishment policy pending platform lead", "type": "follow-up", "owner": "Po → platform lead", "opened": "2026-07-19", "anchor": "plainStrip"},
 ]
 open_items = [o for o in open_items if o]
+# each gap carries the date it was opened (C11, 2026-09-15) so the page can
+# age it — a promise older than 60 days gets a chip, not a "landing next"
 gaps = [
-    {"missing": "SWARM era (pre-Apr 2026) not yet integrated", "effect": "this dashboard covers the MENTE/MOCA credit era (from Apr 12/24); the economy's first generation ran on SWARM (Ethoswarm token) through the SAME collector hub 0xd850… — those flows are not yet counted", "unlocks": "full multi-era economy history: crawl the collector's SWARM in/outflows and add an era-aware timeline"},
-    {"missing": "Recycle policy (constitutional)", "effect": "collector→treasury flows are informal; ownership of the economy's cash flow undefined", "unlocks": "closed-loop rule, creator revenue-share, or burn discipline — a protocol instead of a babysat wallet"},
-    {"missing": "Complete Stripe data feed — the data platform team has Stripe API access (pulls for PostHog today, but only client-side events land)", "effect": "live revenue still client-side only; an interim VERIFIED snapshot (Stripe CSV, May 13–Jul 15: net $6,455) now anchors the true numbers — live feed needed for ongoing days", "unlocks": "true revenue-backed split; divergence control closes"},
-    {"missing": "Per-transfer memo/event from the payout contract", "effect": "classification is size-inference (±8%); amber zone larger than it needs to be", "unlocks": "exact payout types — most of the amber zone becomes fact"},
-    {"missing": "Wallet↔mind map (platform export)", "effect": "recipients are hex addresses; per-creator economics invisible", "unlocks": "named earnings leaderboard + per-wallet hold/spend/exit disposition — retires the farming debate with data"},
-    {"missing": "MENTE burn-mechanism confirmation (platform)", "effect": "~1.2% of MENTE flow explained forensically but unconfirmed", "unlocks": "complete, auditable MENTE accounting; event emission restores full verifiability"},
-    {"missing": "Manual-support wallet scope", "effect": "the $50K manual-support wallet (separate custody) is invisible to this dashboard", "unlocks": "whole-treasury view; no separate manual attestation needed"},
+    {"missing": "SWARM era (pre-Apr 2026) not yet integrated", "opened": "2026-07-19", "effect": "this dashboard covers the MENTE/MOCA credit era (from Apr 12/24); the economy's first generation ran on SWARM (Ethoswarm token) through the SAME collector hub 0xd850… — those flows are not yet counted", "unlocks": "full multi-era economy history: crawl the collector's SWARM in/outflows and add an era-aware timeline"},
+    {"missing": "Recycle policy (constitutional)", "opened": "2026-07-19", "effect": "collector→treasury flows are informal; ownership of the economy's cash flow undefined", "unlocks": "closed-loop rule, creator revenue-share, or burn discipline — a protocol instead of a babysat wallet"},
+    {"missing": "Complete Stripe data feed — the data platform team has Stripe API access (pulls for PostHog today, but only client-side events land)", "opened": "2026-07-18", "effect": "live revenue still client-side only; an interim VERIFIED snapshot (Stripe CSV, May 13–Jul 15: net $6,455) now anchors the true numbers — live feed needed for ongoing days", "unlocks": "live top-up revenue instead of a dated snapshot"},
+    {"missing": "Per-transfer memo/event from the payout contract", "opened": "2026-07-19", "effect": "classification is size-inference (±8%); amber zone larger than it needs to be", "unlocks": "exact payout types — most of the amber zone becomes fact"},
+    {"missing": "Creator figures are per wallet, not per creator", "opened": "2026-09-15", "effect": "the chain shows wallets only: a creator may hold several wallets, so creator-wallet counts on this page are an upper bound on creators and every per-wallet check is a lower bound", "unlocks": "per-creator economics (platform-side grouping) — retires the farming debate with data"},
+    {"missing": "MENTE burn-mechanism confirmation (platform)", "opened": "2026-07-19", "effect": "~1.2% of MENTE flow explained forensically but unconfirmed", "unlocks": "complete, auditable MENTE accounting; event emission restores full verifiability"},
+    {"missing": "Manual-support wallet scope", "opened": "2026-07-19", "effect": "the $50K manual-support wallet (separate custody) is invisible to this dashboard", "unlocks": "whole-treasury view; no separate manual attestation needed"},
 ]
 guard["dist_pace"] = dist_pace
 
@@ -2113,19 +2189,30 @@ for _r in registry:
 _w7 = facts["windows"][1]
 assert _w7["label"] == "7d", "facts.windows[1] is no longer the 7d window"
 _bal_pub = sum(v for v in facts["balance_usd"].values() if v)
-_exec_sent = [f"In the last 7 days the treasury paid ${_w7['economy_out_usd']:,.2f} "
-              f"to creators and users across {_w7['out_tx']:,} transfers."]
-if _w7["ops_out_usd"]:
-    _exec_sent.append(f"${_w7['ops_out_usd']:,.2f} more went to treasury operations (swaps, rebates).")
-if _w7["economy_out_usd"] > 0 and _bal_pub > 0:
-    # denominator is PAYOUT pace, matching the sentence's own vocabulary —
-    # dividing by total outflow made a one-off swap week read as near-empty
-    _exec_wk = _bal_pub / _w7["economy_out_usd"]
-    _exec_sent.append(f"The wallet holds ${_bal_pub:,.2f} — about {_exec_wk:,.1f} "
-                      f"week{'' if round(_exec_wk, 1) == 1 else 's'} of payouts at the current pace.")
+_g7 = _w7["groups"]
+# X2 (2026-09-15): the sentence names the groups, never a hand-typed figure —
+# every $ below is a facts_window group sum (test_parity holds them to the
+# cent) and the runway is facts.float on TOTAL outflow. "creator wallets",
+# never "creators": the chain sees wallets.
+_parts = [f"${_g7['skill_rewards']['usd']:,.2f} skill rewards to {_g7['skill_rewards']['wallets']:,} creator wallets",
+          f"${_g7['credit_grants']['usd']:,.2f} credit grants",
+          f"${_g7['system_topups']['usd']:,.2f} system free top-ups",
+          f"${_g7['topups_delivered']['usd']:,.2f} top-ups delivered",
+          f"${_g7['ops']['usd']:,.2f} ops"]
+if _g7["micro"]["usd"]:
+    _parts.append(f"${_g7['micro']['usd']:,.2f} dust")
+_exec_sent = [f"In the last 7 days ${_w7['out_usd']:,.2f} left the treasury across "
+              f"{_w7['out_tx']:,} transfers — " + " · ".join(_parts) + "."]
+_ff = facts["float"]
+if _bal_pub > 0 and _ff["days_7d_pace"]:
+    _drv = _ff.get("driver_24h")
+    _exec_sent.append(f"The wallet holds ${_bal_pub:,.2f} — about {_ff['days_7d_pace']:,.1f} days at the 7-day pace"
+                      + (f" ({_ff['days_24h_pace']:,.1f} at yesterday's)" if _ff.get("days_24h_pace") else "")
+                      + (f", driven by {_drv['label'].lower()} ({_drv['share_pct']:g}% of the last 24h)" if _drv else "")
+                      + ".")
 else:
     _exec_sent.append(f"The wallet holds ${_bal_pub:,.2f}.")
-_exec_sent.append("All figures are on-chain; sized labels are inferred (±8%).")
+_exec_sent.append("Chain-recorded; size labels are inferred (±8% v1 · ±12% v2).")
 _exec_age_h = (datetime.now(timezone.utc) - now).total_seconds() / 3600
 _exec_degraded = _exec_age_h > 2.5            # same threshold as the page banner
 if _exec_degraded:
@@ -2135,8 +2222,12 @@ exec_summary = {"text": " ".join(_exec_sent), "degraded": _exec_degraded,
 
 # schema_version 2 (2026-08-30): identity labels redacted from all public
 # fields; transfers_export.csv dropped counterparty_label. See CONSUMERS.md.
-# exec_summary added 2026-08-30 (additive, no version bump) — CONSUMERS.md §5.
-data = {"schema_version": 2,
+# schema_version 3 (2026-09-15): infer.legacy_public -> system_topup_public
+# (fine label "$1 system free top-up"), infer.creators / guard status counts /
+# facts.cognition.funding_split / rewards_v2.cap_on_utc + implied_user_spend
+# / server.subsidy_ratio removed; facts.float, facts.creator_wallets,
+# facts_window.groups, hourly.g added. See CONSUMERS.md §5.
+data = {"schema_version": 3,
         "scope": scope, "facts": facts, "infer": infer, "server": server, "stripe_snap": stripe_snap,
         "insights": insights, "open_items": open_items, "gaps": gaps, "registry": registry, "sink": sink,
         "exec_summary": exec_summary}
@@ -2184,6 +2275,8 @@ if not OFFLINE:
                  "creators": S["creators_n"], "rate": RATE["MOCA"],
                  "balance": round(BALANCE["MOCA"], 1) if BALANCE["MOCA"] is not None else None,
                  "mente_balance": round(BALANCE["MENTE"], 1) if BALANCE.get("MENTE") is not None else None,
+                 # since 2026-09-15: days of float at the 7-day TOTAL-outflow pace
+                 # (facts.float.days_7d_pace) — the one runway (CONSUMERS.md)
                  "runway7": runway7, "runway_adj": runway7})
     json.dump(hist, open(hist_path, "w"))
 
@@ -2243,7 +2336,6 @@ if mrows:
     lgrows = [dict(g, moca=round(g["usd"] / LRATE, 1)) for g in grows]
     lce = sum(g["moca"] for g in lgrows) or sum(c["moca"] for c in lcreators) or 1
     lce_all = sum(c["moca"] for c in lcreators) or 1
-    lat_risk = sum(g["moca"] for g in lgrows if g["status"] == "review")
     lburn24 = sum(r["val"] for r in mrows if r["ts"] > cut24 and (r["lcat"] in ("invoke", "equip")
                   or r["fine"] in ("$3 credit", "referral $5"))) * LRATE
     lburn_prev = sum(r["val"] for r in mrows if cut48 < r["ts"] <= cut24 and (r["lcat"] in ("invoke", "equip")
@@ -2260,9 +2352,10 @@ if mrows:
     lsett = sum(r["val"] for r in mrows) * LRATE
     lout24 = sum(r["val"] for r in mrows if r["ts"] > cut24)
     lin24 = sum(f["val"] for f in minf if f["ts"] > cut24)
-    lguard = {"organic_share": round((lce_all - lat_risk) / lce_all * 100, 1),
-              "at_risk_usd": round(lat_risk * LRATE, 2),
-              "bal_delta24": round(lin24 - lout24, 0),
+    # C4 (2026-09-15): no monitoring-status figures on the frozen view either
+    # (organic share / at-risk / rows-monitored were derived from the
+    # private pattern monitor)
+    lguard = {"bal_delta24": round(lin24 - lout24, 0),
               "topup24": round(sum(f["val"] for f in minf if f["val"] >= 100 and f["ts"] > cut24), 0),
               "recon_drift": None,
               "topup_needed": round(max(0, 7 * lburn24 - (lbal or 0) * LRATE) / LRATE, 0) if lbal and lburn24 else None,
@@ -2270,8 +2363,7 @@ if mrows:
               "balance": round(lbal, 0) if lbal else None,
               "burn24": round(lburn24, 2), "burn_prev": round(lburn_prev, 2),
               "promised_usd": round(lprom, 2),
-              "fx_drift_pct": round((lsett - lprom) / lprom * 100, 1) if lprom else 0,
-              "rows_private_n": len(lgrows)}
+              "fx_drift_pct": round((lsett - lprom) / lprom * 100, 1) if lprom else 0}
     def _lbucket(r):
         f = r["fine"]
         if f in ("stripe $10", "stripe $25", "stripe $50"): return "stripe"
@@ -2299,7 +2391,7 @@ if mrows:
               "burn7_usd": round(sum(lu_d[d] for d in lfull[-7:]) / max(len(lfull[-7:]), 1), 2),
               "daily": lt_daily}
     ldata = {"S": LS, "hourly": lhourly, "daily": ldaily, "creators": lcreators,
-             "other": lother, "guard": lguard, "treasury": ltreas,
+             "other": lother, "treasury": ltreas,
              # same server-computed executive summary as the main page (item 1)
              "exec_summary": data["exec_summary"]}
     ltpl = open(os.path.join(HERE, "template_legacy.html")).read()
@@ -2351,7 +2443,11 @@ if OFFLINE:
     print(f"OFFLINE: coupon cache {len(cp_full)} out / {len(cp_full_in)} in, "
           f"complete={cp_complete} (carried from prior run)")
 cp_head = None
+phase("coupon_setup")
 if not OFFLINE:
+    print(f"coupon leg: verified_from={STATE['coupon'].get('verified_from')} "
+          f"cursor={cp_cursor} xcheck={{'out': {STATE['xcheck'].get('coupon_out')}, "
+          f"'in': {STATE['xcheck'].get('coupon_in')}}} logs_chunk={LOGS_CHUNK[0]}")
     try:
         cp_head = int(rpc("eth_blockNumber", []), 16) - COUPON_HEAD_LAG
     except Exception as e:
@@ -2360,10 +2456,12 @@ if not OFFLINE:
         COUPON_BASE, CP_OUT_DIR, pages=60, wallet=COUPON_WALLET,
         token_addrs=[TOKENS["MOCA"]["addr"]], from_block=COUPON_FROM_BLOCK,
         to_block=cp_head)
+    phase("coupon_crawl_out")
     cp_full_in, cp_new_in, cp_ok_in = refresh_cache(
         COUPON_BASE.replace("filter=from", "filter=to"), CP_IN_DIR, pages=60,
         wallet=COUPON_WALLET, token_addrs=[TOKENS["MOCA"]["addr"]],
         from_block=COUPON_FROM_BLOCK, to_block=cp_head)
+    phase("coupon_crawl_in")
     cp_complete = cp_ok and cp_ok_in
     for _dir, _rows_, _okk in (("out", cp_full, cp_ok), ("in", cp_full_in, cp_ok_in)):
         _banked = max([i.get("block_number", 0) for i in _rows_] + [COUPON_FROM_BLOCK])
@@ -2413,6 +2511,7 @@ if not OFFLINE:
     # failure anywhere in this section must not cost the run its newly
     # computed closed-day rates.
     json.dump(STATE, open(RATES_PATH, "w"), indent=0)
+    phase("coupon_verify")
 
 # Addresses are lowercased throughout this section (rows.py's reasoning: the
 # v2 crawl returns EIP-55, the eth_getLogs legs return lowercase, and every
@@ -2528,6 +2627,7 @@ else:
                             holder=COUPON_WALLET)
     except Exception as e:
         print("coupon balance fetch failed:", e)
+phase("coupon_balance")
 
 cp_7d = [r for r in cp_claims if r["ts"] > cut7]
 cp_moca_7d = sum(r["val"] for r in cp_7d)
@@ -2616,7 +2716,14 @@ open(os.path.join(HERE, "coupon.html"), "w").write(
 print(f"wrote coupon.html | {cp_totals['claims']} claims · {cp_totals['moca_out']:,.0f} MOCA "
       f"· {cp_totals['claimants']} claimants · balance {cp_totals['balance_moca']}")
 
-phase("coupon")
+phase("coupon_render")
+# A6 soft guard: the coupon leg is a second wallet's crawl + two cross-checks
+# and must stay a few seconds when it fetched nothing. Warn, never fail — a
+# hard fail here would kill the publish over a slow RPC (adversary 17).
+_cp_total = sum(v for k, v in _PHASES.items() if k.startswith("coupon_"))
+if _cp_total > XCHECK_WARN_S:
+    print(f"WARNING: coupon phases took {_cp_total:.1f}s (soft budget {XCHECK_WARN_S}s) — "
+          f"see the eth_getLogs lines above for the slow leg")
 # --- data catalog (LAST: it measures files, so every one must be written) ---
 # The spec placed this right after data.json; it has to run at the END instead,
 # because transfers_export.csv and stats_history.json are written below that

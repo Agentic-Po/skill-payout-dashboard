@@ -33,7 +33,11 @@ a:hover{text-decoration:underline}
 a:visited{color:var(--acc)}
 .card a{font-weight:600;text-decoration:underline;text-underline-offset:2px}
 .card a.pill,.card td a{font-weight:inherit;text-decoration:none}
-#registerCard,#gapsCard{scroll-margin-top:12px}
+#registerCard,#gapsCard,#serverCard,#stripeCard,#swarmCard,#srcCard,#creatorCard{scroll-margin-top:12px}
+details.card>summary::-webkit-details-marker{display:none}
+details.card>summary:after{content:"▸";margin-left:8px;color:var(--ink3)}
+details.card[open]>summary:after{content:"▾"}
+details.card>summary .pill{font-weight:500}
 body{background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,"SF Pro Text",Segoe UI,sans-serif;margin:0;padding:28px 20px 60px}
 .wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
 h1{font-size:21px;margin:0;letter-spacing:-.01em}
@@ -100,18 +104,78 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
 <div class="wrap">
   <header>
     <h1>Minds Treasury Wallet — On-chain Flows (MENTE + MOCA)</h1>
-    <div class="sub mono"><a href="https://basescan.org/address/0xBD956171F5B50936f0Ad1C4db80c022bd2442519" target="_blank">0xBD95…2519</a> on Base · updated <span id="gen"></span> UTC · <a href="transfers_export.csv">per-transaction CSV export</a> · <a href="coupon.html" title="Coupon Distributor wallet — a separate wallet, out of scope for every figure on this page">Coupon claims →</a> · <a href="legacy.html" title="Original MOCA-only layout, old method — kept for continuity, sunsets after adoption">legacy view (MOCA-only, old method)</a> · <a href="https://github.com/Agentic-Po/skill-payout-dashboard/blob/main/DATASETS.md" target="_blank" title="Machine-computed data catalog — rows, sizes, coverage, provenance">data catalog</a> · <a href="https://docs.google.com/document/d/1fsbN5IG4YoZ6R23KKpe0LPjC3O2lfA1se7gpW8SuZaE/edit" target="_blank" title="Team-internal reading guide — access-controlled">team guide 🔒</a></div>
+    <div class="sub mono"><a href="https://basescan.org/address/0xBD956171F5B50936f0Ad1C4db80c022bd2442519" target="_blank">0xBD95…2519</a> on Base · <span id="gen" title="computed in your browser from the page's build stamp">updated —</span> · <a href="transfers_export.csv">per-transaction CSV export</a> · <a href="coupon.html" title="Coupon Distributor wallet — a separate wallet, out of scope for every figure on this page">Coupon claims →</a> · <a href="legacy.html" title="Original MOCA-only layout, old method — kept for continuity, sunsets after adoption">legacy view (MOCA-only, old method)</a> · <a href="https://github.com/Agentic-Po/skill-payout-dashboard/blob/main/DATASETS.md" target="_blank" title="Machine-computed data catalog — rows, sizes, coverage, provenance">data catalog</a> · <a href="https://docs.google.com/document/d/1fsbN5IG4YoZ6R23KKpe0LPjC3O2lfA1se7gpW8SuZaE/edit" target="_blank" title="Team-internal reading guide — access-controlled">team guide 🔒</a></div>
   </header>
 
-  <!-- Executive summary (Cycle-3 Loop 3, item 1): text computed SERVER-SIDE
-       in refresh.py from the same facts_window values the page renders —
-       the script below only injects it, never recomputes. -->
+  <!-- ===================== NOW ===================== -->
+  <!-- Executive summary: text computed SERVER-SIDE in refresh.py from the same
+       facts_window group sums the page renders — the script only injects it. -->
   <div class="card" id="execSummary" style="display:none;border-left:6px solid var(--acc);font-size:15px"></div>
 
   <div class="card" id="plainStrip" style="border-left:6px solid var(--c-moca);font-size:15px"></div>
 
-  <details class="card" id="flowCard" open>
-    <summary style="cursor:pointer;font-size:14px;font-weight:650;list-style:none">How Cognition Credits flow — the token cycle this dashboard tracks <span class="pill" id="flowPill">hide diagram</span></summary>
+  <p class="sect">Now — observed on-chain</p>
+  <div class="tiles" id="ftiles"></div>
+
+  <div class="card" id="creatorCard" style="display:none">
+    <h2>Top creator wallets — skill rewards</h2>
+    <p class="note">Wallets paid an equip- or invoke-sized reward, ranked by USD in the window. <b>Per wallet, not per creator</b> — a creator may hold several wallets, so wallet counts are an upper bound on creators. Sizes are inferred on the row's own era grid; first-seen is the UTC day of the wallet's first-ever reward. No hourly figures.</p>
+    <div class="legend" id="creatorTabs" style="gap:6px"></div>
+    <p class="note" id="creatorNote" style="margin:0 0 8px"></p>
+    <div class="tiles" id="creatorTiles"></div>
+    <div class="scroll" style="margin-top:10px"><table id="creatorT"></table></div>
+  </div>
+
+  <div class="card">
+    <h2>Daily flows</h2>
+    <p class="insight" id="ins-daily"></p>
+    <p class="note">The mix bar splits each day's outflow by transfer size band (labels describe the amount only, not its purpose — hover for detail). <span id="mixToggle"></span> The current UTC day is partial and marked. Showing the latest 21 days; expand for full history since <span id="d0"></span>.</p>
+    <div class="legend" id="bleg"></div>
+    <div class="scroll"><table id="dailyT"></table></div>
+    <button class="showmore" id="moreDays">Show full history ▾</button>
+  </div>
+
+  <div class="card" id="balCard" style="display:none">
+    <h2>Treasury balance — daily, by token</h2>
+    <div class="sub" id="balSub" style="margin:-2px 0 8px"></div>
+    <div id="balHead" style="font-size:15px;margin:6px 0 10px"></div>
+    <div id="balRecycle"></div>
+    <div id="balSpark" style="margin:12px 0"></div>
+    <div class="scroll"><table id="balT"></table></div>
+    <button class="showmore" id="moreBal">Show full history ▾</button>
+    <p class="note" id="balFoot" style="margin-top:10px"></p>
+  </div>
+
+  <div class="card" id="hourlyCard">
+    <h2>Transfers per hour — last 7 days, by group</h2>
+    <p class="note">Count of outgoing transfers per hour stacked by payout group (one classifier, <span class="mono">classify.group_for</span>); the thin line is distinct creator wallets paid in that hour (right axis). Hover or tap for exact counts. The final bar is the in-progress hour (dimmed).</p>
+    <div class="legend" id="hourlyLegend"></div>
+    <svg id="hourly" width="100%" height="220" viewBox="0 0 1060 220"></svg>
+  </div>
+
+  <!-- ===================== UNDERSTAND ===================== -->
+  <p class="sect">Understand — how the economy moves</p>
+  <div class="scopebox" id="scope"></div>
+  <div id="bigin"></div>
+
+  <div class="card">
+    <h2>Flow summary — rolling windows &amp; calendar months</h2>
+    <p class="insight" id="ins-flows"></p>
+    <p class="note">USD values historical transfers at that day's token price (method in the scope box); raw token amounts are exact. Net = inflow − outflow. Inflow splits into <b>external funding</b> vs <b>recycled consumption</b> (MENTE returning from the Cognition Collector) — tap a row for the split; gross distribution overstates net new injection by the recycled share.</p>
+    <div class="scroll"><table id="winT"></table></div>
+    <details style="margin-top:8px"><summary class="showmore" style="display:block">Calendar months (UTC)</summary><div class="scroll"><table id="monT"></table></div></details>
+  </div>
+
+  <div class="card" id="cogCard" style="display:none">
+    <h2>Cognition consumption — minds spending MENTE</h2>
+    <p class="insight" id="ins-cognition"></p>
+    <p class="note">On-chain demand side of the economy: MENTE flowing from mind wallets into the Cognition Credits collection wallet (<a href="https://basescan.org/address/0xd85096fAeC1aC03075667B4C1a1661F5623Bf111" target="_blank" class="mono">0xd85096…f111</a>) when minds spend credits on cognition. Treasury-originated transfers to the collector are excluded; spenders are restricted to wallets that previously received treasury payouts. USD at that day’s token price.</p>
+    <div class="tiles" id="cogTiles"></div>
+    <svg id="cogSpark" width="100%" height="70" viewBox="0 0 1060 70" style="margin-top:10px"></svg>
+  </div>
+
+  <details class="card" id="flowCard">
+    <summary style="cursor:pointer;font-size:14px;font-weight:650;list-style:none">How Cognition Credits flow — the token cycle this dashboard tracks <span class="pill" id="flowPill">show diagram</span></summary>
     <p class="insight" id="ins-diagram"></p>
     <div class="scroll"><svg width="100%" viewBox="0 0 1080 330" style="min-width:900px">
       <defs>
@@ -165,87 +229,10 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     </details>
   </details>
 
-  <div class="scopebox" id="scope"></div>
-
-  <p class="sect">Facts — observed on-chain</p>
-  <div id="bigin"></div>
-  <div class="tiles" id="ftiles"></div>
-
-  <div class="card">
-    <h2>Flow summary — rolling windows &amp; calendar months</h2>
-    <p class="insight" id="ins-flows"></p>
-    <p class="note">USD values historical transfers at that day's token price (method in the scope box); raw token amounts are exact. Net = inflow − outflow. Inflow splits into <b>external funding</b> vs <b>recycled consumption</b> (MENTE returning from the Cognition Collector) — tap a row for the split; gross distribution overstates net new injection by the recycled share.</p>
-    <div class="scroll"><table id="winT"></table></div>
-    <details style="margin-top:8px"><summary class="showmore" style="display:block">Calendar months (UTC)</summary><div class="scroll"><table id="monT"></table></div></details>
-  </div>
-
-  <div class="card" id="balCard" style="display:none">
-    <h2>Treasury balance — daily, by token</h2>
-    <div class="sub" id="balSub" style="margin:-2px 0 8px"></div>
-    <div id="balHead" style="font-size:15px;margin:6px 0 10px"></div>
-    <div id="balRecycle"></div>
-    <div id="balSpark" style="margin:12px 0"></div>
-    <div class="scroll"><table id="balT"></table></div>
-    <button class="showmore" id="moreBal">Show full history ▾</button>
-    <p class="note" id="balFoot" style="margin-top:10px"></p>
-  </div>
-
-  <div class="card">
-    <h2>Daily flows</h2>
-    <p class="insight" id="ins-daily"></p>
-    <p class="note">The mix bar splits each day's outflow by transfer size band (labels describe the amount only, not its purpose — hover for detail). The current UTC day is partial and marked. Showing the latest 21 days; expand for full history since <span id="d0"></span>.</p>
-    <div class="legend" id="bleg"></div>
-    <div class="scroll"><table id="dailyT"></table></div>
-    <button class="showmore" id="moreDays">Show full history ▾</button>
-  </div>
-
-  <div class="card">
-    <h2>Transfers per hour — last 7 days</h2>
-    <p class="note">Count of outgoing transfers per hour, by token. Hover or tap for exact counts. The final bar is the in-progress hour (dimmed).</p>
-    <div class="legend"><span><span class="sw" style="background:var(--c-moca)"></span>MOCA</span><span><span class="sw" style="background:var(--c-mente)"></span>MENTE</span></div>
-    <svg id="hourly" width="100%" height="220" viewBox="0 0 1060 220"></svg>
-  </div>
-
-<div class="card" id="cogCard" style="display:none">
-    <h2>Cognition consumption — minds spending MENTE</h2>
-    <p class="insight" id="ins-cognition"></p>
-    <p class="note">On-chain demand side of the economy: MENTE flowing from mind wallets into the Cognition Credits collection wallet (<a href="https://basescan.org/address/0xd85096fAeC1aC03075667B4C1a1661F5623Bf111" target="_blank" class="mono">0xd85096…f111</a>) when minds spend credits on cognition. Collected tokens recycle back into this treasury. Treasury-originated transfers to the collector are excluded; spenders are restricted to wallets that previously received treasury payouts. USD at that day’s token price. Early sample — treat consumption vs distribution parity as an early signal until the 30-day series completes.</p>
-    <div class="tiles" id="cogTiles"></div>
-    <svg id="cogSpark" width="100%" height="70" viewBox="0 0 1060 70" style="margin-top:10px"></svg>
-  </div>
-
-  <div class="card" id="fundCard" style="display:none">
-    <h2>Who pays for cognition? — treasury credits vs user-brought tokens</h2>
-    <p class="insight" id="ins-fund"></p>
-    <p class="note">Anyone can send SWARM / MENTE / MOCA straight to a mind's wallet as spendable Cognition Credits — a real, on-chain revenue stream separate from Stripe. We detect it by <b>conservation per mind wallet</b>: if a mind spent more on cognition than this treasury ever credited it, the excess had to come from tokens the user supplied.</p>
-    <div class="scroll"><table id="fundCalc"></table></div>
-    <p class="note" style="margin-top:10px"><b>Method &amp; caveats:</b> for each mind, <span class="mono">user-funded = max(0, consumed − treasury-credited)</span>, assuming treasury credits are spent first (so the total is a strict <b>lower bound</b>). All USD at each day's token price. "User-funded" here also includes mind→mind transfers (e.g. one mind awakening another), so it is not purely external deposits — separating those needs the wallet↔mind map (see Data gaps). Stripe top-ups are counted as treasury-funded (they leave from this treasury), so this figure is <b>additional to</b> Stripe revenue.</p>
-    <div class="tiles" id="fundTiles"></div>
-  </div>
-
-  <div class="card" id="swarmCard" style="display:none">
-    <h2>Generation 1 — the SWARM era (Jan–Apr 2026, closed)</h2>
-    <p class="insight" id="ins-swarm"></p>
-    <p class="note">Before MENTE, Cognition Credits ran on the SWARM token (Ethoswarm) through the same collector hub 0xd850…f111 — then acting as treasury AND collector combined. This is closed history: crawled once from chain, valued at each day's CoinGecko price, never re-fetched. Consumption stopped on the exact day the MENTE treasury went live (Apr 24) — a clean one-day migration.</p>
-    <div class="tiles" id="swarmTiles"></div>
-    <div class="scroll" style="margin-top:10px"><table id="swarmT"></table></div>
-  </div>
-
-  <div class="card">
-    <h2>Top recipient wallets — all history</h2>
-    <p class="insight" id="ins-recipients"></p>
-    <p class="note">Ranked by total USD received from this wallet. Labels come from the platform's wallet↔mind map where confirmed; unlabeled wallets are unidentified. Active days = distinct UTC days receiving.</p>
-    <div class="scroll"><table id="recipT"></table></div>
-  </div>
-
-  <div class="card">
-    <h2>Inflow sources — all history</h2>
-    <p class="insight" id="ins-sources"></p>
-    <p class="note">Where this wallet's funding comes from. Labels from the treasury ops map where confirmed; unlabeled sources are unidentified.</p>
-    <div class="scroll"><table id="srcT"></table></div>
-    <h3 style="margin:18px 0 4px">Inflow ledger — every funding event</h3>
-    <p class="note">One row per UTC day × source wallet × token, newest first. Raw token amounts are exact; USD uses that day's oracle rate. Labels and notes are maintained by hand in <span class="mono">inflow_labels.json</span> — <b>unlabeled</b> means treasury ops hasn't identified the sender yet.</p>
-    <div class="scroll" style="max-height:420px;overflow-y:auto"><table id="inLedgerT"></table></div>
+  <div class="card" id="registryCard">
+    <h2>Address registry — every wallet in the loop</h2>
+    <p class="note">Full, untruncated addresses for every material participant. Everywhere else this page shortens addresses — tables to <span class="mono">0xd85096…f111</span>, the flow diagram and prose to <span class="mono">0xd850…f111</span>. <b>The short form is not a safe identifier</b>: the Cognition Credits collector and its address-poisoning mimic are identical in it. Anything flagged <span class="pill" style="background:var(--warn);color:#fff">ambiguous when shortened</span> must be matched in full. Click any address to copy it.</p>
+    <div class="scroll"><table id="addrT"></table></div>
   </div>
 
   <div class="card" id="sinkCard" style="display:none;border-left:6px solid var(--warn)">
@@ -257,30 +244,6 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <p class="note" id="sinkFoot"></p>
   </div>
 
-  <div class="card" id="registryCard">
-    <h2>Address registry — every wallet in the loop</h2>
-    <p class="note">Full, untruncated addresses for every material participant. Everywhere else this page shortens addresses — tables to <span class="mono">0xd85096…f111</span>, the flow diagram and prose to <span class="mono">0xd850…f111</span>. <b>The short form is not a safe identifier</b>: the Cognition Credits collector and its address-poisoning mimic are identical in it. Anything flagged <span class="pill" style="background:var(--warn);color:#fff">ambiguous when shortened</span> must be matched in full. Click any address to copy it.</p>
-    <div class="scroll"><table id="addrT"></table></div>
-  </div>
-
-
-  <p class="sect" id="serverSect" style="display:none">Server-recorded — platform events (PostHog · T+2 settled)</p>
-  <div class="card" id="stripeCard" style="display:none;border:1.5px solid var(--c-in);border-left:6px solid var(--c-in)">
-    <h2 style="color:var(--c-in);text-transform:uppercase;letter-spacing:.06em;font-size:13px">Verified revenue — Stripe snapshot (server-side truth)</h2>
-    <p class="insight" id="ins-stripe" style="border-left-color:var(--c-in)"></p>
-    <div class="tiles" id="stripeTiles"></div>
-    <p class="note" id="stripeNote" style="margin-top:8px"></p>
-  </div>
-
-  <div class="card" id="serverCard" style="display:none;border:1.5px solid var(--c-in);border-left:6px solid var(--c-in)">
-    <h2 style="color:var(--c-in);text-transform:uppercase;letter-spacing:.06em;font-size:13px">Server-recorded — PostHog (platform events)</h2>
-    <p class="note">Independent of the on-chain data above: events recorded by the Minds platform (PostHog project 459477). <b>Recent 2 days excluded</b> — platform data arrives late, so a day only counts once it is 2 full days old (the same idea as T+2 settlement in traditional finance). Top-ups here are <b>Stripe checkout events only</b> (coupons and manual top-ups never appear here), client-confirmed and lossy — the server-side Stripe webhook event is not yet exported to PostHog (open ask to the data team).</p>
-    <p class="insight" id="ins-server"></p>
-    <div class="tiles" id="stiles"></div>
-    <svg id="spark" width="100%" height="70" viewBox="0 0 1060 70" style="margin-top:10px"></svg>
-    <p class="note" id="sdiverge" style="margin-top:6px"></p>
-  </div>
-
   <div class="aizone">
     <div class="zhead">AI-inferred interpretation</div>
     <p class="insight" id="ins-aizone" style="border-left-color:var(--warn)"></p>
@@ -289,9 +252,9 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <div class="tiles" id="gtiles"></div>
 
     <details class="aiwrap">
-      <summary><span class="aibadge">AI-inferred</span>Payout type classification — invokes, equips, credits, Stripe</summary>
+      <summary><span class="aibadge">AI-inferred</span>Payout type classification — skill rewards, credit grants, top-ups</summary>
       <div class="inner">
-        <p class="method"><b>Method:</b> each transfer is classified by its USD value at that day's token price, on the reward grid of its own era (the row's timestamp decides, never the run date): until 21 Aug 2026 13:55 UTC — $0.10 invoke, $1 equip; from 14 Sep 2026 14:19 UTC — $0.05 equip, $0.005 invoke (±12%); a $1 after 21 Aug is a legacy free top-up (growth, not creator earnings); $3 credit, $5 referral at ±8%; Stripe packs $10/$20/$25/$50/$100 matched on the fee-adjusted value (÷0.94, ±15% — deliveries land ~6% short of the pack price after processing). One shared classifier (classify.py) produces this table, the Telegram digest and the CSV export, so the three always agree. This is inference from size, not ground truth: a per-transfer memo from the payout contract (requested) would make it exact. The $3 bucket mixes new-user credits and internal top-ups — the internal top-ups sheet is the authoritative split. Pack-sized transfers are size-inferred and may include coupon-delivered credits — not verified revenue (this page does not read the Stripe ledger)</p>
+        <p class="method"><b>Method:</b> each transfer is classified by its USD value at that day's token price, on the reward grid of its own era (the row's timestamp decides, never the run date): until 21 Aug 2026 13:55 UTC — $0.10 invoke, $1 equip; from 14 Sep 2026 14:19 UTC — $0.05 equip, $0.005 invoke (±12%); a ≈$1 after 21 Aug is a <b>system free top-up</b> (a growth grant, not creator earnings); $3 credit, $5 referral at ±8%; Stripe packs $10/$20/$25/$50/$100 matched on the fee-adjusted value (÷0.94, ±15% — deliveries land ~6% short of the pack price after processing). One shared classifier (classify.py) produces this table, the Telegram digest and the CSV export, so the three always agree, and one grouping layer (<span class="mono">group_for</span>) buckets every row as <b>skill rewards</b> (to creator wallets) · <b>credit grants</b> · <b>system free top-ups</b> · <b>top-ups delivered</b> · <b>ops</b>. This is inference from size, not ground truth: a per-transfer memo from the payout contract (requested) would make it exact. The $3 bucket mixes new-user credits and internal top-ups — the internal top-ups sheet is the authoritative split. Pack-sized transfers are size-inferred and may include coupon-delivered credits — not verified revenue (this page does not read the Stripe ledger).</p>
         <div class="tiles" id="itiles"></div>
         <div class="tiles" id="rtiles" style="display:none"></div>
         <p class="note" id="rfoot" style="display:none"></p>
@@ -301,33 +264,57 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     </details>
 
     <details class="aiwrap">
-      <summary><span class="aibadge">AI-inferred</span>Creator earnings ranking (classified invokes + equips)</summary>
+      <summary id="patSum"><span class="aibadge">AI-inferred</span>Payout pattern monitor <span class="pill">reviewed privately</span></summary>
       <div class="inner">
-        <p class="method"><b>Method:</b> recipients of transfers classified as invoke/equip, ranked by USD, share of ALL classified creator earnings. Inherits the size classification's uncertainty.</p>
-        <div class="scroll"><table id="creatT"></table></div>
-      </div>
-    </details>
-
-    <details class="aiwrap">
-      <summary id="patSum"><span class="aibadge">AI-inferred</span>Payout pattern monitor</summary>
-      <div class="inner">
-        <p class="method"><b>Method:</b> we look at each earner's payout timing and ask: does it look human-irregular or robotically regular? Statistical pattern checks flag transfer patterns worth review; the specific signals and their cut-offs are reviewed privately, because publishing them would hand anyone gaming payouts a calibration oracle. Cut-offs are judgment calls; flags mean "worth a look", never "confirmed abuse". Automated invocation can be legitimate — the automation policy is an open decision. Flagged rows sort first.</p>
+        <p class="method"><b>Method:</b> we look at each earner's payout timing and ask: does it look human-irregular or robotically regular? Statistical pattern checks flag transfer patterns worth review; the specific signals, their cut-offs and their results are reviewed privately, because publishing them would hand anyone gaming payouts a calibration oracle. Cut-offs are judgment calls; flags mean "worth a look", never "confirmed abuse". Automated invocation can be legitimate — the automation policy is an open decision.</p>
         <div class="scroll"><table id="gT"></table></div>
       </div>
     </details>
   </div>
 
-  <div class="card metacard" id="registerCard">
-    <h2>Open items &amp; follow-ups</h2>
-    <p class="note">The single accountability list — every clarification, follow-up, and trend-to-watch from all sections, with owner and opened date.</p>
-    <div class="scroll"><table id="regT"></table></div>
+  <!-- ===================== ARCHIVE & RECORDS ===================== -->
+  <p class="sect">Archive &amp; records</p>
+
+  <details class="card" id="recipCard">
+    <summary style="cursor:pointer;font-size:14px;font-weight:650;list-style:none">Top recipient wallets — all history <span class="pill">every payout type · 25 rows</span></summary>
+    <p class="insight" id="ins-recipients"></p>
+    <p class="note">Ranked by total USD received from this wallet, every payout type. Labels come from the platform's wallet map where confirmed; unlabeled wallets are unidentified. Active days = distinct UTC days receiving.</p>
+    <div class="scroll"><table id="recipT"></table></div>
+  </details>
+
+  <div class="card" id="srcCard">
+    <h2>Inflow sources — all history</h2>
+    <p class="insight" id="ins-sources"></p>
+    <p class="note">Where this wallet's funding comes from. Labels from the treasury ops map where confirmed; unlabeled sources are unidentified.</p>
+    <div class="scroll"><table id="srcT"></table></div>
+    <details style="margin-top:10px"><summary class="showmore" style="display:block" id="ledgerSum">Inflow ledger — every funding event ▾</summary>
+    <p class="note">One row per UTC day × source wallet × token, newest first. Raw token amounts are exact; USD uses that day's oracle rate. <b>unlabeled</b> means treasury ops hasn't identified the sender yet.</p>
+    <div class="scroll" style="max-height:420px;overflow-y:auto"><table id="inLedgerT"></table></div>
+    </details>
   </div>
 
-  <div class="card metacard" id="gapsCard">
-    <h2>Data gaps &amp; what's landing next</h2>
-    <p class="note">Known limits of this dashboard, stated once — each gap names what its resolution unlocks. Not weaknesses: the roadmap from inference to verifiable fact.</p>
+  <div class="card" id="stripeCard" style="display:none"><p class="note" id="stripeLine" style="margin:0"></p></div>
+  <div class="card" id="serverCard"><p class="note" id="serverLine" style="margin:0"></p></div>
+
+  <details class="card" id="swarmCard" style="display:none">
+    <summary style="cursor:pointer;font-size:14px;font-weight:650;list-style:none">Generation 1 — the SWARM era (Jan–Apr 2026, closed) <span class="pill" id="swarmFresh"></span></summary>
+    <p class="insight" id="ins-swarm"></p>
+    <p class="note">Before MENTE, Cognition Credits ran on the SWARM token (Ethoswarm) through the same collector hub 0xd850…f111 — then acting as treasury AND collector combined. This is closed history: crawled once from chain, valued at each day's CoinGecko price, never re-fetched. Consumption stopped on the exact day the MENTE treasury went live (Apr 24) — a clean one-day migration.</p>
+    <div class="tiles" id="swarmTiles"></div>
+    <div class="scroll" style="margin-top:10px"><table id="swarmT"></table></div>
+  </details>
+
+  <details class="card metacard" id="registerCard">
+    <summary style="cursor:pointer;font-size:14px;font-weight:650;list-style:none" id="regSum">Open items &amp; follow-ups</summary>
+    <p class="note">The single accountability list — every clarification, follow-up, and trend-to-watch from all sections, with owner and opened date. Items older than 60 days carry a chip.</p>
+    <div class="scroll"><table id="regT"></table></div>
+  </details>
+
+  <details class="card metacard" id="gapsCard">
+    <summary style="cursor:pointer;font-size:14px;font-weight:650;list-style:none" id="gapsSum">Data gaps &amp; what's landing next</summary>
+    <p class="note">Known limits of this dashboard, stated once with the date each was opened — each gap names what its resolution unlocks. Not weaknesses: the roadmap from inference to verifiable fact.</p>
     <div class="scroll"><table id="gapsT"></table></div>
-  </div>
+  </details>
 </div>
 <div class="tip" id="tip"></div>
 <script>
@@ -342,7 +329,7 @@ const DATA = /*__DATA__*/;
     d.style.cssText="border:1.5px solid "+color+";color:"+color+";border-radius:8px;padding:10px 14px;font-weight:650;font-size:13.5px;background:var(--surface)";
     d.textContent=txt;box.appendChild(d);}
   // Safari-safe: generated_iso is "YYYY-MM-DDTHH:MM:SSZ"; fall back to the
-  // legacy space-separated stamp by converting it to ISO.
+  // older space-separated stamp by converting it to ISO.
   const stamp=SC.generated_iso||((SC.generated||"").replace(" ","T")+":00Z");
   const t=Date.parse(stamp);
   if(!isNaN(t)){
@@ -360,6 +347,7 @@ const PP=F.pricing_provenance||null;
 const fmt=n=>n.toLocaleString("en-US",{maximumFractionDigits:1});
 const fmt0=n=>n.toLocaleString("en-US",{maximumFractionDigits:0});
 const usd=n=>"$"+n.toLocaleString("en-US",{maximumFractionDigits:0});
+const usd2=n=>"$"+n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 const tip=document.getElementById("tip");
 let pinned=null;
 function showTip(e,txt,html){if(html){tip.innerHTML=txt;}else{tip.textContent=txt;}
@@ -376,7 +364,18 @@ function bindTips(root){root.querySelectorAll("[data-tip],[data-tiphtml]").forEa
  el.addEventListener("click",e=>{if(pinned===el){pinned=null;tip.style.opacity=0;}else{pinned=el;showTip(e,T(),H());}});
 });}
 document.addEventListener("click",e=>{if(pinned&&!pinned.contains(e.target)){pinned=null;tip.style.opacity=0;}},true);
-document.getElementById("gen").textContent=SC.generated;
+// ---- A4: age, not ISO stamps. "Updated HH:MM HKT · N min ago", computed in
+// the viewer's browser from scope.generated_iso (works when the pipeline is
+// dead); refreshed every 30 s. Non-live cards get a freshness pill via fresh().
+const GEN_T=Date.parse(SC.generated_iso||((SC.generated||"").replace(" ","T")+":00Z"));
+const hkt=iso=>{const t=Date.parse(iso);return isNaN(t)?iso:new Date(t+8*3.6e6).toISOString().slice(0,16).replace("T"," ")+" HKT";};
+function ageWords(ms){const m=Math.round(ms/6e4);if(m<1)return"just now";if(m<90)return m+" min ago";const h=Math.round(m/60);if(h<48)return h+" h ago";return Math.round(h/24)+" d ago";}
+function stampGen(){const e=document.getElementById("gen");if(isNaN(GEN_T)){e.textContent="updated "+(SC.generated||"?")+" UTC";return;}
+ e.textContent="Updated "+hkt(SC.generated_iso).slice(11)+" · "+ageWords(Date.now()-GEN_T);e.title=(SC.generated||"")+" UTC";}
+stampGen();try{const _iv=setInterval(stampGen,30000);if(_iv&&typeof _iv.unref==="function")_iv.unref();}catch(e){}
+function fresh(dateIso,label){const t=Date.parse(dateIso);if(isNaN(t))return"";const d=Math.round((GEN_T-t)/864e5);
+ const col=d>30?"#d33":(d>7?"var(--warn)":"var(--ink3)");
+ return `<span class="pill" style="border-color:${col};color:${col}">${label} · ${d}d old</span>`;}
 // executive summary — server-computed in refresh.py from the SAME facts the
 // page renders (parity held to the cent by tests/test_parity.py); the
 // degraded "Data is N hours old" prefix is decided upstream too. Injected as
@@ -387,13 +386,19 @@ if(DATA.exec_summary&&DATA.exec_summary.text){
  ex.textContent=DATA.exec_summary.text;
  ex.style.display="";
 }
+// group vocabulary (classify.GROUP_LABEL) — one place, never retyped
+const GK=F.group_keys||["skill_rewards","credit_grants","system_topups","topups_delivered","ops","micro"];
+const GL=F.group_labels||{};
+const GCOL={skill_rewards:"var(--band1)",credit_grants:"var(--band3)",system_topups:"var(--band4)",topups_delivered:"var(--band5)",ops:"var(--band8)",micro:"var(--band9)"};
+const GSHORT={skill_rewards:"rewards",credit_grants:"credits",system_topups:"system top-ups",topups_delivered:"top-ups",ops:"ops",micro:"dust"};
+const FL=F.float||null;
 // plain-English summary strip — outflow-first (the outflow IS the ecosystem's activity)
 {const wA=F.windows[3];
  const openN=(DATA.open_items||[]).length;
  const consPct=(F.cognition&&F.cognition.total_usd)?Math.round(F.cognition.total_usd/wA.out_usd*100):null;
- const floatD=DATA.infer.guard.runway_total;
+ const floatD=FL&&FL.days_7d_pace;
  document.getElementById("plainStrip").innerHTML=
-  `<b>In one sentence:</b> since ${F.range.from} this wallet has distributed <b>$${(wA.economy_out_usd??wA.out_usd).toLocaleString(undefined,{maximumFractionDigits:0})}</b> of token credits and rewards into the Minds ecosystem${wA.ops_out_usd?` (plus $${wA.ops_out_usd.toLocaleString(undefined,{maximumFractionDigits:0})} of treasury swaps/ops moves, excluded here — together they equal the $${wA.out_usd.toLocaleString(undefined,{maximumFractionDigits:0})} total outflow)`:""}${consPct?` — and <b>${consPct}%</b> of it has already been spent on actual cognition`:""}. The wallet holds ~<b>${floatD||"?"} days</b> of float and is refilled manually ($${(wA.in_recycled_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} of lifetime inflow was usage fees recycling back${DATA.sink&&DATA.sink.recycle_last?` — that leg stopped ${DATA.sink.recycle_last}; collected credits now accumulate in a holding wallet instead`:""}, $${(wA.in_external_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} manual funding) — if it empties, top-up fulfillment including Stripe stops. <a href="#registerCard" class="pill" style="border-color:var(--acc);color:var(--acc);font-weight:600">${openN} open item${openN===1?"":"s"} ↓</a>`;
+  `<b>In one sentence:</b> since ${F.range.from} this wallet has distributed <b>$${(wA.economy_out_usd??wA.out_usd).toLocaleString(undefined,{maximumFractionDigits:0})}</b> of token credits and skill rewards into the Minds ecosystem${wA.ops_out_usd?` (plus $${wA.ops_out_usd.toLocaleString(undefined,{maximumFractionDigits:0})} of treasury swaps/ops moves, excluded here — together they equal the $${wA.out_usd.toLocaleString(undefined,{maximumFractionDigits:0})} total outflow)`:""}${consPct?` — and <b>${consPct}%</b> of it has already been spent on actual cognition`:""}. The wallet holds ~<b>${floatD||"?"} days</b> of float at the 7-day pace of total outflow and is refilled manually ($${(wA.in_recycled_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} of lifetime inflow was usage fees recycling back${DATA.sink&&DATA.sink.recycle_last?` — that leg stopped ${DATA.sink.recycle_last}; collected credits now accumulate in a holding wallet instead`:""}, $${(wA.in_external_usd||0).toLocaleString(undefined,{maximumFractionDigits:0})} manual funding) — if it empties, top-up fulfillment including Stripe stops. <a href="#registerCard" class="pill" style="border-color:var(--acc);color:var(--acc);font-weight:600">${openN} open item${openN===1?"":"s"} ↓</a>`;
 }
 // scope + reconciliation
 const rec=Object.entries(F.recon).map(([s,r])=>{if(!r)return`${s} n/a`;
@@ -410,54 +415,100 @@ document.getElementById("scope").innerHTML=
  (F.market_check&&Object.keys(F.market_check).length?`<span><b>Rate validation:</b> ${Object.entries(F.market_check).map(([k,v])=>`${k} ${v.within15}/${v.n} typically within ${v.median_dev??"?"}% of market price (${v.within15}/${v.n} days inside the 15% gate; worst day ${v.max_dev}%)`).join(" · ")} — each day priced at its own day's rate, cross-checked against the right trading pool for that period</span>`:"")+
  `<span><b>Balance reconciliation:</b> ${rec} — cache covers the wallet's full lifetime; balance valued at the newest cached block. The MENTE Δ (<b>≈$1,250 over the wallet's lifetime</b> — 88K tokens, ~1.2%) is an automatic burn by the token contract itself — expected platform behavior being confirmed with the team, <b>not missing funds</b>. (Technical: transfer logs verify exact vs raw chain, 36,715 = 36,715; the delta accrues in blocks with zero token events — the contract changes balances without emitting them.) Movement beyond this pattern flags in amber here</span>`+
  `<span><b>Note:</b> ${SC.note}</span>`;
-// large-inflow flag: any single transfer >= $10k, amber banner while recent (7d)
+// large-inflow flag: any single transfer >= $10k. C10: collapsed unless one
+// landed in the last 7 days (then open, amber, 🔔).
 const bigIn=F.large_inflows||[];
 if(bigIn.length){
- const fresh=bigIn.some(l=>(Date.now()-Date.parse(l.ts+":00Z"))<7*864e5);
+ const fresh7=bigIn.some(l=>(GEN_T-Date.parse(l.ts+":00Z"))<7*864e5);
  const rows=bigIn.slice(0,5).map(l=>`<tr><td class="mono">${l.ts.replace("T"," ")}</td><td class="r mono">${l.val.toLocaleString()} ${l.tok}</td><td class="r mono"><b>$${l.usd.toLocaleString()}</b></td><td class="mono"><a href="https://basescan.org/tx/${l.tx}" target="_blank">${l.addr.slice(0,8)}…${l.addr.slice(-4)}</a>${l.label?` <span class="pill">${l.label}</span>`:` <span class="pill" style="opacity:.5">unlabeled</span>`}</td></tr>`).join("");
  const notes=[...new Set(bigIn.slice(0,5).filter(l=>l.note).map(l=>`<b>${l.label}:</b> ${l.note}`))].join("<br>");
  document.getElementById("bigin").innerHTML=
-  `<div class="card" style="${fresh?"border:1.5px solid var(--warn);border-left:6px solid var(--warn);background:var(--warnbg)":""}">
-   <h2>${fresh?"🔔 ":""}Large inflows — single transfers ≥ $10,000${fresh?` <span style="font-size:12px;color:var(--warn);font-weight:700">NEW WITHIN 7 DAYS</span>`:""}</h2>
-   <div class="scroll"><table><thead><tr><th>When (UTC)</th><th class="r">Amount</th><th class="r">USD</th><th>Sender (tx link)</th></tr></thead><tbody>${rows}</tbody></table></div>
+  `<details class="card" ${fresh7?"open":""} style="${fresh7?"border:1.5px solid var(--warn);border-left:6px solid var(--warn);background:var(--warnbg)":""}">
+   <summary style="cursor:pointer;font-size:14px;font-weight:650;list-style:none">${fresh7?"🔔 ":""}Large inflows — single transfers ≥ $10,000 <span class="pill">${bigIn.length} on record · last ${bigIn[0].ts.slice(0,10)}</span>${fresh7?` <span style="font-size:12px;color:var(--warn);font-weight:700">NEW WITHIN 7 DAYS</span>`:""}</summary>
+   <div class="scroll" style="margin-top:8px"><table><thead><tr><th>When (UTC)</th><th class="r">Amount</th><th class="r">USD</th><th>Sender (tx link)</th></tr></thead><tbody>${rows}</tbody></table></div>
    ${notes?`<p class="note" style="margin-top:8px">${notes}</p>`:""}
-  </div>`;
+  </details>`;
 }
-// fact tiles with deltas vs prev 24h
+// fact tiles with deltas vs prev 24h. Outflow subtitle = group sums (A2):
+// they close on the tile total to the cent (test_parity).
 const w24=F.windows[0], wall=F.windows[3], p24=F.prev24;
 const balUsd=(F.balance_usd.MENTE||0)+(F.balance_usd.MOCA||0);
 function delta(cur,prev){if(!prev)return"";const d=(cur-prev)/prev*100;const cls=d>0?"delta-up":"delta-dn";return ` <span class="${cls}">${d>0?"+":""}${d.toFixed(0)}% vs prev 24h</span>`;}
+const gsub=w=>w.groups?GK.filter(g=>w.groups[g]&&w.groups[g].usd).map(g=>`${GSHORT[g]} ${usd(w.groups[g].usd)}`).join(" · "):`${w.out_tx} tx · ${w.out_wallets} wallets`;
+const floatV=FL&&FL.days_7d_pace?`<span style="${FL.days_7d_pace<5?"color:#d33;font-weight:800":(FL.days_7d_pace<14?"color:var(--warn)":"")}">~${FL.days_7d_pace} days</span>`:"n/a";
 const ftiles=[
  ["Wallet balance", usd(balUsd), fmt0(F.balance.MENTE||0)+" MENTE · "+fmt0(F.balance.MOCA||0)+" MOCA"],
- ["Outflow — 24h", usd(w24.out_usd), w24.out_tx+" tx · "+w24.out_wallets+" wallets"+delta(w24.out_usd,p24.out_usd)],
+ ["Outflow — 24h", usd(w24.out_usd), gsub(w24)+delta(w24.out_usd,p24.out_usd)],
  ["Inflow — 24h", usd(w24.in_usd), w24.in_tx+" transfer"+(w24.in_tx===1?"":"s")+" · "+w24.in_sources+" source"+(w24.in_sources===1?"":"s")],
- ["Distribution pace — 7d", "$"+Math.round(F.windows[1].out_usd/7).toLocaleString()+"/day", "avg daily distribution — the operative treasury number"],
+ ["Distribution float", floatV, FL?`balance ÷ 7-day pace of total outflow (${usd(FL.out_7d_avg_usd)}/day)${FL.days_24h_pace?` · ${FL.days_24h_pace} d at yesterday's pace`:""}${FL.driver_24h?` · driver: ${FL.driver_24h.label.toLowerCase()} ${FL.driver_24h.share_pct}% of 24h`:""} — a refill schedule, not solvency`:"total-outflow basis"],
  ["Outflow — all history", usd(wall.out_usd), wall.out_tx.toLocaleString()+" tx since "+F.range.from+(wall.economy_out_usd!=null?` · economy ${usd(wall.economy_out_usd)} + ops ${usd(wall.ops_out_usd)}`:"")],
  ["Recipient wallets", fmt0(F.wallets_all), fmt0(F.wallets_repeat)+" received on 2+ days"],
 ];
 const stale=SC.complete?"":`<div style="font-size:11px;color:var(--warn);margin-top:4px">⚠ as of last complete fetch</div>`;
 document.getElementById("ftiles").innerHTML=ftiles.map(t=>`<div class="tile" style="${SC.complete?"":"border-color:var(--warn)"}"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div>${stale}</div>`).join("");
+// ---- A1: Top creator wallets — four windows, "since 14 Sep" default. Every
+// figure is facts.creator_wallets (computed server-side from the classified
+// rows; the page only renders). Labels say creator WALLETS, never creators.
+const CW=F.creator_wallets||null;
+if(CW&&CW.windows){
+ const card=document.getElementById("creatorCard"); card.style.display="";
+ const TABS=[["24h","Last 24h"],["7d","Last 7 days"],["since_resume","Since 14 Sep (v2)"],["all","All-time (both eras)"]];
+ const NOTE={
+  "24h":"Trailing 24 hours of Creator Rewards v2 ($0.05 equip · $0.005 invoke).",
+  "7d":"Trailing 7 days. Rewards resumed 14 Sep 2026 22:19 HKT, so early in the window this equals the since-resume view.",
+  "since_resume":`Since Creator Rewards v2 resumed on ${hkt(CW.resumed_utc)} — the current reward grid only.`,
+  "all":`<b>Includes the pre-pause era</b> (until ${hkt(CW.paused_utc)}: $1 per equip · $0.10 per invoke, 20× today's sizes), so wallets paid under those larger sizes rank high here. Compare eras by size, not by rank.`};
+ let cur=CW.default||"since_resume";
+ try{const s=localStorage.getItem("cwTab");if(s&&CW.windows[s])cur=s;}catch(e){}
+ const short=a=>a.slice(0,8)+"…"+a.slice(-4);
+ const link=a=>`<a href="https://debank.com/profile/${a}/history?chain=base&token=" target="_blank" rel="noopener" class="mono">${short(a)}</a>`;
+ function render(){
+  const w=CW.windows[cur];
+  document.getElementById("creatorTabs").innerHTML=TABS.map(([k,l])=>`<span class="pill" data-tab="${k}" style="cursor:pointer;${k===cur?"background:var(--acc);color:#fff;border-color:var(--acc)":""}">${l}</span>`).join("");
+  document.getElementById("creatorNote").innerHTML=NOTE[cur]||"";
+  const pct=v=>v==null?"—":v+"%";
+  const tiles=[
+   ["Creator wallets paid", fmt0(w.wallets), `${fmt0(w.equips)} equips · ${fmt0(w.invokes)} invokes`],
+   ["Skill rewards", usd2(w.usd), "day-pinned USD, size-inferred"],
+   ["Top-1 / top-5 / top-10 share", `${pct(w.top1_share_pct)} / ${pct(w.top5_share_pct)} / ${pct(w.top10_share_pct)}`, "of the window's rewards — concentration is the tell, not the total"],
+  ];
+  if(w.median_usd!=null) tiles.push(["Median per wallet", usd2(w.median_usd), "hidden when fewer than 10 wallets"]);
+  if(w.new_wallets!=null) tiles.push(["New creator wallets", fmt0(w.new_wallets), "first-ever reward inside the window"]);
+  document.getElementById("creatorTiles").innerHTML=tiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
+  document.getElementById("creatorT").innerHTML=`<thead><tr><th>#</th><th>Creator wallet</th><th class="r">Rewards USD</th><th class="r">Equips</th><th class="r">Invokes</th><th class="r">First seen (UTC day)</th></tr></thead><tbody>`+
+   (w.top||[]).map((c,i)=>`<tr><td class="mono">${i+1}</td><td>${link(c.addr)}</td><td class="r mono">${usd2(c.usd)}</td><td class="r mono">${fmt0(c.equips)}</td><td class="r mono">${fmt0(c.invokes)}</td><td class="r mono">${c.first_seen||"—"}</td></tr>`).join("")
+   +(w.top&&w.top.length?"":`<tr><td colspan="6" style="color:var(--ink2)">no skill rewards in this window</td></tr>`)+`</tbody>`;
+ }
+ render();
+ document.getElementById("creatorTabs").addEventListener("click",e=>{const t=e.target&&e.target.dataset&&e.target.dataset.tab;if(!t||!CW.windows[t])return;cur=t;try{localStorage.setItem("cwTab",t);}catch(x){}render();});
+}
 // window + month tables (compact: USD out/in/net; per-token split via tooltip)
 function flowRows(ws){return ws.map(w=>{
- const split=`MENTE $${w.out_usd_tok.MENTE.toLocaleString()} / MOCA $${w.out_usd_tok.MOCA.toLocaleString()}\nin: $${(w.in_external_usd??0).toLocaleString()} external funding + $${(w.in_recycled_usd??0).toLocaleString()} recycled consumption\nraw out: ${fmt(w.out_raw.MENTE)} MENTE · ${fmt(w.out_raw.MOCA)} MOCA\nraw in: ${fmt(w.in_raw.MENTE)} MENTE · ${fmt(w.in_raw.MOCA)} MOCA`;
+ const grp=w.groups?"\n"+GK.filter(g=>w.groups[g]&&w.groups[g].n).map(g=>`${GL[g]||g}: $${w.groups[g].usd.toLocaleString()} (${w.groups[g].n} tx)`).join(" · "):"";
+ const split=`MENTE $${w.out_usd_tok.MENTE.toLocaleString()} / MOCA $${w.out_usd_tok.MOCA.toLocaleString()}${grp}\nin: $${(w.in_external_usd??0).toLocaleString()} external funding + $${(w.in_recycled_usd??0).toLocaleString()} recycled consumption\nraw out: ${fmt(w.out_raw.MENTE)} MENTE · ${fmt(w.out_raw.MOCA)} MOCA\nraw in: ${fmt(w.in_raw.MENTE)} MENTE · ${fmt(w.in_raw.MOCA)} MOCA`;
  return `<tr data-tip="${split.replace(/"/g,"&quot;")}"><td>${w.label}</td><td class="r mono">$${w.out_usd.toLocaleString()}</td><td class="r mono" style="color:var(--c-in)">$${(w.in_recycled_usd||0).toLocaleString()}</td><td class="r mono">$${(w.in_external_usd||0).toLocaleString()}</td><td class="r mono">${w.out_tx.toLocaleString()}</td><td class="r mono">${w.out_wallets.toLocaleString()}</td></tr>`;}).join("");}
 const flowHead=`<thead><tr><th>Period</th><th class="r">Out USD</th><th class="r">In: recycled</th><th class="r">In: funding</th><th class="r">Out tx</th><th class="r">Recipients</th></tr></thead>`;
 document.getElementById("winT").innerHTML=flowHead+`<tbody>`+flowRows(F.windows)+`</tbody>`;
 document.getElementById("monT").innerHTML=flowHead+`<tbody>`+flowRows(F.monthly)+`</tbody>`;
 bindTips(document.getElementById("winT"));bindTips(document.getElementById("monT"));
-// daily table — compact with band mix bar + tooltip
+// daily table — compact with band mix bar + tooltip. X3: the bar is USD-width
+// by default; the count/USD toggle re-widths it by transfer COUNT so a reward
+// spike (many tiny rows) stays visible next to $3 credits. Legend unchanged.
 const BK=F.band_keys;
 // b0005/b005 (Creator Rewards v2 sizes, from 14 Sep 2026) sit next to b010/b1
 // in hue so "reward-sized" reads as one family; b010/b1 stay forever (history).
 const BC={micro:"var(--band9)",b0005:"var(--band12)",b005:"var(--band13)",b010:"var(--band1)",b1:"var(--band2)",b3:"var(--band3)",b5:"var(--band4)",b10:"var(--band5)",b20:"var(--band10)",b25:"var(--band6)",b50:"var(--band7)",b100:"var(--band11)",other:"var(--band8)"};
 document.getElementById("bleg").innerHTML=BK.map(k=>`<span class="bandchip" style="background:${BC[k]}${(k==="micro"||k==="other")?";color:var(--ink)":""}">${F.band_labels[k]}</span>`).join(" ");
 document.getElementById("d0").textContent=F.range.from;
+let mixMode="usd";
+try{if(localStorage.getItem("mixMode")==="n")mixMode="n";}catch(e){}
 function buildRows(list){
-const dmax=Math.max(...list.map(d=>d.out_usd),1);
+const val=(d,k)=>((d.bands[k]||{})[mixMode]||0);
+const dmax=Math.max(...list.map(d=>mixMode==="usd"?d.out_usd:d.out_tx),1);
 return list.map(d=>{
- const bar=BK.map(k=>{const v=(d.bands[k]||{}).usd||0;return v?`<div style="height:10px;background:${BC[k]};width:${v/dmax*100}%;border-right:1px solid var(--surface)"></div>`:"";}).join("");
+ const bar=BK.map(k=>{const v=val(d,k);return v?`<div style="height:10px;background:${BC[k]};width:${v/dmax*100}%;border-right:1px solid var(--surface)"></div>`:"";}).join("");
  const tipRows=BK.filter(k=>d.bands[k]).map(k=>`<tr><td><span class="bandchip" style="background:${BC[k]}${(k==="micro"||k==="other")?";color:#111":""}">${F.band_labels[k]}</span></td><td style="text-align:right">${d.bands[k].n} tx</td><td style="text-align:right"><b>$${d.bands[k].usd.toFixed(0)}</b></td><td style="text-align:right">${d.bands[k].w} wallets</td></tr>`).join("");
-  const tipTxt=`<b>${d.d}</b> — $${d.out_usd.toFixed(0)} out<table>${tipRows||"<tr><td>no outflow</td></tr>"}</table>`;
+  const tipTxt=`<b>${d.d}</b> — $${d.out_usd.toFixed(0)} out · ${d.out_tx} tx<table>${tipRows||"<tr><td>no outflow</td></tr>"}</table>`;
  return `<tr data-tiphtml="${tipTxt.replace(/"/g,"&quot;")}" style="${d.partial?"opacity:.75":""}"><td class="mono">${d.d}${d.mkt?`<sup class="mkt" title="priced from that day's market close: ${Object.keys(d.mkt).join(", ")}">•m</sup>`:""}${d.partial?' <span class="pill">partial day</span>':""}</td><td class="r mono">$${d.out_usd.toFixed(2)}</td><td style="width:26%;min-width:130px"><div style="display:flex;border-radius:3px;overflow:hidden">${bar}</div></td><td class="r mono">${d.out_tx}</td><td class="r mono">${d.wallets}</td><td class="r mono" style="color:${d.in_usd?"var(--c-in)":"var(--ink3)"}">${d.in_usd?"$"+d.in_usd.toFixed(0):"—"}</td></tr>`;});}
 const dHead=`<thead><tr><th>Day (UTC)</th><th class="r">Out USD</th><th>Size-band mix</th><th class="r">Tx</th><th class="r">Wallets</th><th class="r">In USD</th></tr></thead>`;
 const dailyT=document.getElementById("dailyT");
@@ -465,7 +516,11 @@ const revDaily=F.daily.slice().reverse();
 function withMonthSeps(list,html){const out=[];let cur=null;
  list.forEach((d,i)=>{const m=d.d.slice(0,7);if(cur!==null&&m!==cur)out.push(`<tr class="mrow"><td colspan="6">${m}</td></tr>`);else if(i===0)out.push(`<tr class="mrow"><td colspan="6">${m}</td></tr>`);cur=m;out.push(html[i]);});
  return out.join("");}
+let allDays=false;
 function renderDaily(all){const list=all?revDaily:revDaily.slice(0,21);dailyT.innerHTML=dHead+`<tbody>`+withMonthSeps(list,buildRows(list))+`</tbody>`;bindTips(dailyT);}
+function renderMixToggle(){document.getElementById("mixToggle").innerHTML=`Bar width by <span class="pill" data-mix="usd" style="cursor:pointer;${mixMode==="usd"?"background:var(--acc);color:#fff;border-color:var(--acc)":""}">USD</span> <span class="pill" data-mix="n" style="cursor:pointer;${mixMode==="n"?"background:var(--acc);color:#fff;border-color:var(--acc)":""}">count</span>.`;}
+renderMixToggle();
+document.getElementById("mixToggle").addEventListener("click",e=>{const m=e.target&&e.target.dataset&&e.target.dataset.mix;if(!m||m===mixMode)return;mixMode=m;try{localStorage.setItem("mixMode",m);}catch(x){}renderMixToggle();renderDaily(allDays);});
 
 // ---- treasury balance — daily, by token (reconstructed, anchored to chain) ----
 if(F.balance_series&&F.balance_series.tokens&&F.balance_series.tokens.length){
@@ -487,7 +542,7 @@ if(F.balance_series&&F.balance_series.tokens&&F.balance_series.tokens.length){
   const dISO=latest.replace(/-/g,"/");
   document.getElementById("balHead").innerHTML=
     `<b>${dISO} UTC</b> · Total balance <b>${usd(totUsd(latest))}</b> = ${parts} `
-    +`<span class="pill" title="the reconstructed series ends exactly on the on-chain balance">live, as of ${(SC&&SC.updated)||"now"} · reconstructed = on-chain ✓</span>`;
+    +`<span class="pill" title="the reconstructed series ends exactly on the on-chain balance">live, as of ${isNaN(GEN_T)?"now":hkt(SC.generated_iso)} · reconstructed = on-chain ✓</span>`;
 
   // recycle strip — the answer to Po's actual question, status-aware
   const st=B.mente_status, chg=B.mente_change_7d, dz=B.days_to_zero;
@@ -548,33 +603,46 @@ if(F.balance_series&&F.balance_series.tokens&&F.balance_series.tokens.length){
     +`SWARM (prior era, ended 2026-04-24) and USDC were never held by this wallet — not shown.`;
 }
 renderDaily(false);
-let allDays=false;
 document.getElementById("moreDays").addEventListener("click",function(){allDays=!allDays;renderDaily(allDays);this.textContent=allDays?"Show latest 21 days ▴":"Show full history ▾";});
-// hourly svg with tooltip
+// ---- X4: hourly svg, stacked by group + creator-wallets line ----
+const gOf=h=>h.g||{};
 let H=F.hourly;
 if(window.matchMedia&&window.matchMedia("(max-width:640px)").matches){
  const agg=[];for(let i=0;i<F.hourly.length;i+=4){const c=F.hourly.slice(i,i+4);
-  agg.push({h:c[0].h,MOCA:c.reduce((a,b)=>a+b.MOCA,0),MENTE:c.reduce((a,b)=>a+b.MENTE,0)});}
+  const g={};c.forEach(x=>{for(const[k,v]of Object.entries(gOf(x)))g[k]=(g[k]||0)+v;});
+  agg.push({h:c[0].h,MOCA:c.reduce((a,b)=>a+b.MOCA,0),MENTE:c.reduce((a,b)=>a+b.MENTE,0),g,cw:Math.max(...c.map(x=>x.cw||0))});}
  H=agg;}
+const hasG=H.some(h=>Object.keys(gOf(h)).length);
+const tot=h=>hasG?Object.values(gOf(h)).reduce((a,b)=>a+b,0):(h.MOCA+h.MENTE);
+document.getElementById("hourlyLegend").innerHTML=(hasG?GK.filter(g=>H.some(h=>gOf(h)[g])).map(g=>`<span><span class="sw" style="background:${GCOL[g]}"></span>${GL[g]||g}</span>`).join(""):`<span><span class="sw" style="background:var(--c-moca)"></span>MOCA</span><span><span class="sw" style="background:var(--c-mente)"></span>MENTE</span>`)
+ +`<span><span class="sw" style="background:none;border:1px dashed var(--ink);height:0;width:14px"></span>creator wallets paid (right axis)</span>`;
 const svg=document.getElementById("hourly");
-const W=1060,Ht=220,padL=34,padB=22,padT=8;
-const maxC=Math.max(...H.map(h=>h.MOCA+h.MENTE),1);
-const bw=(W-padL-8)/H.length;
+const W=1060,Ht=220,padL=34,padB=22,padT=8,padR=34;
+const maxC=Math.max(...H.map(tot),1);
+const maxW=Math.max(...H.map(h=>h.cw||0),1);
+const bw=(W-padL-padR)/H.length;
 let s="";
 const step=Math.max(Math.ceil(maxC/5/10)*10,5);
 for(let g=0;g<=maxC;g+=step){const y=Ht-padB-(Ht-padB-padT)*g/maxC;
- s+=`<line x1="${padL}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${padL-6}" y="${y+4}" font-size="11" fill="var(--ink3)" text-anchor="end">${g}</text>`;}
+ s+=`<line x1="${padL}" x2="${W-padR}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${padL-6}" y="${y+4}" font-size="11" fill="var(--ink3)" text-anchor="end">${g}</text>`;}
+s+=`<text x="${W-padR+6}" y="${padT+10}" font-size="11" fill="var(--ink3)">${maxW}</text><text x="${W-padR+6}" y="${Ht-padB}" font-size="11" fill="var(--ink3)">0</text>`;
+const series=hasG?GK.map(g=>[g,GCOL[g]]):[["MOCA","var(--c-moca)"],["MENTE","var(--c-mente)"]];
+const pts=[];
 H.forEach((h,i)=>{
  let y=Ht-padB; const x=padL+i*bw+.5, w=Math.max(bw-1,1.5);
  const dim=i===H.length-1?' opacity=".45"':"";
- [["MOCA","var(--c-moca)"],["MENTE","var(--c-mente)"]].forEach(([k,col])=>{
-  if(!h[k])return; const hh=(Ht-padB-padT)*h[k]/maxC;
+ series.forEach(([k,col])=>{
+  const v=hasG?(gOf(h)[k]||0):h[k]; if(!v)return; const hh=(Ht-padB-padT)*v/maxC;
   y-=hh; s+=`<rect x="${x}" y="${y+.5}" width="${w}" height="${Math.max(hh-1,.5)}" fill="${col}"${dim} data-i="${i}"/>`;});
  s+=`<rect x="${x}" y="${padT}" width="${w}" height="${Ht-padB-padT}" fill="transparent" data-i="${i}"/>`;
  if(h.h.slice(11)==="00") s+=`<text x="${x}" y="${Ht-6}" font-size="11" fill="var(--ink3)">${h.h.slice(5,10)}</text>`;
+ pts.push((x+w/2)+","+(Ht-padB-(Ht-padB-padT)*(h.cw||0)/maxW));
 });
+if(hasG) s+=`<polyline fill="none" stroke="var(--ink)" stroke-width="1" stroke-dasharray="3 2" opacity=".8" points="${pts.join(" ")}" pointer-events="none"/>`;
 svg.innerHTML=s;
-function hourTip(e){const t=e.target.dataset.i;if(t===undefined)return null;const h=H[t];return `${h.h.replace("T"," ")}:00 UTC\nMOCA ${h.MOCA} · MENTE ${h.MENTE}`;}
+function hourTip(e){const t=e.target.dataset.i;if(t===undefined)return null;const h=H[t];
+ const parts=hasG?GK.filter(g=>gOf(h)[g]).map(g=>`${GL[g]||g} ${gOf(h)[g]}`):[`MOCA ${h.MOCA}`,`MENTE ${h.MENTE}`];
+ return `${h.h.replace("T"," ")}:00 UTC · ${tot(h)} tx\n${parts.join(" · ")||"no outflow"}${hasG?`\ncreator wallets paid: ${h.cw||0}`:""}`;}
 svg.addEventListener("mousemove",e=>{if(pinned)return;const t=hourTip(e);if(!t){tip.style.opacity=0;return;}showTip(e,t);});
 svg.addEventListener("mouseleave",()=>{if(!pinned)tip.style.opacity=0;});
 svg.addEventListener("click",e=>{const t=hourTip(e);if(!t){pinned=null;tip.style.opacity=0;return;}pinned=svg;showTip(e,t);});
@@ -583,8 +651,10 @@ document.getElementById("recipT").innerHTML=`<thead><tr><th>#</th><th>Wallet</th
  F.top_recipients.map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${c.n.toLocaleString()}</td><td class="r mono">${c.days}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${c.usd.toLocaleString()}</td><td class="r mono">${c.share}%</td></tr>`).join("")+`</tbody>`;
 document.getElementById("srcT").innerHTML=`<thead><tr><th>Source wallet</th><th class="r">Transfers</th><th class="r">First → last</th><th class="r">USD</th></tr></thead><tbody>`+
  F.in_sources.map(c=>`<tr><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${c.n.toLocaleString()}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${c.usd.toLocaleString()}</td></tr>`).join("")+`</tbody>`;
-document.getElementById("inLedgerT").innerHTML=`<thead><tr><th>Day</th><th>From wallet</th><th>Token</th><th class="r">Amount</th><th class="r">USD</th><th>Label / note</th></tr></thead><tbody>`+
- (F.in_ledger||[]).map(l=>`<tr><td class="mono">${l.day}</td><td class="mono"><a href="https://basescan.org/address/${l.addr}" target="_blank">${l.addr.slice(0,8)}…${l.addr.slice(-4)}</a></td><td class="mono">${l.tok}</td><td class="r mono">${l.val.toLocaleString()}${l.n>1?` <span style="opacity:.6">(${l.n} tx)</span>`:""}</td><td class="r mono">$${l.usd.toLocaleString()}</td><td>${l.label?`<span class="pill">${l.label}</span>`:`<span class="pill" style="opacity:.5">unlabeled</span>`}${l.note?` <span style="font-size:12px;opacity:.75">${l.note}</span>`:""}</td></tr>`).join("")+`</tbody>`;
+{const L=F.in_ledger||[];
+ document.getElementById("ledgerSum").textContent=`Inflow ledger — every funding event (${L.length} rows${L.length?`, last ${L[0].day}`:""}) ▾`;
+ document.getElementById("inLedgerT").innerHTML=`<thead><tr><th>Day</th><th>From wallet</th><th>Token</th><th class="r">Amount</th><th class="r">USD</th><th>Label / note</th></tr></thead><tbody>`+
+ L.map(l=>`<tr><td class="mono">${l.day}</td><td class="mono"><a href="https://basescan.org/address/${l.addr}" target="_blank">${l.addr.slice(0,8)}…${l.addr.slice(-4)}</a></td><td class="mono">${l.tok}</td><td class="r mono">${l.val.toLocaleString()}${l.n>1?` <span style="opacity:.6">(${l.n} tx)</span>`:""}</td><td class="r mono">$${l.usd.toLocaleString()}</td><td>${l.label?`<span class="pill">${l.label}</span>`:`<span class="pill" style="opacity:.5">unlabeled</span>`}${l.note?` <span style="font-size:12px;opacity:.75">${l.note}</span>`:""}</td></tr>`).join("")+`</tbody>`;}
 // ---- collector outflow: where collected MENTE goes ----
 if(DATA.sink&&DATA.sink.days){
   const S=DATA.sink; document.getElementById("sinkCard").style.display="";
@@ -611,7 +681,7 @@ if(DATA.sink&&DATA.sink.days){
     chart=S.series.map((x,i)=>{
       const after=x.d>=S.boundary, routed=after?x.s:x.r;
       const ih=Math.max(1,x.i/im*H), rh=Math.max(0,routed/im*H);
-      return `<span title="${x.d} intake ${f(x.i)} ${after?"swept":"returned"} ${f(routed)}" `
+      return `<span title="${x.d} intake ${f(x.i)} ${after?"swept":"returned"} ${f(routed)}" `
         +`style="position:relative;display:inline-block;width:${bw}%;height:${H}px;vertical-align:bottom">`
         +`<span style="position:absolute;bottom:0;left:0;right:1px;height:${ih}px;background:var(--line)"></span>`
         +`<span style="position:absolute;bottom:0;left:0;right:1px;height:${rh}px;background:${after?"var(--warn)":"var(--c-in)"}"></span></span>`;
@@ -702,16 +772,25 @@ if(DATA.insights){for(const[k,v]of Object.entries(DATA.insights)){const el=docum
  if(DATA.sink&&DATA.sink.rebate){const _r=DATA.sink.rebate,_e=document.getElementById("nRebate");
    if(_e)_e.textContent=`holds ${Math.round(_r.bal_mente).toLocaleString()} MENTE + ${Math.round(_r.bal_moca).toLocaleString()} MOCA · last swap ${_r.last_swap||"never"}`;}
  if(F.cognition)put("nCons",F.cognition.total_usd);
+ // C9 (amended): the diagram is CLOSED by default; a viewer who opens it is remembered
  const fc=document.getElementById("flowCard"),fp=document.getElementById("flowPill");
- try{if(localStorage.getItem("flowOpen")==="0")fc.removeAttribute("open");}catch(e){}
+ try{if(localStorage.getItem("flowOpen")==="1")fc.setAttribute("open","");}catch(e){}
  const syncPill=()=>{fp.textContent=fc.open?"hide diagram":"show diagram";};
  syncPill();
  fc.addEventListener("toggle",()=>{syncPill();try{localStorage.setItem("flowOpen",fc.open?"1":"0");}catch(e){}});
 }
-if(DATA.open_items){document.getElementById("regT").innerHTML=`<thead><tr><th>Item</th><th>Type</th><th>Owner</th><th class="r">Opened</th></tr></thead><tbody>`+
- DATA.open_items.map(o=>`<tr><td>${o.item}${o.anchor?` <a href="#${o.anchor}" class="pill">section ↑</a>`:""}</td><td><span class="pill">${o.type}</span></td><td>${o.owner}</td><td class="r mono">${o.opened}</td></tr>`).join("")+`</tbody>`;}
-if(DATA.gaps){document.getElementById("gapsT").innerHTML=`<thead><tr><th>What's missing</th><th>Effect on this page</th><th>What it unlocks</th></tr></thead><tbody>`+
- DATA.gaps.map(g=>`<tr><td><b>${g.missing}</b></td><td>${g.effect}</td><td>${g.unlocks}</td></tr>`).join("")+`</tbody>`;}
+// C11: open items and gaps are collapsed; each row shows its opened date and
+// a chip once it is older than 60 days (age vs the page's build stamp).
+const ageDays=d=>{const t=Date.parse(d+"T00:00:00Z");return isNaN(t)||isNaN(GEN_T)?null:Math.floor((GEN_T-t)/864e5);};
+const oldChip=d=>{const a=ageDays(d);return a!=null&&a>60?` <span class="pill" style="border-color:var(--warn);color:var(--warn)" title="opened ${d}">open ${a} d</span>`:"";};
+if(DATA.open_items){const O=DATA.open_items;
+ document.getElementById("regSum").innerHTML=`Open items &amp; follow-ups <span class="pill">${O.length} open · ${O.filter(o=>(ageDays(o.opened)||0)>60).length} older than 60 d</span>`;
+ document.getElementById("regT").innerHTML=`<thead><tr><th>Item</th><th>Type</th><th>Owner</th><th class="r">Opened</th></tr></thead><tbody>`+
+ O.map(o=>`<tr><td>${o.item}${o.anchor?` <a href="#${o.anchor}" class="pill">section ↑</a>`:""}</td><td><span class="pill">${o.type}</span></td><td>${o.owner}</td><td class="r mono">${o.opened}${oldChip(o.opened)}</td></tr>`).join("")+`</tbody>`;}
+if(DATA.gaps){const Gp=DATA.gaps;
+ document.getElementById("gapsSum").innerHTML=`Data gaps &amp; what's landing next <span class="pill">${Gp.length} gaps · ${Gp.filter(g=>(ageDays(g.opened)||0)>60).length} older than 60 d</span>`;
+ document.getElementById("gapsT").innerHTML=`<thead><tr><th>What's missing</th><th>Effect on this page</th><th>What it unlocks</th><th class="r">Opened</th></tr></thead><tbody>`+
+ Gp.map(g=>`<tr><td><b>${g.missing}</b></td><td>${g.effect}</td><td>${g.unlocks}</td><td class="r mono">${g.opened||"—"}${g.opened?oldChip(g.opened):""}</td></tr>`).join("")+`</tbody>`;}
 // ---- cognition consumption (facts) ----
 const CG=DATA.facts.cognition;
 if(CG){
@@ -737,32 +816,11 @@ if(CG){
   sp.addEventListener("click",e=>{const t=cogTip(e);if(!t){pinned=null;tip.style.opacity=0;return;}pinned=sp;showTip(e,t);});
  }
 }
-// ---- Who pays for cognition? funding-source split ----
-if(CG&&CG.funding_split){
- const F1=CG.funding_split, F2=CG.swarm_split;
- document.getElementById("fundCard").style.display="block";
- document.getElementById("ins-fund").innerHTML="&rarr; Users bring <b>~"+F1.user_pct+"%</b> of the fuel themselves: at least <b>$"+F1.user_funded_usd.toLocaleString()+"</b> of MENTE-era cognition was paid for with tokens users deposited directly — "+F1.minds_never_credited.toLocaleString()+" minds spent on cognition having received <b>nothing</b> from the treasury. This is on-chain revenue, additional to Stripe.";
- const row=(f)=>`<tr><td><b>${f.era} era</b></td>`+
-   `<td class="r mono">$${f.consumed_usd.toLocaleString()}</td>`+
-   `<td class="r mono">−&nbsp;$${f.treasury_funded_usd.toLocaleString()}</td>`+
-   `<td class="r mono" style="color:var(--c-in)"><b>=&nbsp;$${f.user_funded_usd.toLocaleString()}</b></td>`+
-   `<td class="r mono">${f.user_pct}%</td>`+
-   `<td class="r mono">${f.minds_excess.toLocaleString()}${f.minds_never_credited!==undefined?" ("+f.minds_never_credited.toLocaleString()+" got $0)":""}</td></tr>`;
- let body=row(F1); if(F2) body+=row(F2);
- if(F2){const tc=F1.consumed_usd+F2.consumed_usd, tt=F1.treasury_funded_usd+F2.treasury_funded_usd, tu=F1.user_funded_usd+F2.user_funded_usd;
-  body+=`<tr style="border-top:2px solid var(--line)"><td><b>Both eras</b></td><td class="r mono"><b>$${tc.toLocaleString()}</b></td><td class="r mono">−&nbsp;$${tt.toLocaleString()}</td><td class="r mono" style="color:var(--c-in)"><b>=&nbsp;$${tu.toLocaleString()}</b></td><td class="r mono"><b>${(tu/tc*100).toFixed(1)}%</b></td><td class="r mono">—</td></tr>`;}
- document.getElementById("fundCalc").innerHTML=`<thead><tr><th>Period</th><th class="r">Cognition consumed</th><th class="r">Treasury-credited</th><th class="r">User-funded (≥)</th><th class="r">User share</th><th class="r">Minds over-spending</th></tr></thead><tbody>${body}</tbody>`;
- const uf=(F2?F1.user_funded_usd+F2.user_funded_usd:F1.user_funded_usd);
- document.getElementById("fundTiles").innerHTML=[
-   ["User-funded cognition (≥, both eras)","$"+uf.toLocaleString(),"tokens users brought themselves — lower bound"],
-   ["Minds over-spending their credits",F1.minds_excess.toLocaleString(),F1.minds_never_credited.toLocaleString()+" received nothing from treasury yet still spent"],
-   ["User share of demand","~"+F1.user_pct+"%","stable across both economy generations ("+(F2?F2.user_pct+"% in SWARM era":"")+")"],
- ].map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
-}
-// ---- Generation 1: SWARM era ----
+// ---- Generation 1: SWARM era (C8: collapsed archive at the bottom) ----
 const SE=DATA.facts.swarm_era;
 if(SE){
- document.getElementById("swarmCard").style.display="block";
+ document.getElementById("swarmCard").style.display="";
+ document.getElementById("swarmFresh").innerHTML=`era closed ${SE.last_spend} · static archive`;
  document.getElementById("ins-swarm").innerHTML="&rarr; The economy worked from generation one: <b>"+SE.out_swarm.toLocaleString()+" SWARM distributed and "+(SE.in_swarm/SE.out_swarm*100).toFixed(1)+"% of it consumed</b> ("+SE.first_spend+" &rarr; "+SE.last_spend+") — near-perfect velocity, "+SE.minds_both.toLocaleString()+" minds completed the full top-up→spend loop before the MENTE migration.";
  const t=[
   ["Distributed (gen-1)", SE.out_swarm.toLocaleString()+" SWARM", "≈ $"+SE.out_usd.toLocaleString(undefined,{maximumFractionDigits:0})+" at each day's market price · "+SE.out_tx.toLocaleString()+" top-ups"],
@@ -774,103 +832,61 @@ if(SE){
  document.getElementById("swarmT").innerHTML=`<thead><tr><th>Month</th><th class="r">Distributed SWARM</th><th class="r">≈ USD</th><th class="r">Consumed SWARM</th><th class="r">≈ USD</th></tr></thead><tbody>`+
   SE.monthly.map(m=>`<tr><td class="mono">${m.m}</td><td class="r mono">${m.out.toLocaleString()}</td><td class="r mono">$${m.out_usd.toLocaleString(undefined,{maximumFractionDigits:0})}</td><td class="r mono">${m.inn.toLocaleString()}</td><td class="r mono">$${m.in_usd.toLocaleString(undefined,{maximumFractionDigits:0})}</td></tr>`).join("")+`</tbody>`;
 }
-// ---- verified Stripe snapshot ----
+// ---- C7: verified Stripe snapshot → one dated archive line ----
 const SS=DATA.stripe_snap;
 if(SS){
+ document.getElementById("stripeCard").style.display="";
  const kept=SS.net_proceeds_est_usd||(SS.net_usd-SS.fees_est_usd);
- document.getElementById("stripeCard").style.display="block";
- document.getElementById("ins-stripe").innerHTML="&rarr; <b>Took in $"+SS.gross_usd.toLocaleString()+" &rarr; refunded $"+SS.refunded_usd+" &rarr; Stripe's cut ~$"+SS.fees_est_usd.toLocaleString()+" &rarr; we keep ~$"+kept.toLocaleString()+"</b> ("+SS.paid+" paid payments, "+SS.period[0]+" &rarr; "+SS.period[1]+") — vs client-side analytics: before May 29 tracking didn't exist ($1,176 uncaptured); after setup the residual loss is ~14% ($5,311 real vs $4,559 recorded) — the structural client-side gap only a server-side feed closes.";
- const t=[
-  ["Gross collected (paid tx)","$"+SS.gross_usd.toLocaleString(), SS.paid+" paid payments · avg $"+SS.avg_paid_usd],
-  ["Refunds","−$"+SS.refunded_usd.toLocaleString(), SS.refunded+" refund events · basis unverified (see note)"],
-  ["Net revenue (pre-fee)","$"+SS.net_usd.toLocaleString(), "gross − refunds, before Stripe fees"],
-  ["Stripe fees (est.)","−$"+SS.fees_est_usd.toLocaleString(), "billed in HKD, converted (see note)"],
-  ["Net proceeds (est. take-home)","≈ $"+kept.toLocaleString(), "net revenue − est. fees ≈ "+Math.round(kept/SS.gross_usd*100)+"% of gross"],
-  ["Subsidy ratio — verified basis","$"+(SS.period_subsidy_ratio??"?")+" per $1", "same-period unbacked distribution $"+(SS.period_unbacked_dist_usd||0).toLocaleString()+" ÷ net proceeds"],
- ];
- document.getElementById("stripeTiles").innerHTML=t.map(x=>`<div class="tile"><div class="k">${x[0]}</div><div class="v">${x[1]}</div><div class="d">${x[2]}</div></div>`).join("");
- document.getElementById("stripeNote").innerHTML=`<b>Reconciliation:</b> gross collected $${SS.gross_usd.toLocaleString()} − refunds $${SS.refunded_usd} = net revenue (pre-fee) $${SS.net_usd.toLocaleString()} − Stripe fees est. $${SS.fees_est_usd.toLocaleString()} = <b>net proceeds ≈ $${kept.toLocaleString()}</b> · effective fee rate ≈ ${(SS.fees_est_usd/SS.gross_usd*100).toFixed(1)}% of gross · purchase mix mostly $10 and $25 packs (${Object.entries(SS.tiers).map(([k,v])=>v+"×"+k).join(", ")}).<br>
-<span style="font-size:11.5px">The $4.1 verified ratio and the $17.7 figure in the platform-events card below bracket the truth — $17.7 is the worst-case bound from incomplete client-side data; the verified number is the better estimate. Footnotes: refund basis unverified — gross covers paid rows only; whether the $${SS.refunded_usd} nets against included charges or the ${SS.refunded} excluded refunded rows needs per-row amount_refunded from Stripe. Fees are billed in HKD (HK$${SS.fees_hkd.toLocaleString()}), converted per transaction — an estimate, not Stripe's settled USD figure. ${SS.failed} failed attempts carry $0 and are excluded throughout. One-time snapshot (${SS.rows} rows) captured ${SS.captured}, data through ${SS.period[1]} — see Data gaps for the live-feed plan.</span>`;
+ document.getElementById("stripeLine").innerHTML=`<b>Archive — verified Stripe revenue snapshot:</b> ${SS.period[0]} → ${SS.period[1]}: gross $${SS.gross_usd.toLocaleString()} − refunds $${SS.refunded_usd.toLocaleString()} = net $${SS.net_usd.toLocaleString()} (pre-fee) ≈ $${kept.toLocaleString()} after estimated fees · ${SS.paid} paid payments. One-time export captured ${SS.captured} ${fresh(SS.captured,"snapshot")} — a live Stripe feed is an open data gap; this page does not read the Stripe ledger.`;
 }
-// ---- server-recorded tier ----
+// ---- C7: server-recorded tier (PostHog) → one dated line ----
 const SV=DATA.server;
-if(SV){
- document.getElementById("serverCard").style.display="block";
- document.getElementById("serverSect").style.display="block";
- const dv=SV.diverge_usd, dvBad=Math.abs(dv)>Math.max(25,SV.topup_usd*0.25);
- const stiles=[
-  ["Top-ups — last 7 settled days","$"+SV.topup_usd.toLocaleString(), SV.topups+" client-confirmed purchases"],
-  ["Minds awakened — 7d settled", SV.awakens7.toLocaleString(), "backend-confirmed mind_awaken events"],
-  ["Weekly active users", SV.wau?SV.wau.toLocaleString():"n/a", (SV.mau?SV.mau.toLocaleString()+" MAU":"")+" · any-event basis incl. logins — directional"],
-  ["Subsidy ratio — rough upper bound", SV.subsidy_ratio!==null?("$"+SV.subsidy_ratio+" per $1"):"n/a", ((SV.ratio_weeks&&SV.ratio_weeks.length>1)?("trend: "+SV.ratio_weeks.map(w=>w.ratio===null?"∞":"$"+w.ratio).join(" → ")+" weekly · "):"")+"7d unbacked distribution $"+(SV.unbacked_7d||0).toLocaleString()+" ÷ recorded top-ups — true ratio is likely much lower (revenue records incomplete until Stripe data lands)"],
-  ["Cross-system divergence", `<span style="${dvBad?"color:var(--warn)":""}">`+(dv>=0?"+":"−")+"$"+Math.abs(dv).toLocaleString()+"</span>", dvBad?"⚠ not yet reconcilable — see note":"within expected event loss"],
- ];
- document.getElementById("stiles").innerHTML=stiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
- // sparkline: settled daily awakens (bars) + topup_usd (line), last 21 settled days
- const sd=Object.keys(SV.daily).filter(d=>SV.daily[d].settled).sort().slice(-21);
- if(sd.length>3){
-  const sp=document.getElementById("spark");
-  const aMax=Math.max(...sd.map(d=>SV.daily[d].awakens),1), tMax=Math.max(...sd.map(d=>SV.daily[d].topup_usd),1);
-  const bw=1060/sd.length; let sv="";
-  sd.forEach((d,i)=>{const a=SV.daily[d].awakens/aMax*54;
-   sv+=`<rect x="${i*bw+2}" y="${62-a}" width="${bw-4}" height="${Math.max(a,1)}" fill="var(--c-in)" opacity=".45" data-i="${i}"/><rect x="${i*bw+2}" y="8" width="${bw-4}" height="54" fill="transparent" data-i="${i}"/>`;});
-  sv+=`<polyline fill="none" stroke="var(--c-moca)" stroke-width="2" points="${sd.map((d,i)=>(i*bw+bw/2)+","+(62-SV.daily[d].topup_usd/tMax*54)).join(" ")}"/>`;
-  sv+=`<text x="4" y="12" font-size="11" fill="var(--ink3)">bars: minds awakened/day · line: top-up USD/day (settled, ${sd[0]} → ${sd[sd.length-1]})</text>`;
-  sp.innerHTML=sv;
-  function sparkTip(e){const t=e.target.dataset.i;if(t===undefined)return null;const d=sd[t];return `${d}\n${SV.daily[d].awakens} minds awakened · $${SV.daily[d].topup_usd} top-ups · ${SV.daily[d].logins} logins`;}
-  sp.addEventListener("mousemove",e=>{if(pinned)return;const t=sparkTip(e);if(!t){tip.style.opacity=0;return;}showTip(e,t);});
-  sp.addEventListener("mouseleave",()=>{if(!pinned)tip.style.opacity=0;});
-  sp.addEventListener("click",e=>{const t=sparkTip(e);if(!t){pinned=null;tip.style.opacity=0;return;}pinned=sp;showTip(e,t);});
- }
- const m=SV.diverge_meta||{};
- document.getElementById("sdiverge").innerHTML=`<b>Cross-system check (${SV.days[0]} → ${SV.days[1]}, settled):</b> Stripe-sized on-chain outflow $${SV.stripe_out_usd.toLocaleString()} vs platform-recorded top-ups $${SV.topup_usd.toLocaleString()} — divergence ${dv>=0?"+":""}$${Math.abs(dv).toLocaleString()}. ${dvBad?'<b style="color:var(--warn)">⚠ '+(m.status||"investigate")+'</b>':"(within expected event loss)"} · control owner: ${m.owner||"—"} · opened ${m.opened||"—"}. Note: coupon-delivered top-ups appear on-chain but not in Stripe events. Updated ${SV.fetched} UTC${SV.complete?"":" · <b>⚠ serving cached (last fetch failed)</b>"}.`;
-}
+{const el=document.getElementById("serverLine");
+ if(SV){
+  const dv=SV.diverge_usd, dvBad=Math.abs(dv)>Math.max(25,SV.topup_usd*0.25), m=SV.diverge_meta||{};
+  el.innerHTML=`<b>Server-recorded — PostHog platform events (T+2 settled):</b> top-ups $${SV.topup_usd.toLocaleString()} over ${SV.topups} client-confirmed purchases and ${SV.awakens7.toLocaleString()} minds awakened (${SV.days?SV.days[0]+" → "+SV.days[1]:"—"})${SV.wau?` · WAU ${SV.wau.toLocaleString()}${SV.mau?` / MAU ${SV.mau.toLocaleString()}`:""}`:""}. Cross-system check: Stripe-sized on-chain outflow $${SV.stripe_out_usd.toLocaleString()} vs recorded top-ups — divergence ${dv>=0?"+":"−"}$${Math.abs(dv).toLocaleString()}${dvBad?` <b style="color:var(--warn)">⚠ not yet reconcilable</b> (${m.status||"open"}; owner ${m.owner||"—"}, opened ${m.opened||"—"}${m.opened?oldChip(m.opened):""})`:" (within expected event loss)"}. Client-side events only (coupons and manual top-ups never appear) · fetched ${SV.fetched?hkt(SV.fetched.replace(" ","T").slice(0,16)+":00Z"):"—"} ${SV.fetched?fresh(SV.fetched.replace(" ","T").slice(0,16)+":00Z","fetched"):""}${SV.complete?"":" · <b>⚠ serving cached (last fetch failed)</b>"}.`;
+ }else{
+  el.innerHTML=`<b>Server-recorded — PostHog platform events:</b> not available this run (no platform tier fetched) — the on-chain figures above stand on their own.`;
+ }}
 // ---- AI zone ----
 const gtiles=[
- ["Distribution float", G.runway_total?(`<span style="${G.runway_total<5?"color:#d33;font-weight:800":(G.runway_total<14?"color:var(--warn)":"")}">~`+G.runway_total+" days"+(G.runway_total<5?" — fulfillment at risk, top-up required":"")+"</span>"):"n/a", "balance ÷ 7-day avg total distribution — projection, not a countdown: treasury refills on approval (see inflow sources). Proposed policy: standing replenishment reviewed against the subsidy-ratio and loop-closure trend"],
- ["Unbacked distribution — 24h", "$"+G.burn24.toLocaleString(), "invokes+equips+credits+referrals (Stripe-pack-sized deliveries excluded — size-inferred fiat purchases) at that day's token price · prev 24h: $"+G.burn_prev.toLocaleString()],
- ["Wallets flagged for review", G.flagged_n+" of "+G.monitored_n, "$"+G.at_risk_usd.toLocaleString()+" ("+(G.at_risk_usd/G.ce_total_usd*100).toFixed(1)+"% of creator earnings) show unusual timing — under review, none confirmed"],
- ["Loop closure — earn + receive", G.loop_n!==undefined?G.loop_n:"n/a", "credited wallets that later earned creator fees ($"+(G.loop_usd||0).toLocaleString()+" total · "+(G.loop_gt10||0)+" earned >$10, "+(G.loop_gt50||0)+" >$50) — user→creator flywheel, early-stage"],
+ ["Loop closure — earn + receive", G.loop_n!==undefined?G.loop_n:"n/a", "credited wallets that later earned skill rewards ($"+(G.loop_usd||0).toLocaleString()+" total · "+(G.loop_gt10||0)+" earned >$10, "+(G.loop_gt50||0)+" >$50) — user→creator flywheel, early-stage; per wallet, not per creator"],
 ];
 document.getElementById("gtiles").innerHTML=gtiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
 const S=I.S;
 const itiles=[
  ["Invokes (classified)", S.tot.invoke.n.toLocaleString(), "$"+S.tot.invoke.usd.toLocaleString()+" · "+S.inv24+" in last 24h"],
  ["Equips (classified)", S.tot.equip.n.toLocaleString(), S.eq24+" in last 24h"],
- ["User growth / top-ups", S.tot.growth.n.toLocaleString(), "$"+S.tot.growth.usd.toLocaleString()],
+ ["Credit grants / top-ups", S.tot.growth.n.toLocaleString(), "$"+S.tot.growth.usd.toLocaleString()],
  ["Nonstandard size", S.tot.nonstandard.n.toLocaleString(), "$"+S.tot.nonstandard.usd.toLocaleString()+" — off-grid, not counted above"],
 ];
 document.getElementById("itiles").innerHTML=itiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
 // Creator Rewards v2 (from 14 Sep 2026): aggregate tiles only. Times in HKT
 // with the UTC instant in the tooltip. Absent in an older data.json => the
-// row stays hidden (render-gate lesson).
+// row stays hidden (render-gate lesson). No cap data of any kind.
 const RV=F.rewards_v2||null;
 if(RV){
- const hk=iso=>{const t=Date.parse(iso);return isNaN(t)?iso:new Date(t+8*3.6e6).toISOString().slice(0,16).replace("T"," ")+" HKT";};
  const rtiles=[
-  ["Creator rewards — 24h", "$"+RV.usd_24h.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}), RV.n_equip_24h.toLocaleString()+" equips · "+RV.n_invoke_24h.toLocaleString()+" invokes · "+RV.creators_24h.toLocaleString()+" creators"],
-  ["Creator rewards — since resume", "$"+RV.usd_since_resume.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}), RV.creators_since_resume.toLocaleString()+" creators paid since <span title=\""+RV.resumed_utc+"\">"+hk(RV.resumed_utc)+"</span>"],
-  ["<span class=\"aibadge\">AI-inferred</span>Implied user spend — 24h", "≈$"+RV.implied_user_spend_24h.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}), "rewards are 50% of the $0.10 equip / $0.01 invoke user price — backing of the user's credit (paid vs gifted) is not observable on-chain; users may spend gifted credits"],
+  ["Creator rewards — 24h", usd2(RV.usd_24h), RV.n_equip_24h.toLocaleString()+" equips · "+RV.n_invoke_24h.toLocaleString()+" invokes · "+RV.creator_wallets_24h.toLocaleString()+" creator wallets"],
+  ["Creator rewards — since resume", usd2(RV.usd_since_resume), RV.creator_wallets_since_resume.toLocaleString()+" creator wallets paid since <span title=\""+RV.resumed_utc+"\">"+hkt(RV.resumed_utc)+"</span>"],
  ];
  const rt=document.getElementById("rtiles");
  rt.innerHTML=rtiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
  rt.style.display="";
  const rf=document.getElementById("rfoot");
- rf.innerHTML=`Rewards resumed <span title="${RV.resumed_utc}">${hk(RV.resumed_utc)}</span> at half the user price; a per-creator hourly cap applies.`;
+ const gr=RV.grid||{};
+ rf.innerHTML=`Rewards resumed <span title="${RV.resumed_utc}">${hkt(RV.resumed_utc)}</span>${gr.equip?` at $${gr.equip} per equip · $${gr.invoke} per invoke`:""} — half the user price.`;
  rf.style.display="";
 }
-// Legacy $1 free top-ups (the v1 $1 size after v1 closed): aggregate line, neutral.
-const LEG=(I.legacy_public||[]).filter(x=>x&&x.n);
-if(LEG.length){
+// System free top-ups (the ≈$1 size after v1 closed): aggregate line, neutral.
+const STP=(I.system_topup_public||[]).filter(x=>x&&x.n);
+if(STP.length){
  const lg=document.getElementById("legline");
- lg.innerHTML=LEG.map(x=>`$1 legacy free top-ups: <b>${x.n.toLocaleString()}</b> · <b>$${x.usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</b>${x.since?` since ${x.since}`:""}${x.last_seen?` · last ${x.last_seen}`:""} (UTC dates; counted as growth incentives, not creator earnings)`).join("<br>");
+ lg.innerHTML=STP.map(x=>`$1 system free top-ups: <b>${x.n.toLocaleString()}</b> · <b>${usd2(x.usd)}</b>${x.since?` since ${x.since}`:""}${x.last_seen?` · last ${x.last_seen}`:""} (UTC dates; a growth grant counted with credit grants, not creator earnings)`).join("<br>");
  lg.style.display="";
 }
-document.getElementById("fineT").innerHTML=`<thead><tr><th>Inferred type</th><th class="r">Count</th><th class="r">USD</th></tr></thead><tbody>`+
- I.fine_table.map(f=>`<tr><td>${f.fine}</td><td class="r mono">${f.n.toLocaleString()}</td><td class="r mono">$${f.usd.toLocaleString()}</td></tr>`).join("")+`</tbody>`;
-document.getElementById("creatT").innerHTML=`<thead><tr><th>#</th><th>Creator wallet</th><th class="r">Invokes</th><th class="r">Equips</th><th class="r">USD</th><th class="r">Share</th></tr></thead><tbody>`+
- I.creators.slice(0,15).map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r">${c.invoke.toLocaleString()}</td><td class="r">${c.equip}</td><td class="r mono">$${c.usd.toLocaleString()}</td><td class="r mono">${(c.usd/I.ce_total*100).toFixed(1)}%</td></tr>`).join("")+`</tbody>`;
-document.getElementById("patSum").innerHTML=`<span class="aibadge">AI-inferred</span>Payout pattern monitor <span class="pill" style="${G.flagged_n?"border-color:var(--warn);color:var(--warn)":""}">${G.flagged_n?G.flagged_n+" flagged · $"+G.at_risk_usd.toLocaleString():"no flags"}</span><span class="pill">${G.monitored_n} monitored</span>`;
+document.getElementById("fineT").innerHTML=`<thead><tr><th>Inferred type</th><th>Group</th><th class="r">Count</th><th class="r">USD</th></tr></thead><tbody>`+
+ I.fine_table.map(f=>`<tr><td>${f.fine}</td><td>${f.group?`<span class="pill" style="border-color:${GCOL[f.group]||"var(--line)"}">${GL[f.group]||f.group}</span>`:""}</td><td class="r mono">${f.n.toLocaleString()}</td><td class="r mono">$${f.usd.toLocaleString()}</td></tr>`).join("")+`</tbody>`;
 // Retired-payout stragglers: AGGREGATE ONLY (count, USD, cutoff, last seen).
 // No tx hashes, no per-entry addresses, no detection band — the entries[] and
 // the band live in the private reviewer file, and check_publish.py --scan
@@ -883,14 +899,11 @@ const RETLINE=(I.retired_public||[]).filter(x=>x&&x.n).map(x=>
    &asymp; <b>$${x.usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</b>
    since the ${String(x.cutoff).replace("T"," ")} UTC cutoff${x.last_seen?`, last ${x.last_seen}`:""} — mis-configured job.
   </div>`).join("");
-// Per-wallet monitor rows are no longer published (calibration-oracle
-// lesson): the public page shows aggregates only; the row-level detail
-// lives in a private reviewer file on the CI runner.
+// C4: no monitoring status on the public page — no counts, no amounts, no
+// verdicts. Pattern signals are reviewed privately (calibration-oracle rule).
 document.getElementById("gT").innerHTML=`<tbody><tr><td style="padding:14px;color:var(--ink2)">
- Per-wallet signal detail is <b>reviewed privately</b> — publishing wallet-level detector scores would hand
- anyone gaming payouts a calibration oracle. This page reports the aggregates:
- <b>${G.monitored_n}</b> wallets monitored · <b>${G.flagged_n}</b> flagged ·
- <b>$${G.at_risk_usd.toLocaleString()}</b> (${(G.at_risk_usd/G.ce_total_usd*100).toFixed(1)}% of creator earnings) under review — heuristic, unconfirmed.
+ Pattern signals are <b>reviewed privately</b>. Neither which wallets, how many, nor what they add up to is published here —
+ a live monitoring status is the calibration oracle this page exists to withhold.
  ${RETLINE}
 </td></tr></tbody>`;
 </script>

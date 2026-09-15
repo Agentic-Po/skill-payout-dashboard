@@ -47,7 +47,7 @@ WALLET = DATA["scope"]["wallet"].lower()
 now = datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-from classify import RETIRED, RETIRED_LABEL, LEGACY, pin_rate
+from classify import RETIRED, RETIRED_LABEL, SYSTEM_TOPUP, pin_rate, group_for, classify_usd
 import cap_detect
 _dr_state = json.load(open(os.path.join(HERE, "day_rates.json")))
 _day_rates = {s: dict(v) for s, v in _dr_state["day_rates"].items()}
@@ -57,13 +57,14 @@ for _s, _od in (_dr_state.get("open_day_rate") or {}).items():
 
 
 def usd_rows(dir_name, counterparty_key):
-    """(ts, usd_live, sym, qty, counterparty, key, usd_pinned, ts_iso) per transfer.
+    """(ts, usd_live, sym, qty, counterparty, key, usd_pinned, ts_iso, group) per transfer.
 
     Index 1 stays LIVE-priced on purpose: the $5k single-transfer rule cares
     about current value. Index 6 is DAY-PINNED (pin_rate carry-forward) — the
     anomaly baseline uses it, so a MENTE crash today can't reprice the whole
     history and silently move the outflow threshold. Index 7 is the shard's
-    own ISO timestamp string — what the era-aware classifier takes.
+    own ISO timestamp string — what the era-aware classifier takes. Index 8 is
+    the classify.group_for group of the day-pinned USD (A5 edge alerts).
     """
     out = []
     for i in shards.load(os.path.join(HERE, dir_name)):
@@ -73,10 +74,10 @@ def usd_rows(dir_name, counterparty_key):
         qty = int(i["total"]["value"]) / 1e18
         ts_iso = i["timestamp"][:19]
         ts = datetime.fromisoformat(ts_iso)
+        usd_pinned = qty * pin_rate(_day_rates.get(sym, {}), ts_iso[:10], RATE[sym])
         out.append((ts, qty * RATE[sym], sym, qty, i[counterparty_key]["hash"],
                     f'{i["transaction_hash"]}:{i["log_index"]}',
-                    qty * pin_rate(_day_rates.get(sym, {}), ts_iso[:10], RATE[sym]),
-                    ts_iso))
+                    usd_pinned, ts_iso, group_for(*classify_usd(usd_pinned, ts_iso)[:2])))
     return out
 
 flows = {"out": usd_rows("transfers", "to"), "in": usd_rows("transfers_in", "from")}
@@ -141,7 +142,7 @@ if b and b["iqr"] > 0:
 
 # --- 2. single transfers >= $5,000 (last 24h, deduped) ---
 for d, rows in flows.items():
-    for ts, usd, sym, qty, cp, key, _pinned, _iso in rows:
+    for ts, usd, sym, qty, cp, key, _pinned, _iso, _grp in rows:
         if usd < BIG_USD or ts <= now - timedelta(hours=24) or key in seen:
             continue
         seen.add(key)
@@ -176,7 +177,7 @@ if _rebate and _rebate.get("overdue"):
 # --- 4. retired-payout tripwire (Po, 2026-08-28 council) ---
 # A payout category that was officially switched off must never fire again.
 # Re-pointed 2026-09-15 at the v1 $0.10 invoke (retired 2026-08-21T13:55Z):
-# the $1 size lives on as the legacy free top-up (one per wallet — leg 4b).
+# the $1 size lives on as the system free top-up (one per wallet — leg 4b).
 # Rows are classified ONCE at first sight with the day-pinned rate and banked
 # in state (adversary amendment: live-rate reclassification would make counts
 # drift with the market). Config stays in code, never in the public DATA.
@@ -185,11 +186,11 @@ if _rebate and _rebate.get("overdue"):
 # few percent of oracle-vs-execution rate drift must not hide a leak.
 retired_seen = state.setdefault("retired_seen", {})
 # migration: drop banked entries whose category is no longer retired (the
-# 71+ old `equip` entries from the $1 era are legacy top-ups now)
+# 71+ old `equip` entries from the $1 era are system free top-ups now)
 retired_seen = {k: v for k, v in retired_seen.items() if v.get("cat") in RETIRED}
 _new_retired = []
 _CANDIDATE_CUT = now - timedelta(days=30)
-for ts, usd_live, sym, qty, cp, key, usd_pinned, ts_iso in flows["out"]:
+for ts, usd_live, sym, qty, cp, key, usd_pinned, ts_iso, _grp in flows["out"]:
     # candidate window: rows older than 30d never (re-)alert — running totals
     # come from the chain-recomputed ledger, so old state entries are trimmed
     # without losing the audit trail
@@ -226,13 +227,18 @@ if _ledger and not _new_retired:
     if _led_recent != len(retired_seen):
         lines += ["", f"⚠️ <b>Retired-ledger mismatch:</b> chain ledger has {_led_recent} straggler(s) in the last 30d, tripwire state has {len(retired_seen)} — check guard_private.json"]
 
-# --- 4b. legacy $1 top-up: one per wallet (private invariant) ---
-# The $1 free top-up is legitimate but shape-constrained. Count per wallet
+# --- 4b. system free top-up (≈$1): one per wallet (private invariant) ---
+# The system free top-up is legitimate but shape-constrained. Count per wallet
 # across the FULL chain-recomputed ledger; a wallet's 2nd top-up fires once.
-legacy_seen = state.setdefault("legacy_seen", {})
-_leg_ledger = _guard.get("legacy_ledger") or {}
+# State key migrated 2026-09-15 (legacy_seen -> system_topup_seen): the
+# banked dedup entries are carried over so the rename cannot re-alert.
+if "legacy_seen" in state and "system_topup_seen" not in state:
+    state["system_topup_seen"] = state.pop("legacy_seen")
+state.pop("legacy_seen", None)
+legacy_seen = state.setdefault("system_topup_seen", {})
+_leg_ledger = _guard.get("system_topup_ledger") or {}
 _new_legacy = []
-for cat, rule in LEGACY.items():
+for cat, rule in SYSTEM_TOPUP.items():
     _entries = (_leg_ledger.get(cat) or {}).get("entries") or []
     _per = {}
     for e in sorted(_entries, key=lambda e: e["ts"]):
@@ -248,19 +254,70 @@ for cat, rule in LEGACY.items():
             _new_legacy.append((addr, nth, e))
 legacy_seen = {k: v for k, v in legacy_seen.items()
                if v.get("d", "0000-00-00") > _CANDIDATE_CUT.strftime("%Y-%m-%d")}
-state["legacy_seen"] = legacy_seen
+state["system_topup_seen"] = legacy_seen
 _ord = {2: "2nd", 3: "3rd"}
 for addr, nth, e in _new_legacy[:5]:
-    lines += ["", f"🧟 <b>Legacy $1 top-up repeated:</b> {addr[:6]}…{addr[-4:]} received its "
-                  f"{_ord.get(nth, f'{nth}th')} $1 top-up on "
+    lines += ["", f"🧟 <b>Repeat system free top-up to one wallet:</b> {addr[:6]}…{addr[-4:]} received its "
+                  f"{_ord.get(nth, f'{nth}th')} $1 system free top-up on "
                   f"{cap_detect.hkt(datetime.fromisoformat(e['ts']))} (rule: one per wallet) — "
                   f"top-up job config leak? check the platform's free-credit rule"]
 _leg_rep = {a for L in _leg_ledger.values() for a in L.get("repeat_wallets", [])}
 if _leg_ledger and not _new_legacy:
     _seen_rep = {v["to"].lower() for v in legacy_seen.values()}
     if _leg_rep - _seen_rep:
-        lines += ["", f"⚠️ <b>Legacy-ledger mismatch:</b> chain ledger lists {len(_leg_rep)} repeat wallet(s), "
+        lines += ["", f"⚠️ <b>System-top-up ledger mismatch:</b> chain ledger lists {len(_leg_rep)} repeat wallet(s), "
                       f"tripwire state knows {len(_seen_rep)} — check guard_private.json"]
+
+# --- 4c. A5 edge alerts (2026-09-15): the one treasury event of the day,
+# edge-triggered with a 24 h cooldown, thresholds chosen against a replay of
+# the last 14 days of real shards (1-15 Sep) so routine batches stay silent:
+#   credit-grant spike   trailing-24h credit grants (credit_grants +
+#                        system_topups via group_for) >= $20,000 AND >= 3x
+#                        the prior 24 h. Replay max: $13,483 / 33x (11 Sep
+#                        batch); three batches of 10-33x in the window are
+#                        NORMAL, so a ratio rule alone can never be quiet —
+#                        the $ floor is what makes this a runaway-job alarm,
+#                        and routine batches show in the daily digest instead.
+#   first-ever surge     >= 10 wallets received their first-ever skill reward
+#                        in the trailing 24 h AND they are > 50% of the
+#                        wallets paid in that window. Replay max: 4 of 52.
+CREDIT_SPIKE_USD = 20000
+CREDIT_SPIKE_RATIO = 3.0
+NEW_WALLET_MIN = 10
+NEW_WALLET_SHARE = 0.5
+EDGE_COOLDOWN_H = 24
+_edge = state.setdefault("edge", {})
+_c24, _c48 = now - timedelta(hours=24), now - timedelta(hours=48)
+_cg = lambda lo, hi: sum(r[6] for r in flows["out"] if lo < r[0] <= hi and r[8] in ("credit_grants", "system_topups"))
+_cg24, _cgprev = _cg(_c24, now), _cg(_c48, _c24)
+_cgn24 = sum(1 for r in flows["out"] if _c24 < r[0] <= now and r[8] in ("credit_grants", "system_topups"))
+_spike = _cg24 >= CREDIT_SPIKE_USD and (_cgprev <= 0 or _cg24 / _cgprev >= CREDIT_SPIKE_RATIO)
+_st = _edge.get("credit_spike", {})
+_last = datetime.fromisoformat(_st["last_alert"]) if _st.get("last_alert") else None
+if _spike and not _st.get("above") and (_last is None or now - _last >= timedelta(hours=EDGE_COOLDOWN_H)):
+    _edge["credit_spike"] = {"above": True, "last_alert": now.isoformat(timespec="minutes")}
+    _ratio = f"{_cg24 / _cgprev:,.0f}x" if _cgprev > 0 else "∞"
+    lines += ["", f"⚠️ <b>Credit grants {_ratio} vs prior 24h:</b> ${_cg24:,.0f} ({_cgn24:,} grants) vs ${_cgprev:,.0f} — "
+                  f"above the ${CREDIT_SPIKE_USD:,} runaway floor (window to {cap_detect.hkt(now)}); "
+                  f"check the credit job is a scheduled campaign, not a loop"]
+else:
+    _edge["credit_spike"] = {"above": _spike, "last_alert": _st.get("last_alert")}
+_first = {}
+for r in sorted((r for r in flows["out"] if r[8] == "skill_rewards"), key=lambda r: r[0]):
+    _first.setdefault(r[4].lower(), r[0])
+_paid24 = {r[4].lower() for r in flows["out"] if r[0] > _c24 and r[8] == "skill_rewards"}
+_new24 = sum(1 for a in _paid24 if _first.get(a, now) > _c24)
+_surge = _new24 >= NEW_WALLET_MIN and _paid24 and _new24 / len(_paid24) > NEW_WALLET_SHARE
+_st = _edge.get("new_wallets", {})
+_last = datetime.fromisoformat(_st["last_alert"]) if _st.get("last_alert") else None
+if _surge and not _st.get("above") and (_last is None or now - _last >= timedelta(hours=EDGE_COOLDOWN_H)):
+    _edge["new_wallets"] = {"above": True, "last_alert": now.isoformat(timespec="minutes")}
+    lines += ["", f"⚠️ <b>First-ever creator wallets {_new24} of {len(_paid24)} paid (24h):</b> "
+                  f"{_new24 / len(_paid24):.0%} of the wallets paid a skill reward in the window to {cap_detect.hkt(now)} "
+                  f"had never earned before — the 21-Aug farm pattern started this way; review the set in guard_private.json"]
+else:
+    _edge["new_wallets"] = {"above": bool(_surge), "last_alert": _st.get("last_alert")}
+print(f"edge: credit grants 24h ${_cg24:,.0f} vs prior ${_cgprev:,.0f} · first-ever wallets {_new24}/{len(_paid24)}")
 
 # --- 5. data-source degradation edge alert (council item 4b) ---
 # complete=False means the run rendered from a stale/partial cache. The page
@@ -315,7 +372,7 @@ def persist_state():
     # the top of this run is stale by send time — writing it back here would
     # clobber the outcome just recorded.
     st.pop("send_health", None)
-    _statemod.update(st)
+    _statemod.update(st, drop=("legacy_seen",))
 
 
 def _sections(ls):

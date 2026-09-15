@@ -65,7 +65,20 @@ PROBE = r"""
     legend_chips: (html("bleg").match(/class="bandchip"/g) || []).length,
     v2_tiles: (html("rtiles").match(/class="tile"/g) || []).length,
     v2_foot: html("rfoot").replace(/<[^>]+>/g, ""),
-    legline: html("legline").replace(/<[^>]+>/g, "")
+    legline: html("legline").replace(/<[^>]+>/g, ""),
+    // 2026-09-15 iteration: A1 creator-wallet card, A4 header age, X4 stacked hourly, C4 monitor prose
+    creator_rows: (html("creatorT").match(/<tr\b/g) || []).length,
+    creator_tiles: (html("creatorTiles").match(/class="tile"/g) || []).length,
+    creator_tabs: (html("creatorTabs").match(/data-tab=/g) || []).length,
+    creator_note: html("creatorNote").replace(/<[^>]+>/g, ""),
+    gen_text: text("gen"),
+    hourly_groups: (html("hourly").match(/var\(--band[0-9]+\)/g) || []).length,
+    hourly_line: (html("hourly").match(/<polyline/g) || []).length,
+    gT_text: html("gT").replace(/<[^>]+>/g, ""),
+    patsum: html("patSum").replace(/<[^>]+>/g, ""),
+    ftiles: html("ftiles").replace(/<[^>]+>/g, ""),
+    gaps_rows: (html("gapsT").match(/<tr\b/g) || []).length,
+    mix_toggle: (html("mixToggle").match(/data-mix=/g) || []).length
   };
   console.log("__RENDER_PROBE__" + JSON.stringify(out));
 })();
@@ -82,13 +95,36 @@ def _checks_index(p):
     assert "$" in p["exec_text"], \
         f"executive summary has no $ figure: {p['exec_text'][:200]!r}"
     # Creator Rewards v2 (2026-09-15): 13 legend chips (b0005 + b005 added,
-    # b010/b1 kept), the v2 tile row rendered with a $ figure and the HKT
-    # footer, the legacy top-up line rendered — and no cap figure anywhere.
+    # b010/b1 kept), the v2 tile row (TWO tiles since the iteration — no
+    # implied user spend) with a $ figure and the HKT footer, the system
+    # free top-up line rendered — and no cap figure or cap sentence anywhere.
     assert p["legend_chips"] == 13, f"legend rendered {p['legend_chips']} chips, want 13"
-    assert p["v2_tiles"] == 3, f"rewards_v2 rendered {p['v2_tiles']} tiles, want 3"
-    assert "HKT" in p["v2_foot"] and "hourly cap applies" in p["v2_foot"], p["v2_foot"]
+    assert p["v2_tiles"] == 2, f"rewards_v2 rendered {p['v2_tiles']} tiles, want 2"
+    assert "HKT" in p["v2_foot"] and "cap" not in p["v2_foot"].lower(), p["v2_foot"]
     assert "$4" not in p["v2_foot"] and "4.00" not in p["v2_foot"], f"cap figure leaked: {p['v2_foot']!r}"
-    assert "legacy free top-ups" in p["legline"] and "$" in p["legline"], p["legline"]
+    assert "system free top-ups" in p["legline"] and "$" in p["legline"], p["legline"]
+    assert "legacy" not in p["legline"].lower(), p["legline"]
+    # A1: four tabs, a tile row and a top-10 table rendered on the default
+    # (since-resume) tab; the note names wallets, never "creators"
+    assert p["creator_tabs"] == 4, f"creator card rendered {p['creator_tabs']} tabs, want 4"
+    assert p["creator_tiles"] >= 3, f"creator card rendered {p['creator_tiles']} tiles"
+    assert 1 <= p["creator_rows"] <= 11, f"creator table rendered {p['creator_rows']} rows"
+    assert "resumed" in p["creator_note"].lower() and "HKT" in p["creator_note"], p["creator_note"]
+    # A4: header carries an HKT time and an age, computed client-side
+    assert "HKT" in p["gen_text"] and ("ago" in p["gen_text"] or "just now" in p["gen_text"]), p["gen_text"]
+    # X4: hourly bars are group-coloured and the creator-wallet line exists
+    assert p["hourly_groups"] > 0 and p["hourly_line"] == 1, (p["hourly_groups"], p["hourly_line"])
+    # X3: count/USD toggle present; ftiles subtitle names the groups
+    assert p["mix_toggle"] == 2, p["mix_toggle"]
+    assert "rewards $" in p["ftiles"] and "credits $" in p["ftiles"], p["ftiles"][:300]
+    # C4: the pattern monitor publishes NO counts, amounts or verdicts
+    for bad in ("flagged", "monitored", "$"):
+        assert bad not in p["gT_text"].split("Retired")[0], f"pattern monitor prose carries {bad!r}: {p['gT_text'][:200]!r}"
+    # (#patSum is static markup now — the shim records only script writes, so
+    # an EMPTY probe is the pass; any script-written count or status is red)
+    assert not re.search(r"\d|flagged|monitored", p["patsum"]), p["patsum"]
+    # C11: gaps table rendered with an Opened column
+    assert p["gaps_rows"] > 1, p["gaps_rows"]
     # a day on/after the v2 resume carries both new bands; every day before
     # it carries neither (the mix bar is unchanged for history)
     D = json.load(open(os.path.join(ROOT, "data.json")))
@@ -98,7 +134,9 @@ def _checks_index(p):
     assert not any("b005" in d["bands"] or "b0005" in d["bands"] for d in old), "a pre-v2 day carries a v2 band"
     return (f"{p['daily_rows']} daily rows · {p['band_divs']} band divs · hero strip "
             f"carries a $ figure · exec block rendered non-empty · 13 legend chips · "
-            f"3 rewards_v2 tiles · legacy line · v2 bands only on days ≥ 2026-09-14")
+            f"2 rewards_v2 tiles · system top-up line · creator card {p['creator_tabs']} tabs / "
+            f"{p['creator_rows']} rows · header {p['gen_text']!r} · hourly stacked by group · "
+            f"monitor prose status-free · v2 bands only on days ≥ 2026-09-14")
 
 
 def _checks_coupon(p):
@@ -127,7 +165,10 @@ def run_page(page, data_rel, checks, shim):
     failures = 0
     probe = {"daily_rows": 0, "band_divs": 0, "strip_text": "", "exec_text": "",
              "coupon_strip": "", "top_rows": 0, "legend_chips": 0, "v2_tiles": 0,
-             "v2_foot": "", "legline": ""}
+             "v2_foot": "", "legline": "", "creator_rows": 0, "creator_tiles": 0,
+             "creator_tabs": 0, "creator_note": "", "gen_text": "", "hourly_groups": 0,
+             "hourly_line": 0, "gT_text": "", "patsum": "", "ftiles": "", "gaps_rows": 0,
+             "mix_toggle": 0}
     for i, script in enumerate(scripts):
         # the built page ships with the data already injected (no marker
         # left); the template still carries the slot — either way this runs
@@ -150,9 +191,12 @@ def run_page(page, data_rel, checks, shim):
         m = re.search(r"__RENDER_PROBE__(\{.*\})", r.stdout)
         assert m, f"{page} script[{i}] ran but the probe line is missing:\n{r.stdout[-500:]}"
         p = json.loads(m.group(1))
-        for k in ("daily_rows", "band_divs", "top_rows", "legend_chips", "v2_tiles"):
+        for k in ("daily_rows", "band_divs", "top_rows", "legend_chips", "v2_tiles",
+                  "creator_rows", "creator_tiles", "creator_tabs", "hourly_groups",
+                  "hourly_line", "gaps_rows", "mix_toggle"):
             probe[k] = max(probe[k], p.get(k, 0))
-        for k in ("strip_text", "exec_text", "coupon_strip", "v2_foot", "legline"):
+        for k in ("strip_text", "exec_text", "coupon_strip", "v2_foot", "legline",
+                  "creator_note", "gen_text", "gT_text", "patsum", "ftiles"):
             probe[k] = probe[k] or p.get(k, "")
         print(f"ok {page} script[{i}] executed clean "
               f"(daily_rows={p['daily_rows']}, band_divs={p['band_divs']})")

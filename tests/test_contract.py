@@ -10,8 +10,9 @@ documents the new contract.
 
 Plain asserts, stdlib only, no network:
 
-  1. data.json: EXACT top-level key set, schema_version == 2, EXACT
-     facts_window key set on every windows/prev24/monthly entry.
+  1. data.json: EXACT top-level key set, schema_version == 3, EXACT
+     facts_window key set on every windows/prev24/monthly entry, group sums
+     closing on out_usd, facts.float / facts.creator_wallets shapes.
   2. transfers_export.csv: exact 13-column header tuple (and no
      counterparty_label — gone in v2, must stay gone).
   3. catalog.json: every entry carries name; every public dataset entry
@@ -37,9 +38,16 @@ sys.path.insert(0, ROOT)
 TOP_KEYS = {"schema_version", "scope", "facts", "infer", "server", "stripe_snap",
             "insights", "open_items", "gaps", "registry", "sink", "exec_summary"}
 
-WINDOW_KEYS = {"label", "out_usd", "in_usd", "economy_out_usd", "ops_out_usd",
+# `groups` added 2026-09-15 (schema_version 3): the one grouping layer's sums
+WINDOW_KEYS = {"label", "groups", "out_usd", "in_usd", "economy_out_usd", "ops_out_usd",
                "in_recycled_usd", "in_external_usd", "net_usd", "out_tx", "in_tx",
                "out_wallets", "in_sources", "out_usd_tok", "out_raw", "in_raw"}
+GROUP_KEYS = ["skill_rewards", "credit_grants", "system_topups", "topups_delivered", "ops", "micro"]
+FLOAT_KEYS = {"basis", "bal_usd", "out_24h_usd", "out_prev24_usd", "out_7d_avg_usd",
+              "days_24h_pace", "days_7d_pace", "driver_24h"}
+CW_WINDOW_KEYS = {"wallets", "usd", "equips", "invokes", "top1_share_pct", "top5_share_pct",
+                  "top10_share_pct", "median_usd", "top"}
+CW_TOP_KEYS = {"addr", "usd", "equips", "invokes", "first_seen"}
 
 CSV_HEADER = ("timestamp_utc", "direction", "token", "amount", "rate_usd",
               "rate_source", "usd", "size_band", "counterparty", "tx_hash",
@@ -48,12 +56,15 @@ CSV_HEADER = ("timestamp_utc", "direction", "token", "amount", "rate_usd",
 # classify_usd / band became era-aware on 2026-09-15 (Creator Rewards v2):
 # the row timestamp is a REQUIRED positional argument — CONSUMERS.md §3.
 SIGNATURES = {"classify_usd": "(usd, ts)", "band": "(usd, ts)",
-              "pin_rate": "(day_rates, day, fallback)"}
+              "pin_rate": "(day_rates, day, fallback)", "group_for": "(cat, fine)"}
 
-# infer keys: exact. legacy_public added 2026-09-15 (CONSUMERS.md §5).
-INFER_KEYS = {"S", "creators", "ce_total", "fine_table", "guard", "retired_public", "legacy_public"}
-REWARDS_V2_KEYS = {"resumed_utc", "cap_on_utc", "usd_24h", "usd_since_resume", "n_equip_24h",
-                   "n_invoke_24h", "creators_24h", "creators_since_resume", "implied_user_spend_24h"}
+# infer keys: exact. schema 3 (2026-09-15): `creators` (per-wallet ranking)
+# retired in favour of facts.creator_wallets; legacy_public -> system_topup_public.
+INFER_KEYS = {"S", "ce_total", "fine_table", "guard", "retired_public", "system_topup_public"}
+GUARD_KEYS = {"loop_n", "loop_usd", "loop_gt10", "loop_gt50", "credit_recip_n", "ce_total_usd",
+              "bal_usd", "dist_pace"}
+REWARDS_V2_KEYS = {"resumed_utc", "grid", "usd_24h", "usd_since_resume", "n_equip_24h",
+                   "n_invoke_24h", "creator_wallets_24h", "creator_wallets_since_resume"}
 PROVENANCE_KEYS = {"by_token", "implied", "market", "refused", "carry_forward", "market_open",
                    "restatement_usd", "restatement_date"}
 BAND_KEYS = ["micro", "b0005", "b005", "b010", "b1", "b3", "b5", "b10", "b20", "b25",
@@ -65,20 +76,41 @@ def main():
     D = json.load(open(os.path.join(ROOT, "data.json")))
     assert set(D) == TOP_KEYS, \
         f"data.json top-level drifted: extra={sorted(set(D)-TOP_KEYS)} missing={sorted(TOP_KEYS-set(D))}"
-    assert D["schema_version"] == 2, f"schema_version {D['schema_version']!r} != 2"
+    assert D["schema_version"] == 3, f"schema_version {D['schema_version']!r} != 3"
     windows = D["facts"]["windows"] + [D["facts"]["prev24"]] + D["facts"]["monthly"]
     assert len(D["facts"]["windows"]) == 4, "facts.windows is no longer the 24h/7d/30d/all quartet"
     for w in windows:
         assert set(w) == WINDOW_KEYS, \
             f"facts_window {w.get('label')!r} drifted: extra={sorted(set(w)-WINDOW_KEYS)} missing={sorted(WINDOW_KEYS-set(w))}"
-    print(f"ok data.json: top-level exact, schema_version 2, {len(windows)} window entries exact")
+        assert list(w["groups"]) == GROUP_KEYS, f"{w['label']}: group keys {list(w['groups'])}"
+        gsum = sum(g["usd"] for g in w["groups"].values())
+        assert abs(gsum - w["out_usd"]) <= 0.011, f"{w['label']}: group sums ${gsum:,.2f} != out_usd ${w['out_usd']:,.2f}"
+        esum = sum(g["usd"] for k, g in w["groups"].items() if k != "ops")
+        assert abs(esum - w["economy_out_usd"]) <= 0.011, f"{w['label']}: non-ops groups ${esum:,.2f} != economy ${w['economy_out_usd']:,.2f}"
+    print(f"ok data.json: top-level exact, schema_version 3, {len(windows)} window entries exact, group sums close on out_usd")
+    assert D["facts"]["group_keys"] == GROUP_KEYS and set(D["facts"]["group_labels"]) == set(GROUP_KEYS)
+    fl = D["facts"]["float"]
+    assert set(fl) == FLOAT_KEYS, f"facts.float keys drifted: {sorted(fl)}"
+    assert "total outflow" in fl["basis"]
+    cw = D["facts"]["creator_wallets"]
+    assert set(cw["windows"]) == {"24h", "7d", "since_resume", "all"} and cw["default"] == "since_resume"
+    for k, w in cw["windows"].items():
+        want = CW_WINDOW_KEYS | ({"new_wallets"} if k in ("24h", "7d") else set())
+        assert set(w) == want, f"creator_wallets[{k}] keys drifted: {sorted(w)}"
+        assert len(w["top"]) <= 10 and all(set(t) == CW_TOP_KEYS for t in w["top"]), f"creator_wallets[{k}].top shape"
+        assert all(len(t["first_seen"]) == 10 for t in w["top"]), "first_seen must be a DAY"
+        if w["wallets"] < 10:
+            assert w["median_usd"] is None, f"creator_wallets[{k}]: median published with n<10"
+    print("ok data.json: facts.float (total-outflow basis) and facts.creator_wallets (4 windows, day-grain first_seen, median hidden <10)")
     assert set(D["infer"]) == INFER_KEYS, \
         f"infer drifted: extra={sorted(set(D['infer'])-INFER_KEYS)} missing={sorted(INFER_KEYS-set(D['infer']))}"
+    assert set(D["infer"]["guard"]) == GUARD_KEYS, f"infer.guard drifted: {sorted(D['infer']['guard'])}"
     rv = D["facts"]["rewards_v2"]
     assert set(rv) == REWARDS_V2_KEYS, f"facts.rewards_v2 keys drifted: {sorted(rv)}"
-    assert rv["resumed_utc"] == "2026-09-14T14:19Z" and rv["cap_on_utc"] == "2026-09-14T19:12Z"
-    for lp in D["infer"]["legacy_public"]:
-        assert set(lp) == {"cat", "since", "n", "usd", "last_seen"}, f"legacy_public shape drifted: {lp}"
+    assert rv["resumed_utc"] == "2026-09-14T14:19Z" and set(rv["grid"]) == {"invoke", "equip"}
+    for lp in D["infer"]["system_topup_public"]:
+        assert set(lp) == {"cat", "since", "n", "usd", "last_seen"}, f"system_topup_public shape drifted: {lp}"
+        assert lp["cat"] == "$1 system free top-up", lp["cat"]
     for rp in D["infer"]["retired_public"]:
         assert set(rp) == {"cat", "cutoff", "n", "usd", "last_seen"}, f"retired_public shape drifted: {rp}"
         assert rp["cat"] == "invoke_v1", f"retired_public cat {rp['cat']!r} != 'invoke_v1'"
@@ -87,8 +119,13 @@ def main():
     assert D["facts"]["band_keys"] == BAND_KEYS, f"band_keys drifted: {D['facts']['band_keys']}"
     assert set(D["facts"]["band_labels"]) == set(BAND_KEYS)
     assert D["facts"]["band_labels"]["micro"].startswith("< $0.003"), D["facts"]["band_labels"]["micro"]
-    print("ok data.json: infer keys exact, rewards_v2 / legacy_public / retired_public / "
-          "pricing_provenance shapes, 13 band keys incl. b0005/b005")
+    for h in D["facts"]["hourly"]:
+        assert set(h) == {"h", "MOCA", "MENTE", "g", "cw"} and set(h["g"]) <= set(GROUP_KEYS), h
+    assert all(f.get("group") in GROUP_KEYS for f in D["infer"]["fine_table"]), "fine_table rows carry no group"
+    assert D.get("stripe_snap") is None or not [k for k in D["stripe_snap"] if "subsidy" in k or "unbacked" in k]
+    assert D.get("server") is None or not [k for k in D["server"] if k in ("subsidy_ratio", "ratio_weeks", "unbacked_7d")]
+    print("ok data.json: infer keys exact, rewards_v2 / system_topup_public / retired_public / "
+          "pricing_provenance shapes, hourly per-group counts, 13 band keys incl. b0005/b005")
 
     # 2. transfers_export.csv
     with open(os.path.join(ROOT, "transfers_export.csv"), newline="") as fh:

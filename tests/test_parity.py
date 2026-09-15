@@ -22,16 +22,19 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 import shards
-from classify import classify_usd, pin_rate
+from classify import classify_usd, pin_rate, group_for, GROUP_KEYS
 
 TOL = 0.01
 
 # Every exec-facing figure the README glossary must document, by the literal
-# key/name the glossary is required to carry.
-GLOSSARY_KEYS = ["economy_out_usd", "ops_out_usd", "out_usd", "usd_ce",
-                 "usd_incent", "usd_topup", "wallet balance", "subsidy ratio",
-                 "user-funded cognition lower bound", "distribution float",
-                 "rewards_v2", "$1 top-up (legacy)", "implied_user_spend_24h"]
+# key/name the glossary is required to carry. (2026-09-15: subsidy ratio,
+# user-funded lower bound and implied user spend are GONE — Po rule 5 — and
+# must not come back; the groups, float and creator_wallets are new.)
+GLOSSARY_KEYS = ["economy_out_usd", "ops_out_usd", "out_usd", "groups",
+                 "skill_rewards", "credit_grants", "system_topups", "topups_delivered",
+                 "wallet balance", "distribution float", "facts.float",
+                 "rewards_v2", "$1 system free top-up", "creator_wallets"]
+GLOSSARY_GONE = ["subsidy ratio", "user-funded", "implied_user_spend", "top-up (legacy)"]
 
 
 def _load():
@@ -51,7 +54,8 @@ def _load():
         ts = i["timestamp"][:19]
         usd = val * pin_rate(rates.get(sym, {}), ts[:10], D["facts"]["rate"].get(sym) or 0)
         coarse, fine, _ = classify_usd(usd, ts)
-        rows.append({"ts": ts, "tok": sym, "usd": usd, "cat": coarse, "fine": fine})
+        rows.append({"ts": ts, "tok": sym, "usd": usd, "cat": coarse, "fine": fine,
+                     "grp": group_for(coarse, fine)})
     return D, rows
 
 
@@ -83,15 +87,16 @@ def _one_classifier_guard():
 
 
 def _sums(rows, cut):
+    """Window sums through the ONE grouping layer (classify.group_for) — the
+    digest, the page tiles and the exec summary all bucket rows this way, so
+    a category hand-listed anywhere else is the drift this test exists to catch."""
     rs = [r for r in rows if r["ts"] > cut]
     eco = sum(r["usd"] for r in rs if r["cat"] != "nonstandard")
     out = sum(r["usd"] for r in rs)
+    g = {k: sum(r["usd"] for r in rs if r["grp"] == k) for k in GROUP_KEYS}
+    gn = {k: sum(1 for r in rs if r["grp"] == k) for k in GROUP_KEYS}
     return {"out_usd": out, "economy_out_usd": eco, "ops_out_usd": out - eco,
-            "usd_ce": sum(r["usd"] for r in rs if r["cat"] in ("invoke", "equip")),
-            "usd_incent": sum(r["usd"] for r in rs if r["cat"] == "growth"
-                              and not r["fine"].startswith("stripe")),
-            "usd_topup": sum(r["usd"] for r in rs if r["fine"].startswith("stripe")),
-            "usd_micro": sum(r["usd"] for r in rs if r["cat"] == "micro")}
+            "groups": g, "groups_n": gn}
 
 
 def _exec_sentence_checks(D):
@@ -115,38 +120,48 @@ def _exec_sentence_checks(D):
 
     w7 = {w["label"]: w for w in D["facts"]["windows"]}["7d"]
     checked = 0
-    paid = num(r"treasury paid \$([\d,]+\.\d{2}) to creators and users")
-    assert abs(paid - w7["economy_out_usd"]) <= TOL, \
-        f"exec 'paid' ${paid:,.2f} != 7d economy_out_usd ${w7['economy_out_usd']:,.2f}"
-    print(f"ok exec sentence: paid ${paid:,.2f} == 7d economy_out_usd")
+    left = num(r"In the last 7 days \$([\d,]+\.\d{2}) left the treasury")
+    assert abs(left - w7["out_usd"]) <= TOL, \
+        f"exec 'left' ${left:,.2f} != 7d out_usd ${w7['out_usd']:,.2f}"
+    print(f"ok exec sentence: left ${left:,.2f} == 7d out_usd")
     checked += 1
     ntx = int(num(r"across ([\d,]+) transfers"))
     assert ntx == w7["out_tx"], f"exec transfer count {ntx} != 7d out_tx {w7['out_tx']}"
     print(f"ok exec sentence: {ntx:,} transfers == 7d out_tx")
     checked += 1
-    if w7["ops_out_usd"]:
-        ops = num(r"\$([\d,]+\.\d{2}) more went to treasury operations")
-        assert abs(ops - w7["ops_out_usd"]) <= TOL, \
-            f"exec 'ops' ${ops:,.2f} != 7d ops_out_usd ${w7['ops_out_usd']:,.2f}"
-        print(f"ok exec sentence: ops ${ops:,.2f} == 7d ops_out_usd")
+    # X2: every group figure in the sentence is a facts_window group sum
+    for pat, key in ((r"\$([\d,]+\.\d{2}) skill rewards to", "skill_rewards"),
+                     (r"\$([\d,]+\.\d{2}) credit grants", "credit_grants"),
+                     (r"\$([\d,]+\.\d{2}) system free top-ups", "system_topups"),
+                     (r"\$([\d,]+\.\d{2}) top-ups delivered", "topups_delivered"),
+                     (r"\$([\d,]+\.\d{2}) ops", "ops")):
+        got = num(pat)
+        assert abs(got - w7["groups"][key]["usd"]) <= TOL, \
+            f"exec {key} ${got:,.2f} != 7d group sum ${w7['groups'][key]['usd']:,.2f}"
         checked += 1
+    ncw = int(num(r"skill rewards to ([\d,]+) creator wallets"))
+    assert ncw == w7["groups"]["skill_rewards"]["wallets"], \
+        f"exec creator wallets {ncw} != 7d skill_rewards wallets {w7['groups']['skill_rewards']['wallets']}"
+    assert "creators" not in text.replace("creator wallets", ""), "exec sentence says 'creators'"
+    print("ok exec sentence: five group figures + creator-wallet count == 7d group sums")
+    checked += 1
     bal = num(r"wallet holds \$([\d,]+\.\d{2})")
     want = sum(v for v in D["facts"]["balance_usd"].values() if v)
     assert abs(bal - want) <= TOL, \
         f"exec 'holds' ${bal:,.2f} != published balance_usd sum ${want:,.2f}"
     print(f"ok exec sentence: holds ${bal:,.2f} == balance_usd sum")
     checked += 1
-    # "about W weeks of payouts" must be denominated by PAYOUT pace
-    # (economy_out_usd), never total outflow — a swap-heavy week must not
-    # read as a near-empty wallet (Cycle-3 Loop-3 QA defect D1/D2)
-    m = re.search(r"about ([\d,.]+) weeks? of payouts", text)
-    econ7 = D["facts"]["windows"][1]["economy_out_usd"]
-    if m and econ7 > 0:
+    # X2: ONE runway, on TOTAL outflow (facts.float), never economy pace
+    fl = D["facts"]["float"]
+    m = re.search(r"about ([\d,.]+) days at the 7-day pace", text)
+    assert bool(m) == bool(fl.get("days_7d_pace")), f"days clause present={bool(m)} but float.days_7d_pace={fl.get('days_7d_pace')}"
+    if m:
         got = float(m.group(1).replace(",", ""))
-        assert abs(got - want / econ7) < 0.05 + 1e-9, \
-            f"exec weeks {got} != balance/economy pace {want / econ7:.2f}"
-        print(f"ok exec sentence: {got} weeks == balance / 7d economy pace")
+        assert abs(got - fl["days_7d_pace"]) < 0.05 + 1e-9, f"exec days {got} != float.days_7d_pace {fl['days_7d_pace']}"
+        assert abs(fl["days_7d_pace"] - want / fl["out_7d_avg_usd"]) < 0.05 + 1e-9, "float.days_7d_pace != balance / 7d total-outflow pace"
+        print(f"ok exec sentence: {got} days == facts.float.days_7d_pace == balance / 7d total outflow")
         checked += 1
+    assert "weeks of payouts" not in text and "week" not in text, "old economy-pace runway sentence is back"
     # degraded prefix must agree with the flag the pipeline recorded
     has_prefix = bool(re.search(r"^Data is \d+ hours old — figures may lag\.", text))
     assert has_prefix == bool(ex.get("degraded")), \
@@ -256,9 +271,9 @@ def main():
     # the pre/post-redaction parity proof: the sums recomputed from raw shards
     # must still match the published page to the cent, so redaction provably
     # touched labels only, never money.
-    assert D.get("schema_version") == 2, \
-        f"schema_version {D.get('schema_version')!r} != 2 — redaction contract not in force"
-    print("ok schema_version == 2 (redacted contract)")
+    assert D.get("schema_version") == 3, \
+        f"schema_version {D.get('schema_version')!r} != 3 — 2026-09-15 contract not in force"
+    print("ok schema_version == 3 (grouped, status-free contract)")
     gen = datetime.fromisoformat(D["scope"]["generated_iso"].replace("Z", ""))
     byw = {w["label"]: w for w in D["facts"]["windows"]}
 
@@ -271,15 +286,35 @@ def main():
             assert d <= TOL, f"{label} {k}: digest ${mine[k]:,.4f} vs page ${page[k]:,.4f} (Δ ${d:,.4f})"
             print(f"ok {label} {k}: ${page[k]:,.2f}")
             checked += 1
-        # The three digest money lines must close on economy_out_usd exactly —
-        # this is the check that would have caught the forked classifier.
-        parts = mine["usd_ce"] + mine["usd_incent"] + mine["usd_topup"] + mine["usd_micro"]
-        d = abs(parts - page["economy_out_usd"])
-        assert d <= TOL, (f"{label}: digest lines (creators ${mine['usd_ce']:,.2f} + incentive "
-                          f"${mine['usd_incent']:,.2f} + top-ups ${mine['usd_topup']:,.2f} + micro "
-                          f"${mine['usd_micro']:,.2f}) = ${parts:,.4f} != economy ${page['economy_out_usd']:,.4f}")
-        print(f"ok {label} digest lines close on economy_out_usd (${parts:,.2f})")
+        # A2: every published group sum equals the group_for() recompute, the
+        # six groups close on out_usd, and the non-ops groups on economy —
+        # this is the check that would have caught a forked classifier OR a
+        # hand-listed category list drifting from group_for.
+        for g in GROUP_KEYS:
+            d = abs(mine["groups"][g] - page["groups"][g]["usd"])
+            assert d <= TOL, f"{label} group {g}: recompute ${mine['groups'][g]:,.4f} vs page ${page['groups'][g]['usd']:,.4f}"
+            assert mine["groups_n"][g] == page["groups"][g]["n"], f"{label} group {g}: n {mine['groups_n'][g]} != {page['groups'][g]['n']}"
+        parts = sum(mine["groups"].values())
+        d = abs(parts - page["out_usd"])
+        assert d <= TOL, f"{label}: group sums ${parts:,.4f} != out_usd ${page['out_usd']:,.4f}"
+        eco_parts = sum(v for k, v in mine["groups"].items() if k != "ops")
+        assert abs(eco_parts - page["economy_out_usd"]) <= TOL, \
+            f"{label}: non-ops groups ${eco_parts:,.4f} != economy ${page['economy_out_usd']:,.4f}"
+        print(f"ok {label} six group_for() sums close on out_usd (${parts:,.2f}) and on economy (${eco_parts:,.2f})")
         checked += 1
+    # A1: the creator-wallet card recomputes to the cent per window
+    cw = D["facts"]["creator_wallets"]["windows"]
+    rw = [r for r in rows if r["grp"] == "skill_rewards"]
+    for label, lo in (("24h", (gen - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S")),
+                      ("7d", (gen - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")),
+                      ("since_resume", "2026-09-14T14:18:59"), ("all", "0")):
+        rs = [r for r in rw if r["ts"] > lo]
+        usd_w = sum(r["usd"] for r in rs)
+        assert abs(usd_w - cw[label]["usd"]) <= TOL, f"creator_wallets[{label}].usd ${cw[label]['usd']:,.2f} != recompute ${usd_w:,.2f}"
+        assert cw[label]["equips"] == sum(1 for r in rs if r["cat"] == "equip")
+        assert cw[label]["invokes"] == sum(1 for r in rs if r["cat"] == "invoke")
+        checked += 1
+    print("ok creator_wallets: 24h / 7d / since_resume / all recompute to the cent")
 
     # The glossary is part of the contract: a figure nobody documented is a
     # figure an exec will misquote.
@@ -289,7 +324,9 @@ def main():
     section = m.group(1)
     missing = [k for k in GLOSSARY_KEYS if k not in section]
     assert not missing, f"glossary is missing: {missing}"
-    print(f"ok glossary documents all {len(GLOSSARY_KEYS)} declared figures")
+    back = [k for k in GLOSSARY_GONE if k in section]
+    assert not back, f"glossary re-documents a retired paid-vs-free figure: {back}"
+    print(f"ok glossary documents all {len(GLOSSARY_KEYS)} declared figures, none of the {len(GLOSSARY_GONE)} retired ones")
 
     checked += _exec_sentence_checks(D)
     checked += _coupon_checks()

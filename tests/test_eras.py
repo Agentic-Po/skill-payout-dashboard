@@ -13,8 +13,9 @@
      2026-09-14 market close: pre-cap 14:19Z-19:12Z and cap-on 19:12Z-03:12Z.
      Frozen from the classifier's first run (council rule: within ±2 of the
      brief, freeze the classifier's own numbers, report the delta).
-  5. Legacy $1 top-ups: 91 rows / $90.60 / 91 wallets through the freeze
-     instant, first seen 22 Aug; zero "invoke (retired)" rows exist.
+  5. System free top-ups (≈$1): 91 rows / $90.60 / 91 wallets through the
+     freeze instant, first seen 22 Aug; zero "invoke (retired)" rows exist.
+  6. group_for() partitions every real row into exactly one of GROUP_KEYS.
 
   python3 tests/test_eras.py
 """
@@ -25,11 +26,11 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 import shards
 from classify import (classify_usd, band, pin_rate, era_for, ERAS, PAUSED_UTC, RESUMED_UTC,
-                      CAP_ON_UTC, LEGACY, RETIRED, BAND_KEYS)
+                      CAP_ON_UTC, SYSTEM_TOPUP, RETIRED, BAND_KEYS, GROUP_KEYS, group_for)
 
 # ---- frozen goldens (2026-09-15, shards complete through 2026-09-15T04:06Z) ----
 CLOSE_0914 = 0.00924424                     # banked market close, day_rates.json
-FREEZE = "2026-09-15T03:07:00"              # legacy-ledger freeze instant
+FREEZE = "2026-09-15T03:07:00"              # system-top-up ledger freeze instant
 PRE_PAUSE_USD_CE = 33054.36                 # all-time creator earnings, rows < PAUSED_UTC
 PRE_PAUSE_CE_ROWS = 80692
 GOLDEN = {
@@ -39,7 +40,8 @@ GOLDEN = {
     # of the window's 03:12Z end; the complete window is +7 equips.
     "cap_on": {"tx": 328, "equip": 228, "invoke": 100, "usd": 11.78, "creators": 35},
 }
-LEGACY_GOLDEN = {"n": 91, "usd": 90.60, "wallets": 91, "first": "2026-08-22"}
+TOPUP_GOLDEN = {"n": 91, "usd": 90.60, "wallets": 91, "first": "2026-08-22"}
+TOPUP_FINE = "$1 system free top-up"
 
 FIXTURES = [
     # (usd, ts, coarse, fine, tier, band)
@@ -47,9 +49,9 @@ FIXTURES = [
     (0.10, "2026-08-15T10:00:00", "invoke", "invoke", None, "b010"),
     (0.05, "2026-08-15T10:00:00", "micro", "test", None, "micro"),         # pre-v2 dust
     (1.00, "2026-08-21T13:54:59", "equip", "equip", None, "b1"),           # last v1 minute
-    (1.00, "2026-08-21T13:55:00", "growth", "$1 top-up (legacy)", 1, "b1"),  # first pause minute
+    (1.00, "2026-08-21T13:55:00", "growth", "$1 system free top-up", 1, "b1"),  # first pause minute
     (0.10, "2026-08-21T13:55:00", "invoke", "invoke (retired)", None, "b010"),
-    (1.00, "2026-09-01T00:00:00", "growth", "$1 top-up (legacy)", 1, "b1"),
+    (1.00, "2026-09-01T00:00:00", "growth", "$1 system free top-up", 1, "b1"),
     (0.10, "2026-09-01T00:00:00", "invoke", "invoke (retired)", None, "b010"),
     (0.0503, "2026-09-14T14:18:59", "micro", "test", None, "micro"),      # one minute early: still pause
     (0.0503, "2026-09-14T14:19:00", "equip", "equip", None, "b005"),       # first v2 minute
@@ -59,7 +61,7 @@ FIXTURES = [
     (0.0056, "2026-09-15T00:00:00", "invoke", "invoke", None, "b0005"),    # +12% edge
     (0.002, "2026-09-15T00:00:00", "micro", "test", None, "micro"),
     (0.10, "2026-09-15T00:00:00", "invoke", "invoke (retired)", None, "b010"),
-    (1.00, "2026-09-15T00:00:00", "growth", "$1 top-up (legacy)", 1, "b1"),
+    (1.00, "2026-09-15T00:00:00", "growth", "$1 system free top-up", 1, "b1"),
     (3.00, "2026-08-15T00:00:00", "growth", "$3 credit", 3, "b3"),
     (3.00, "2026-09-15T00:00:00", "growth", "$3 credit", 3, "b3"),
     (9.40, "2026-09-15T00:00:00", "growth", "stripe $10", 10, "b10"),
@@ -128,7 +130,8 @@ def main():
     assert era_for("2026-08-21T13:54:59")["name"] == "v1" and era_for("2026-08-21T13:55:00")["name"] == "pause"
     assert era_for("2026-09-14T14:18:59")["name"] == "pause" and era_for("2026-09-14T14:19:00")["name"] == "v2"
     assert RETIRED == {"invoke_v1": {"cutoff": PAUSED_UTC, "point": 0.10, "tol": 0.15}}
-    assert LEGACY["topup1"]["since"] == PAUSED_UTC and LEGACY["topup1"]["max_per_wallet"] == 1
+    assert SYSTEM_TOPUP["topup1"]["since"] == PAUSED_UTC and SYSTEM_TOPUP["topup1"]["max_per_wallet"] == 1
+    assert SYSTEM_TOPUP["topup1"]["fine"] == TOPUP_FINE
     assert BAND_KEYS[:5] == ["micro", "b0005", "b005", "b010", "b1"] and len(BAND_KEYS) == 13
     print("ok era table: v1 | pause 2026-08-21T13:55 | v2 2026-09-14T14:19 · cap 19:12 · 13 band keys")
 
@@ -171,16 +174,25 @@ def main():
             assert abs(got[k] - want) <= tol, f"{name}.{k}: {got[k]} != golden {want} (window {got})"
         print(f"ok golden {name}: {got}")
 
-    # 5. legacy + retired
-    leg = [r for r in rows if r[4] == LEGACY["topup1"]["fine"] and r[0] <= FREEZE]
-    assert len(leg) == LEGACY_GOLDEN["n"] and abs(round(sum(r[2] for r in leg), 2) - LEGACY_GOLDEN["usd"]) < 0.005
-    assert len({r[6] for r in leg}) == LEGACY_GOLDEN["wallets"] and min(r[0] for r in leg)[:10] == LEGACY_GOLDEN["first"]
+    # 5. system free top-ups + retired
+    leg = [r for r in rows if r[4] == TOPUP_FINE and r[0] <= FREEZE]
+    assert len(leg) == TOPUP_GOLDEN["n"] and abs(round(sum(r[2] for r in leg), 2) - TOPUP_GOLDEN["usd"]) < 0.005
+    assert len({r[6] for r in leg}) == TOPUP_GOLDEN["wallets"] and min(r[0] for r in leg)[:10] == TOPUP_GOLDEN["first"]
     assert all(r[3] == "growth" for r in leg)
+    assert all(group_for(r[3], r[4]) == "system_topups" for r in leg)
     assert not [r for r in rows if r[4] == "invoke (retired)"], "an 'invoke (retired)' row exists — the tripwire should have fired"
     pause = [r for r in rows if PAUSED_UTC <= r[0] < RESUMED_UTC]
     assert not [r for r in pause if r[3] in ("invoke", "equip")], "a creator-reward class inside the pause"
-    print(f"ok legacy $1 top-ups through {FREEZE}: {len(leg)} rows · ${sum(r[2] for r in leg):,.2f} · "
-          f"{len({r[6] for r in leg})} wallets · first {LEGACY_GOLDEN['first']} · 0 retired invokes · pause era carries no reward class")
+    print(f"ok system free top-ups through {FREEZE}: {len(leg)} rows · ${sum(r[2] for r in leg):,.2f} · "
+          f"{len({r[6] for r in leg})} wallets · first {TOPUP_GOLDEN['first']} · 0 retired invokes · pause era carries no reward class")
+
+    # 6. the grouping layer partitions every real row
+    from collections import Counter
+    gc = Counter(group_for(r[3], r[4]) for r in rows)
+    assert set(gc) <= set(GROUP_KEYS) and sum(gc.values()) == len(rows)
+    assert group_for("growth", TOPUP_FINE) == "system_topups" and group_for("growth", "stripe $10") == "topups_delivered"
+    assert group_for("invoke", "invoke (retired)") == "skill_rewards" and group_for("nonstandard", "nonstandard (large)") == "ops"
+    print(f"ok group_for partitions {len(rows):,} rows: " + " · ".join(f"{k} {v:,}" for k, v in gc.most_common()))
     print("test_eras: PASS")
     return 0
 

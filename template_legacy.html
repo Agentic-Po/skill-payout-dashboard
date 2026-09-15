@@ -87,7 +87,7 @@ td a{color:var(--acc);text-decoration:none}
   </div>
 
   <div class="card">
-    <h2>Top creators by earnings (invokes + equips only)</h2>
+    <h2>Top creator wallets by earnings (invokes + equips only)</h2>
     <p class="note">Recipient wallets ranked by creator-economy MOCA received since launch.</p>
     <div class="scroll"><table id="creators"></table></div>
   </div>
@@ -97,7 +97,7 @@ td a{color:var(--acc);text-decoration:none}
   <div class="card">
     <h2>Payout pattern monitor <span class="pill" id="gN"></span></h2>
     <p class="note">Behavioral fingerprints of creator payout streams (creators with ≥10 invokes). How to read: <b>Rhythm variety</b> (0–1) — how varied the time gaps between payouts are; humans are irregular (high), cron-job bots are metronomic (low). <b>Repeating pattern</b> (−1–1) — whether the next gap is predictable from the last; near 0 = human, high = scripted rhythm even with random jitter added. <b>Rapid-fire</b> — share of payouts landing within 60s of the previous one; some bursting is normal in a session, extreme values on new wallets suggest farming. Heuristic signals, not determinations — automated invocation can be legitimate in an agentic economy; the automation policy is an open decision. True unique-users-per-skill requires off-chain invoker data (open ask to platform team).</p>
-    <details><summary style="cursor:pointer;font-size:13px;color:var(--ink2)">Advanced signals — per-creator fingerprints (ops view)</summary><div class="scroll"><table id="gT"></table></div></details>
+    <details><summary style="cursor:pointer;font-size:13px;color:var(--ink2)">Advanced signals — per-wallet fingerprints (ops view)</summary><div class="scroll"><table id="gT"></table></div></details>
   </div>
 
   <p class="sect">Treasury — whole-wallet flows &amp; daily burn</p>
@@ -112,7 +112,7 @@ td a{color:var(--acc);text-decoration:none}
   <p class="sect">User growth &amp; top-ups — separate from creator earnings</p>
   <div class="card">
     <h2>Credits, referrals &amp; Stripe top-ups <span class="pill" id="othN"></span></h2>
-    <p class="note">The wallet also funds user-side balances — $3 credits, referral rewards ($5 each side), and Stripe top-ups ($10 / $25 / $50). The ~$3 payouts are a mixed bucket (internal top-up system and new-user free credits — first 3 minds; 1 Cognition Credit = 1 $MENTE ≈ $0.014) and are not split further here. Stripe top-ups are revenue-backed (user paid fiat; the MOCA out is delivery, not spend). Type inferred from USD value at payout.</p>
+    <p class="note">The wallet also funds user-side balances — $3 credits, referral rewards ($5 each side), and Stripe top-ups ($10 / $25 / $50). Type inferred from USD value at payout.</p>
     <div class="scroll"><table id="othSum"></table></div>
     <details style="margin-top:10px"><summary style="cursor:pointer;font-size:13px;color:var(--ink2)">Full transaction list (latest 40)</summary><div class="scroll"><table id="otherT"></table></div></details>
   </div>
@@ -138,7 +138,7 @@ const tiles=[
  ["Invokes — all time", S.tot.invoke.n, fmt(S.tot.invoke.moca)+" MOCA ≈ $"+(S.tot.invoke.moca*S.rate).toFixed(2)],
  ["Equips ≈ adopters (proxy)", S.tot.equip.n, (S.tot.equip.n?Math.round(S.tot.invoke.n/S.tot.equip.n):0)+" invokes per equip · invoker data pending"],
  ["Invokes — last 24h", S.inv24, S.eq24+" equips in same window"],
- ["Creators earning", S.creators_n, "wallets paid invoke/equip fees"],
+ ["Creator wallets earning", S.creators_n, "wallets paid invoke/equip fees"],
 ];
 document.getElementById("tiles").innerHTML=tiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
 // daily table
@@ -209,19 +209,11 @@ document.getElementById("otherT").innerHTML=`<thead><tr><th>Time (UTC)</th><th>T
  oth.slice(0,40).map(o=>`<tr><td class="mono">${o.ts.replace("T"," ")}</td><td><span class="sw" style="background:${CC[o.cat]||(o.cat==='test'?CC.micro:CC.growth)};margin-right:6px"></span>${o.cat}</td><td class="mono"><a href="https://basescan.org/address/${o.to}" target="_blank">${o.to.slice(0,8)}…${o.to.slice(-4)}</a></td><td class="r mono">${o.val.toFixed(2)}</td><td class="r mono">$${(o.val*S.rate).toFixed(2)}</td><td class="mono"><a href="https://basescan.org/tx/${o.tx}" target="_blank">${o.tx.slice(0,10)}…</a></td></tr>`).join("")+`</tbody>`;
 
 // ecosystem health / pattern monitor
-const G=DATA.guard;
 const gtiles=[
- ["Organic payout share", G.organic_share+"%", "of creator earnings show organic patterns"],
- ["Earnings at risk", "$"+G.at_risk_usd, "flagged wallets — unconfirmed, heuristic"],
- ["Payout float", G.runway_adj?("~"+G.runway_adj+" days"):"n/a", G.balance?(fmt(G.balance)+" MOCA · "+(G.runway_days||"?")+"d at current pace, adj. for burn growth"):"balance unavailable"],
- ["Unbacked burn (24h)", "$"+G.burn24, "prev 24h: $"+G.burn_prev+(G.burn_prev>0&&G.burn24/G.burn_prev>2?" — accelerating ⚠":"")+" · FX drift "+(G.fx_drift_pct>0?"+":"")+G.fx_drift_pct+"%"],
+ // frozen view: the single runway figure (total-outflow basis) lives on the main dashboard only
+ ["Payout float", "see main dashboard", "one runway figure, total-outflow basis — this frozen view does not recompute it"],
 ];
-if(G.runway_days!==null&&Math.min(G.runway_adj??99,G.runway_days)<14){
- const rb=document.getElementById("runwayBanner");
- rb.style.display="block";
- rb.innerHTML=`⛽ <strong>Payout float reminder:</strong> ~<strong>${G.runway_adj??G.runway_days} days</strong> at projected burn (${G.runway_days}d at current pace) — ${fmt(G.balance)} MOCA in the wallet vs $${G.burn24}/24h unbacked spend${G.burn_prev>0&&G.burn24/G.burn_prev>2?" <strong>(accelerating)</strong>":""}. Operational top-up cadence, not solvency — plan the next refill.`;
-}
 document.getElementById("gtiles").innerHTML=gtiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
-document.getElementById("gN").textContent=(G.rows_private_n||0)+" creators monitored (detail now private)";
+document.getElementById("gN").textContent="pattern signals are reviewed privately";
 document.getElementById("gT").innerHTML=`<tbody><tr><td style="padding:12px">Per-wallet monitor detail moved to a private reviewer file (calibration-oracle protection). See the main dashboard for aggregates.</td></tr></tbody>`;
 </script>

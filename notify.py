@@ -68,6 +68,7 @@ if _gen_age_h > 2 and not DRY_RUN:
                      f"limit 2h) — refusing to send outdated figures")
 F = _D["facts"]
 G = _D["infer"]["guard"]
+FL = F.get("float") or {}
 TOKENS = {a.lower(): s for s, a in _D["scope"]["tokens"].items()}   # addr -> sym
 RATE = F["rate"].get("MOCA") or hist[-1]["rate"]
 
@@ -76,89 +77,92 @@ RATE = F["rate"].get("MOCA") or hist[-1]["rate"]
 # token (day_rates.json, incl. today's provisional open_day_rate) so history
 # can't reprice with the market; the live per-token rate is the last resort.
 # The classifier is ERA-AWARE: every call passes the row's own timestamp.
-from classify import classify_usd, INCENT, pin_rate, era_for, RESUMED_UTC, LEGACY, UNITS
+# Every rollup below goes through classify.group_for — the ONE grouping layer
+# (2026-09-15): no category is hand-listed here, and test_parity recomputes
+# the same sums the page publishes.
+from classify import (classify_usd, INCENT, pin_rate, era_for, RESUMED_UTC, SYSTEM_TOPUP, UNITS,
+                      group_for, GROUP_KEYS, GROUP_LABEL)
 _dr_state = json.load(open(os.path.join(HERE, "day_rates.json")))
 _DAY_RATES = {sym: dict(_dr_state["day_rates"].get(sym, {})) for sym in TOKENS.values()}
 for sym, od in (_dr_state.get("open_day_rate") or {}).items():
     _DAY_RATES.setdefault(sym, {}).setdefault(od["d"], od["rate"])
 
 def classify(ts, sym, v):
-    """-> (class, usd, tier, fine) in the digest's local vocabulary. ts is the
-    row's ISO timestamp (day-pins the rate AND selects the reward era)."""
+    """-> (coarse, usd, tier, fine, group). ts is the row's ISO timestamp
+    (day-pins the rate AND selects the reward era)."""
     _fb = F["rate"].get(sym)
     if not _fb and not _DAY_RATES.get(sym):
         raise SystemExit(f"FATAL: no rate available for {sym} — refusing to price rows at $0")
     usd = v * pin_rate(_DAY_RATES.get(sym, {}), ts[:10], _fb or 0)
     coarse, fine, tier = classify_usd(usd, ts)
-    if coarse == "growth":
-        return ("topup" if fine.startswith("stripe") else "incentive"), usd, tier, fine
-    if coarse == "nonstandard":
-        return "other", usd, None, fine
-    return coarse, usd, None, fine
+    return coarse, usd, tier, fine, group_for(coarse, fine)
 
 # ALL tracked tokens (council loop 3: the digest previously classified only
 # MOCA, silently excluding the entire MENTE era from the all-time figures
 # while the page counted both — the one-figure-everywhere failure).
-rows = []          # (ts, cls, qty, wallet, tier, usd_day_pinned, sym, fine)
+rows = []          # (ts, cat, qty, wallet, tier, usd_day_pinned, sym, fine, group)
 for i in shards.load(os.path.join(HERE, "transfers")):
     sym = TOKENS.get(i["token"]["address_hash"].lower())
     if not sym:
         continue
     v = int(i["total"]["value"]) / 1e18
     ts_iso = i["timestamp"][:19]
-    cls, usd, tier, fine = classify(ts_iso, sym, v)
+    cat, usd, tier, fine, grp = classify(ts_iso, sym, v)
     # wallet lowercased: Blockscout rows are EIP-55, eth_getLogs rows are
     # lowercase, and a distinct-wallet count split by casing overstated
-    # "creators paid" vs the page (56 vs 47 on 2026-09-15)
-    rows.append((datetime.fromisoformat(ts_iso), cls, v, i["to"]["hash"].lower(), tier, usd, sym, fine))
+    # "creator wallets paid" vs the page (56 vs 47 on 2026-09-15)
+    rows.append((datetime.fromisoformat(ts_iso), cat, v, i["to"]["hash"].lower(), tier, usd, sym, fine, grp))
+RESUMED = datetime.fromisoformat(RESUMED_UTC)
+TOPUP_FINE = SYSTEM_TOPUP["topup1"]["fine"]
+# first-ever skill reward per wallet, all history (for "new creator wallets")
+_first_reward = {}
+for r in sorted((r for r in rows if r[8] == "skill_rewards"), key=lambda r: r[0]):
+    _first_reward.setdefault(r[3], r[0])
 
 def win(hours=None):
     """Activity inside the trailing window (None = all history).
 
-    Counts are payout transfers; creators are DISTINCT recipient wallets paid
-    an invoke- or equip-sized amount; moca_* are summed payout amounts.
-    tiers_* map $ size -> count, so the mix is visible, not just the total.
+    Group sums come from classify.group_for; creator wallets are DISTINCT
+    recipient wallets of a skill-reward-sized row; tiers_* map $ size -> count.
     """
-    rs = rows if hours is None else [r for r in rows if r[0] > now - timedelta(hours=hours)]
-    def _qty(rs_, groups):
-        q = {}
-        for r in rs_:
-            if r[1] in groups:
-                q[r[6]] = q.get(r[6], 0) + r[2]
-        return q
-    def tiers(cls):
+    lo = None if hours is None else now - timedelta(hours=hours)
+    rs = rows if lo is None else [r for r in rows if r[0] > lo]
+    def tiers(grp):
         out = {}
         for r in rs:
-            if r[1] == cls and r[4]:
+            if r[8] == grp and r[4]:
                 out[r[4]] = out.get(r[4], 0) + 1
         return dict(sorted(out.items()))
+    g_usd = {g: sum(r[5] for r in rs if r[8] == g) for g in GROUP_KEYS}
+    g_n = {g: sum(1 for r in rs if r[8] == g) for g in GROUP_KEYS}
+    cw = {r[3] for r in rs if r[8] == "skill_rewards"}
     return {
         "invoke": sum(1 for r in rs if r[1] == "invoke"),
         "equip": sum(1 for r in rs if r[1] == "equip"),
-        "incentive": sum(1 for r in rs if r[1] == "incentive"),
-        "topup_n": sum(1 for r in rs if r[1] == "topup"),
-        "creators": len({r[3] for r in rs if r[1] in ("invoke", "equip")}),
-        "qty_ce": _qty(rs, ("invoke", "equip")),
-        "qty_incent": _qty(rs, ("incentive",)),
-        "qty_topup": _qty(rs, ("topup",)),
-        "usd_ce": sum(r[5] for r in rs if r[1] in ("invoke", "equip")),
-        "usd_incent": sum(r[5] for r in rs if r[1] == "incentive"),
-        "usd_topup": sum(r[5] for r in rs if r[1] == "topup"),
-        "tiers_incent": tiers("incentive"),
-        "tiers_topup": tiers("topup"),
-        "other_n": sum(1 for r in rs if r[1] == "other"),
-        "other_usd": sum(r[5] for r in rs if r[1] == "other"),
+        "creators": len(cw),
+        "new_creators": sum(1 for a in cw if lo is not None and _first_reward.get(a, now) > lo),
+        "g_usd": g_usd, "g_n": g_n,
+        "out_usd": sum(r[5] for r in rs),
+        "qty_ce": _qty(rs, "skill_rewards"), "qty_credit": _qty(rs, ("credit_grants", "system_topups")),
+        "qty_topup": _qty(rs, "topups_delivered"),
+        "tiers_credit": {**tiers("credit_grants"), **tiers("system_topups")},
+        "tiers_topup": tiers("topups_delivered"),
         # Creator Rewards v2 (fine == equip/invoke on the v2 grid, since the resume)
         "v2_equip": sum(1 for r in rs if r[7] == "equip" and r[0] >= RESUMED),
         "v2_invoke": sum(1 for r in rs if r[7] == "invoke" and r[0] >= RESUMED),
         "v2_usd_equip": sum(r[5] for r in rs if r[7] == "equip" and r[0] >= RESUMED),
         "v2_usd_invoke": sum(r[5] for r in rs if r[7] == "invoke" and r[0] >= RESUMED),
         "v2_creators": len({r[3] for r in rs if r[7] in UNITS and r[0] >= RESUMED}),
-        "legacy_n": sum(1 for r in rs if r[7] == LEGACY_FINE),
+        "system_topup_n": g_n["system_topups"],
     }
 
-RESUMED = datetime.fromisoformat(RESUMED_UTC)
-LEGACY_FINE = LEGACY["topup1"]["fine"]
+def _qty(rs_, groups):
+    groups = (groups,) if isinstance(groups, str) else groups
+    q = {}
+    for r in rs_:
+        if r[8] in groups:
+            q[r[6]] = q.get(r[6], 0) + r[2]
+    return q
 
 def mix(tiers, labels=None):
     """'23 x $10 - 24 x $20' — biggest first, blank when empty."""
@@ -178,17 +182,12 @@ _ERA = era_for(now.isoformat(timespec="minutes"))
 def _sz(name):
     p = _ERA["rewards"].get(name)
     return f" (${p:g})" if p else ""
-COUNTS = [("invoke", f"skill invokes{_sz('invoke')}"), ("equip", f"skill equips{_sz('equip')}"),
-          ("creators", "creator wallets paid"), ("incentive", "growth incentives")]
-
-def counts_line(w):
-    """'7 skill invokes / 2 growth incentives' — zero terms omitted entirely."""
-    return " · ".join(f"{w[k]:,} {lab}" for k, lab in COUNTS if w[k])
 
 def usd_line(label, key, w, note=""):
     # $ figure is the sum of day-pinned per-row USD — same basis as the page.
     # Raw amounts render per token (MENTE-era rows are now included).
-    u = w[key.replace("qty_", "usd_")]
+    grp = {"qty_ce": "skill_rewards", "qty_topup": "topups_delivered"}.get(key)
+    u = w["g_usd"][grp] if grp else w["g_usd"]["credit_grants"] + w["g_usd"]["system_topups"]
     qty = " + ".join(f"{q:,.0f} {s}" for s, q in sorted(w[key].items(), key=lambda kv: -kv[1]) if q) or "0"
     return f"<b>{label}:</b> {qty} ≈ <b>${u:,.2f}</b>{note}"
 
@@ -198,6 +197,20 @@ head = {"hourly": "🟢 <b>Hourly refresh OK</b>",
 
 import state as _state
 _ST = _state.load()
+# C4 (2026-09-15): monitoring-status counts come from alert_state.json
+# (PRIVATE, written by refresh.py), never from data.json
+_PM = _ST.get("pattern_monitor") or {}
+
+# ---- float line (X5/X8): ONE runway on TOTAL outflow (facts.float), the
+# driver named. Emoji is the severity; the line is always present.
+def float_line():
+    d7, d24 = FL.get("days_7d_pace"), FL.get("days_24h_pace")
+    worst = min(x for x in (d7, d24) if x is not None) if (d7 or d24) else None
+    icon = "🔴" if worst is not None and worst < 7 else ("🟠" if worst is not None and worst < 14 else "🟢")
+    drv = FL.get("driver_24h") or {}
+    return (f"{icon} <b>Float</b> ~{d24 if d24 is not None else '?'}d (24h pace) · {d7 if d7 is not None else '?'}d (7d pace) · "
+            f"${FL.get('bal_usd', G.get('bal_usd', 0)):,.0f} · out ${FL.get('out_24h_usd', 0):,.0f}/24h"
+            + (f", {drv['share_pct']:g}% {drv['label'].lower()}" if drv else ""))
 
 health = []
 w24_f = F["windows"][0]
@@ -217,27 +230,33 @@ r_m, r_e = F["rate"].get("MOCA") or RATE, F["rate"].get("MENTE") or 0
 usd_m = (bal_m or 0) * r_m
 usd_e = (bal_e or 0) * r_e
 stale = f" ⚠️ <i>(live fetch failed — last known {hkt(stale_ts)})</i>" if stale_ts else ""
-health.append("")
-health.append("🔧 <b>Ops health</b>")
-health.append(f"<b>Wallet balance:</b> <b>${usd_m + usd_e:,.0f}</b> total{stale}")
-health.append(f"  · MOCA: {bal_m or 0:,.0f} ≈ <b>${usd_m:,.2f}</b>")
-health.append(f"  · MENTE: {bal_e or 0:,.0f} ≈ <b>${usd_e:,.2f}</b>")
 out_1h = sum(r[5] for r in rows if r[0] > now - timedelta(hours=1))
-_f1h = f"out ${out_1h:,.0f} 1h · $" if mode == "hourly" else "out $"
-# Economy vs ops split (council loop 3): the payout lines above exclude
-# swaps/treasury logistics, so a raw Flows total never visibly reconciled
-# with them. economy = classified payout USD in the window; ops = the
-# RESIDUAL (guaranteed to close on the message itself). A negative residual
-# is a basis mismatch and is flagged, never printed as a negative dollar.
-_eco24 = sum(r[5] for r in rows if r[0] > now - timedelta(hours=24) and r[1] != "other")
-_ops24 = w24_f["out_usd"] - _eco24
-_ops_s = (f"ops out ${_ops24:,.0f} <i>(swaps/treasury)</i>" if _ops24 >= 0
-          else f"ops out $0 <i>(⚠ basis mismatch ${_ops24:,.0f})</i>")
-health.append(f"<b>Flows:</b> {_f1h}{w24_f['out_usd']:,.0f} 24h = economy ${_eco24:,.0f} + {_ops_s} · in ${w24_f['in_usd']:,.0f} 24h · net {'+' if w24_f['net_usd']>=0 else ''}${w24_f['net_usd']:,.0f}")
-if mode in ("daily", "weekly"):
-    health.append(f"<b>Pattern monitor:</b> {G['flagged_n']} of {G['monitored_n']} flagged · <b>at risk:</b> ${G['at_risk_usd']:,.2f} of ${G['ce_total_usd']:,.2f} <i>(heuristic, unconfirmed)</i>")
-    if G.get("runway7") is not None:
-        health.append(f"<b>Payout float:</b> ~{G['runway7']} days (7d-avg burn) · {G.get('runway24') or '?'}d at 24h pace — top-up cadence, not solvency")
+if mode != "hourly":
+    health.append("")
+    health.append("🔧 <b>Ops health</b>")
+    health.append(f"<b>Wallet balance:</b> <b>${usd_m + usd_e:,.0f}</b> total{stale}")
+    health.append(f"  · MOCA: {bal_m or 0:,.0f} ≈ <b>${usd_m:,.2f}</b>")
+    health.append(f"  · MENTE: {bal_e or 0:,.0f} ≈ <b>${usd_e:,.2f}</b>")
+    # Economy vs ops split: economy = every group but ops (closes on the
+    # message itself); ops = the residual, never printed negative.
+    # both terms from data.json's OWN 24h window (facts_window.groups) so the
+    # line closes on itself even when this digest runs minutes after the build
+    _ops24 = (w24_f.get("groups") or {}).get("ops", {}).get("usd", 0.0)
+    _eco24 = w24_f["out_usd"] - _ops24
+    _ops_s = (f"ops out ${_ops24:,.0f} <i>(swaps/treasury)</i>" if _ops24 >= 0
+              else f"ops out $0 <i>(⚠ basis mismatch ${_ops24:,.0f})</i>")
+    health.append(f"<b>Flows:</b> out ${w24_f['out_usd']:,.0f} 24h = economy ${_eco24:,.0f} + {_ops_s} · in ${w24_f['in_usd']:,.0f} 24h · net {'+' if w24_f['net_usd']>=0 else ''}${w24_f['net_usd']:,.0f}")
+    # A5: last external funding (facts.in_ledger, recycled leg excluded)
+    _ext = [l for l in (F.get("in_ledger") or []) if (l.get("label") or "") != "Cognition Credits collector — also the original SWARM-era treasury+collector hub (pre-Apr 2026)"]
+    if _ext:
+        _lf = _ext[0]
+        _age = (now.date() - datetime.fromisoformat(_lf["day"]).date()).days
+        health.append(f"<b>Last funding:</b> {hkt_day(_lf['day'])} · ${_lf['usd']:,.0f} ({_lf['tok']}) · {_age}d ago")
+    if _PM:
+        health.append(f"<b>Pattern monitor (private):</b> {_PM.get('flagged_n', '?')} of {_PM.get('monitored_n', '?')} wallets flagged · "
+                      f"<b>at risk:</b> ${_PM.get('at_risk_usd', 0):,.2f} of ${_PM.get('ce_total_usd', 0):,.2f} <i>(heuristic, unconfirmed; as of {hkt(_PM['ts']) if _PM.get('ts') else '?'})</i>")
+    else:
+        health.append("<b>Pattern monitor (private):</b> <i>no state banked yet (cold cache)</i>")
     # Alert-delivery liveness (Cycle-3 Loop 2, item 4): counts come from
     # alert_state.json's send_health (Actions cache) — digest-only, never a
     # public artifact. A stretch of failures also turns refresh.yml red via
@@ -252,7 +271,8 @@ if mode == "weekly":
     _ss = _D.get("stripe_snap") or {}
     _ver = (f" Verified Stripe net: ${_ss.get('net_usd', 0):,.0f} ({_ss['period'][0]}→{_ss['period'][1]}, one-time snapshot)."
             if _ss.get("net_usd") and _ss.get("period") else "")
-    health.append(f"<i>Paste-ready:</i> This week: {w7d['invoke']:,} invokes across {w7d['creators']:,} creator wallets, ${w7d['usd_ce']:,.2f} paid to creators — {G['flagged_n']} account(s) flagged for review. ${w7d['usd_topup']:,.2f} of flows were Stripe-pack-sized deliveries (size-inferred; may include coupon-delivered credits — not verified revenue).{_ver}")
+    _flag_s = f"{_PM['flagged_n']} wallet(s) flagged for private review" if _PM else "pattern monitor state not banked"
+    health.append(f"<i>Paste-ready:</i> This week: {w7d['invoke']:,} invokes and {w7d['equip']:,} equips across {w7d['creators']:,} creator wallets, ${w7d['g_usd']['skill_rewards']:,.2f} of skill rewards paid — {_flag_s}. ${w7d['g_usd']['topups_delivered']:,.2f} of flows were Stripe-pack-sized deliveries (size-inferred; may include coupon-delivered credits — not verified revenue).{_ver}")
     # --- ops footer (Cycle-3 Loop 3, item 3) ---
     # DIGEST-ONLY, no new public fields. Cadence comes from data already
     # public (stats_history.json timestamps — one snapshot per successful
@@ -277,56 +297,68 @@ if mode == "weekly":
         _dur_s = "<i>(collecting)</i>"
     health.append(f"🛠 <b>Refresh ops (7d):</b> {_n_runs}/{_exp_runs} scheduled runs published → "
                   f"uptime {_uptime:.1f}% · <b>run duration:</b> {_dur_s}")
+# ---- alert lines: only when firing (every mode) ----
+alerts = []
 for sym, r in (F.get("recon") or {}).items():
     if r and r.get("warn"):
-        health.append(f"⚠️ <b>Reconciliation drift ({sym}):</b> Δ moved {r['drift']:+,.1f} since last run — possible missed transfers")
-if G.get("burn_prev", 0) > 0 and G.get("burn24", 0) / G["burn_prev"] > 2 and mode != "hourly":
-    health.append(f"⚠️ <b>Burn accelerating:</b> ${G['burn24']}/24h vs ${G['burn_prev']} prior")
-rw = min(G.get("runway7") or 99, G.get("runway24") or 99)
-if rw < 7:
-    prev_rw = hist[-2].get("runway7", hist[-2].get("runway_adj")) if len(hist) >= 2 else None
-    crossed = prev_rw is None or prev_rw >= 7 or (rw < 1 <= prev_rw) or (rw < 0.5 <= prev_rw)
-    if mode != "hourly" or crossed or now.hour % 6 == 0:
-        health.append(f"🔴 <b>Low float:</b> ${G['burn24']}/24h burn → ~{rw}d left")
+        alerts.append(f"⚠️ <b>Reconciliation drift ({sym}):</b> Δ moved {r['drift']:+,.1f} since last run — possible missed transfers")
+if stale_ts:
+    alerts.append(f"⚠️ <b>Balance:</b> live fetch failed — last known {hkt(stale_ts)}")
+if not _D["scope"].get("complete", True):
+    alerts.append("⚠️ <b>Chain fetch incomplete</b> this run — figures may lag")
+if FL.get("out_prev24_usd", 0) > 0 and FL.get("out_24h_usd", 0) / FL["out_prev24_usd"] > 2 and mode != "hourly":
+    alerts.append(f"⚠️ <b>Outflow accelerating:</b> ${FL['out_24h_usd']:,.0f}/24h vs ${FL['out_prev24_usd']:,.0f} prior")
+# cap probe (PRIVATE heartbeat from alerts.py) — per WALLET, a lower bound
+cp = _ST.get("cap_probe") or {}
+cp_fresh = bool(cp.get("ts")) and (now - datetime.fromisoformat(cp["ts"])).total_seconds() <= 2 * 3600
+if not cp_fresh:
+    alerts.append(f"⚠️ <b>Cap probe missing</b> — detector did not run (last {hkt(cp['ts']) if cp.get('ts') else 'never'})")
+health += [""] + alerts if alerts else []
 
 
-# ---- Creator Rewards v2 block (2026-09-15) ----
+# ---- Creator Rewards v2 block (daily/weekly only since 2026-09-15) ----
 # Counts/USD come from the same era-aware rows as every other line above.
 # Cap headroom comes from alert_state.json's cap_probe heartbeat (PRIVATE —
 # Actions cache, written by alerts.py every run). Po's private channel, so
 # the cap figure and per-hour headroom ARE printed here; the public page and
-# every public artifact carry no cap data at all.
+# every public artifact carry no cap data at all. Per WALLET: the chain sees
+# wallets, not accounts — every figure here is a lower bound per creator.
 def v2_block(w, lab):
     out = ["", f"🎯 <b>Creator rewards v2 ({lab})</b>",
            f"  · <b>equips:</b> {w['v2_equip']:,} ≈ ${w['v2_usd_equip']:,.2f} · "
            f"<b>invokes:</b> {w['v2_invoke']:,} ≈ ${w['v2_usd_invoke']:,.2f} · "
-           f"<b>creators paid:</b> {w['v2_creators']:,}"]
-    cp = _ST.get("cap_probe") or {}
-    fresh = bool(cp.get("ts")) and (now - datetime.fromisoformat(cp["ts"])).total_seconds() <= 2 * 3600
-    if fresh:
+           f"<b>creator wallets paid:</b> {w['v2_creators']:,} ({w['new_creators']:,} first-ever)"]
+    if cp_fresh:
         cap = cp.get("cap_usd") or 0
-        out.append(f"  · <b>Cap headroom (60m):</b> top creator ${cp.get('top_usd_1h', 0):,.2f} / ${cap:,.2f} cap · "
-                   f"{cp.get('creators_1h', 0)} creators paid · {cp.get('n_at_cap', 0)} ≥90%")
+        out.append(f"  · <b>Cap (60m, per wallet):</b> top wallet ${cp.get('top_usd_1h', 0):,.2f} / ${cap:,.2f} · "
+                   f"{cp.get('creators_1h', 0)} wallets paid · {cp.get('n_at_cap', 0)} ≥90%")
         if mode == "daily":
-            out.append(f"  · <b>Peak creator-hour (24h):</b> ${cp.get('top_clock_usd_24h', 0):,.2f} / ${cap:,.2f} cap · "
-                       f"{cp.get('n_at_90pct_24h', 0)} creator(s) with a ≥90% hour")
+            out.append(f"  · <b>Peak wallet-hour (24h):</b> ${cp.get('top_clock_usd_24h', 0):,.2f} / ${cap:,.2f} cap · "
+                       f"{cp.get('n_at_90pct_24h', 0)} wallet(s) with a ≥90% hour")
         if mode == "weekly":
             _c7 = (now - timedelta(days=7)).isoformat(timespec="minutes")
             _breaches = sum(1 for v in (_ST.get("cap_hits") or {}).values() if v > _c7)
             _fan = sum(1 for v in ((_ST.get("cap_state") or {}).get("fanout") or {}).values() if v > _c7)
-            share = cp.get("top_creator_share_7d")
-            out.append(f"  · <b>Cap (7d):</b> max creator-hour ${cp.get('top_clock_usd_7d', 0):,.2f} / ${cap:,.2f} · "
-                       f"{_breaches} breach(es) · {_fan} fan-out hour(s)"
-                       + (f" · top creator share {share}% (24h)" if share is not None else ""))
-    else:
-        out.append(f"  · ⚠️ cap probe missing — detector did not run "
-                   f"(last {hkt(cp['ts']) if cp.get('ts') else 'never'})")
-    # legacy $1 top-ups: the window count from the rows, the running total
-    # from the SAME public aggregate the page shows (infer.legacy_public)
-    lp = next(iter(_D["infer"].get("legacy_public") or []), None)
+            out.append(f"  · <b>Cap (7d):</b> max wallet-hour ${cp.get('top_clock_usd_7d', 0):,.2f} / ${cap:,.2f} · "
+                       f"{_breaches} breach(es) · {_fan} fan-out hour(s)")
+    # concentration: the SAME public aggregate the page's creator card shows
+    _cw = ((F.get("creator_wallets") or {}).get("windows") or {})
+    _k = "7d" if mode == "weekly" else "24h"
+    _c = _cw.get(_k) or {}
+    if _c.get("wallets"):
+        _med = f" · median ${_c['median_usd']:,.4f}" if _c.get("median_usd") is not None else ""
+        out.append(f"  · <b>Concentration ({_k}):</b> top-1 {_c.get('top1_share_pct')}% · top-5 {_c.get('top5_share_pct')}% · "
+                   f"top-10 {_c.get('top10_share_pct')}% of ${_c['usd']:,.2f} across {_c['wallets']} wallets{_med}")
+    _sr = _cw.get("since_resume") or {}
+    if _sr.get("wallets"):
+        out.append(f"  · <b>Since resume ({hkt_day(RESUMED_UTC[:10])}):</b> ${_sr['usd']:,.2f} to {_sr['wallets']} creator wallets · "
+                   f"{_sr['equips']:,} equips · {_sr['invokes']:,} invokes")
+    # system free top-ups: the window count from the rows, the running total
+    # from the SAME public aggregate the page shows (infer.system_topup_public)
+    lp = next(iter(_D["infer"].get("system_topup_public") or []), None)
     if lp:
         since = hkt_day(lp["since"]) if lp.get("since") else "?"
-        out.append(f"  · <b>Legacy $1 top-ups:</b> {w['legacy_n']:,} ({lab}) · {lp['n']:,} since {since}")
+        out.append(f"  · <b>System free top-ups ($1):</b> {w['system_topup_n']:,} ({lab}) · {lp['n']:,} since {since}")
     # pricing provenance (day_rates.json): last closed day + the open day
     dr = _dr_state["day_rates"].get("MOCA") or {}
     src = (_dr_state.get("day_rate_src") or {}).get("MOCA") or {}
@@ -336,43 +368,65 @@ def v2_block(w, lab):
         last_d = max(dr)
         parts.append(f"MOCA day rate {dr[last_d]:.6f} ({hkt_day(last_d)}, {src.get(last_d, '?')})")
     parts.append(f"open day {od['rate']:.6f} (market-open)" if od else "open day carry-forward")
-    if mode != "hourly":
-        c30 = (now - timedelta(days=30)).strftime("%Y-%m-%d")
-        cf = sum(1 for d, v in src.items() if c30 <= d < now.strftime("%Y-%m-%d") and v == "carry-forward")
-        parts.append(f"{cf} carry-forward day(s) in 30d")
+    c30 = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+    cf = sum(1 for d, v in src.items() if c30 <= d < now.strftime("%Y-%m-%d") and v == "carry-forward")
+    parts.append(f"{cf} carry-forward day(s) in 30d")
     out.append("  · <b>Pricing:</b> " + " · ".join(parts))
     return out
 
 
-fresh = counts_line(w1)
-body_lines = [f"{head} — <i>Skill Payout Dashboard</i> · {hkt(now, '%d %b %Y %H:%M')}", "", "📈 <b>Economy</b>"]
 if mode == "hourly":
-    body_lines += [f"<b>New this hour:</b> {fresh}" if fresh
-                   else "<b>New this hour:</b> <i>nothing new</i>", ""]
-body_lines += [
-    f"<b>Last {WLAB}</b>",
-    f"  · payouts: {counts_line(W) or '<i>none</i>'}",
-    "  · " + usd_line("paid to creators", "qty_ce", W),
-    "  · " + usd_line("incentive spend", "qty_incent", W,
-                      f" <i>({mix(W['tiers_incent'], INCENT_LABEL)})</i>" if W["tiers_incent"] else ""),
-    "  · " + usd_line("top-ups delivered", "qty_topup", W,
-                      f" <i>({W['topup_n']:,} paid: {mix(W['tiers_topup'])})</i>" if W["tiers_topup"]
-                      else " <i>(Stripe-pack-sized, size-inferred)</i>"),
-]
-if W["other_n"]:
-    body_lines.append(f"  · <i>excluded {W['other_n']:,} non-standard transfer(s) ≈ ${W['other_usd']:,.0f} "
-                      f"— swaps/treasury moves, not user top-ups</i>")
-body_lines += v2_block(W, WLAB)
-_restated = _ST.get("mente_restated_v1")
-if mode in ("daily", "weekly") and not _restated:
-    body_lines += ["", "ℹ️ <i>All-time figures restated: the digest now includes the MENTE era "
-                   "(the page always did) — cumulative lines move up once; windows are unaffected.</i>"]
-if mode in ("daily", "weekly"):
+    # ---- X5: the phone-first hourly (≤ 700 chars, worst thing first) ----
+    _g1, _n1 = w1["g_usd"], w1["g_n"]
+    _g24, _n24 = w24["g_usd"], w24["g_n"]
+    body_lines = [f"{head} — <i>Skill Payout Dashboard</i> · {hkt(now, '%d %b %Y %H:%M')}",
+                  float_line(),
+                  (f"📈 <b>1h</b> · rewards ${_g1['skill_rewards']:,.2f} ({w1['equip']:,} equips · {w1['invoke']:,} invokes → {w1['creators']:,} creator wallets) · "
+                   f"credit grants {_n1['credit_grants'] + _n1['system_topups']:,} ≈ ${_g1['credit_grants'] + _g1['system_topups']:,.0f} · out ${out_1h:,.0f}"),
+                  (f"📊 <b>24h</b> · rewards ${_g24['skill_rewards']:,.2f} → {w24['creators']:,} creator wallets · "
+                   f"credit grants ${_g24['credit_grants'] + _g24['system_topups']:,.0f} ({_n24['credit_grants']:,} + {_n24['system_topups']:,} system free top-ups) · "
+                   f"top-ups delivered {_n24['topups_delivered']:,} ≈ ${_g24['topups_delivered']:,.0f}")]
+    if cp_fresh:
+        body_lines.append(f"🎯 <b>Cap</b> (60m, per wallet) · top wallet ${cp.get('top_usd_1h', 0):,.2f} / ${cp.get('cap_usd', 0):,.2f} · {cp.get('n_at_cap', 0)} ≥90%")
+    # budget: the four fixed lines are ~430 chars; alert lines are appended
+    # while they fit, the rest collapse to a count — a bad day must never turn
+    # into a silent (asserted-out) hourly
+    HOURLY_MAX = 700
+    kept = list(alerts)
+    while kept and len("\n".join(body_lines + kept)) > HOURLY_MAX:
+        kept.pop()
+    if len(kept) < len(alerts):
+        kept.append(f"… +{len(alerts) - len(kept)} more warning(s) in the daily")
+        while len(kept) > 1 and len("\n".join(body_lines + kept)) > HOURLY_MAX:
+            kept.pop(-2)
+    msg = "\n".join(body_lines + kept)
+    assert len(msg) <= HOURLY_MAX, f"hourly digest is {len(msg)} chars — the phone-first budget is {HOURLY_MAX}"
+else:
+    body_lines = [f"{head} — <i>Skill Payout Dashboard</i> · {hkt(now, '%d %b %Y %H:%M')}", "", float_line(), "",
+                  "📈 <b>Economy</b>",
+                  f"<b>Last {WLAB}</b> · out ${W['out_usd']:,.2f} = " + " · ".join(
+                      f"{GROUP_LABEL[g].lower()} ${W['g_usd'][g]:,.2f}" for g in GROUP_KEYS if W["g_n"][g]),
+                  f"  · skill rewards: {W['invoke']:,} invokes{_sz('invoke')} · {W['equip']:,} equips{_sz('equip')} → {W['creators']:,} creator wallets ({W['new_creators']:,} first-ever)",
+                  "  · " + usd_line("paid to creator wallets", "qty_ce", W),
+                  "  · " + usd_line("credit grants", "qty_credit", W,
+                                    f" <i>({mix(W['tiers_credit'], INCENT_LABEL)})</i>" if W["tiers_credit"] else ""),
+                  "  · " + usd_line("top-ups delivered", "qty_topup", W,
+                                    f" <i>({W['g_n']['topups_delivered']:,} paid: {mix(W['tiers_topup'])})</i>" if W["tiers_topup"]
+                                    else " <i>(Stripe-pack-sized, size-inferred)</i>")]
+    if W["g_n"]["ops"]:
+        body_lines.append(f"  · <i>excluded {W['g_n']['ops']:,} non-standard transfer(s) ≈ ${W['g_usd']['ops']:,.0f} "
+                          f"— swaps/treasury moves, not user top-ups</i>")
+    body_lines += v2_block(W, WLAB)
+    _restated = _ST.get("mente_restated_v1")
+    if not _restated:
+        body_lines += ["", "ℹ️ <i>All-time figures restated: the digest now includes the MENTE era "
+                       "(the page always did) — cumulative lines move up once; windows are unaffected.</i>"]
     body_lines += ["", "<b>All time</b>",
                    f"  · {cum['invoke']:,} invokes · {cum['equip']:,} equips · {cum['creators']:,} creator wallets paid",
-                   "  · " + usd_line("paid to creators", "qty_ce", cum)]
-msg = "\n".join(body_lines + health)
-assert len(msg) < 4000, f"digest message is {len(msg)} chars — Telegram's limit is 4096"
+                   "  · " + usd_line("paid to creator wallets", "qty_ce", cum)]
+    msg = "\n".join(body_lines + health)
+    assert len(msg) < 4000, f"digest message is {len(msg)} chars — Telegram's limit is 4096"
+_restated = _ST.get("mente_restated_v1")
 
 if DRY_RUN:
     print(msg)

@@ -34,7 +34,20 @@ DENIED_SUBSTRINGS = [CUSTODIAN, MIND, MIMIC_OF] + AUDIT_FRAGS
 # any rate ending in 4.00; the key-name assertions are the guard.
 DETECTOR_KEYS = ["cap_table", "cap_hits", "cap_probe", "cap_state", "max_h60_units",
                  "max_clock_units", "hours_at_90pct", "fanout_hours", "grid_agreement",
-                 "legacy_ledger", "repeat_wallets"]
+                 "system_topup_ledger", "repeat_wallets",
+                 # 2026-09-15 iteration: monitoring-status counts, the cap
+                 # instant and every paid-vs-free basis left the public contract
+                 "flagged_n", "monitored_n", "at_risk_usd", "cap_on_utc", "implied_user_spend",
+                 "funding_split", "swarm_split", "subsidy_ratio", "ratio_weeks",
+                 "pattern_monitor", "acct_map", "steward_", "mindset"]
+# Word-level checks on ASSEMBLED prose (adversary X9): substrings that only
+# ever appeared next to a monitoring status, a cap figure or a paid-vs-free
+# claim. Assembled from parts so this file is never a hit for what it polices.
+PROSE_DENIED = ["flagged for review", "wallets " + "monitored", " flagged ·", "monitored" + "</span>",
+                "hourly cap " + "applies", "subsidy " + "ratio", "user-" + "funded", "unbacked",
+                "gifted", "Implied " + "user spend", "top-up (" + "legacy)", "legacy " + "free top-up",
+                "Legacy $1", "looks unusual", "under review", "account" + "s flagged",
+                "revenue-" + "backed", "burn " + "growth", "reward " + "farm"]
 PUBLIC_ARTIFACTS = ("data.json", "index.html", "legacy.html", "coupon_data.json",
                     "transfers_export.csv")
 
@@ -53,8 +66,8 @@ def main():
     for rel in ("data.json", "index.html"):
         _clean(rel)
     D = json.load(open(os.path.join(ROOT, "data.json")))
-    assert D.get("schema_version") == 2, "data.json is not the v2 (redacted) contract"
-    print("ok data.json schema_version == 2")
+    assert D.get("schema_version") == 3, "data.json is not the v3 contract"
+    print("ok data.json schema_version == 3")
     for rel in PUBLIC_ARTIFACTS:
         p = os.path.join(ROOT, rel)
         if not os.path.exists(p):
@@ -64,10 +77,25 @@ def main():
         assert not hits, f"{rel}: detector/ledger key(s) {hits} reached a public artifact"
     # the public rewards block carries no cap data of any kind
     rv = D["facts"].get("rewards_v2") or {}
-    assert not [k for k in rv if "cap" in k and k != "cap_on_utc"], f"rewards_v2 carries cap data: {sorted(rv)}"
-    for lp in D["infer"].get("legacy_public") or []:
-        assert "wallets" not in lp and "repeat" not in json.dumps(lp), f"legacy_public leaks per-wallet data: {lp}"
-    print(f"ok {len(DETECTOR_KEYS)} detector/ledger key names absent from every public artifact; rewards_v2 / legacy_public carry no cap or per-wallet data")
+    assert not [k for k in rv if "cap" in k], f"rewards_v2 carries cap data: {sorted(rv)}"
+    for lp in D["infer"].get("system_topup_public") or []:
+        assert "wallets" not in lp and "repeat" not in json.dumps(lp), f"system_topup_public leaks per-wallet data: {lp}"
+    print(f"ok {len(DETECTOR_KEYS)} detector/ledger key names absent from every public artifact; rewards_v2 / system_topup_public carry no cap or per-wallet data")
+    # word-level prose checks on every page a reader can open (assembled strings);
+    # legacy.html is linked from the header, so the frozen view is policed too
+    for rel in ("index.html", "data.json", "legacy.html"):
+        text = open(os.path.join(ROOT, rel), errors="replace").read()
+        hits = [w for w in PROSE_DENIED if w.lower() in text.lower()]
+        assert not hits, f"{rel}: monitoring-status / cap / paid-vs-free prose present: {hits}"
+    for rel in ("index.html", "data.json"):
+        text = open(os.path.join(ROOT, rel), errors="replace").read()
+        # 'legacy' survives ONLY as the link to the frozen legacy.html view
+        stripped = text.replace("legacy.html", "").replace("legacy view (MOCA-only, old method)", "")
+        n = len(re.findall("legacy", stripped, re.I))
+        assert n == 0, f"{rel}: {n} 'legacy' mention(s) outside the legacy.html link"
+        # the page never says 'creators' as a count of people — wallets only
+        assert not re.search(r"\d\s+creators\b", text), f"{rel}: a count of 'creators' (should be creator wallets)"
+    print(f"ok prose: {len(PROSE_DENIED)} status/cap/paid-vs-free phrases absent; 'legacy' only in the legacy.html link; counts say creator wallets")
 
     # 2. CSV header: counterparty stays, its label column is gone
     with open(os.path.join(ROOT, "transfers_export.csv"), newline="") as fh:

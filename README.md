@@ -21,7 +21,7 @@ GitHub Actions cron (3,18,33,48 * * * *  — 4x/hour, best-effort)
        ├─ day-pinned rate oracle (day_rates.json — closed days never reprice)
        ├─ balance reconciliation (block-pinned, per-token drift fences)
        ├─ renders index.html (+ frozen legacy.html) from template.html
-       ├─ writes data.json           ← THE versioned contract (schema_version 1)
+       ├─ writes data.json           ← THE versioned contract (schema_version 3)
        ├─ writes guard_private.json  ← private (gitignored, Actions cache only)
        ├─ writes transfers_export.csv (per-tx audit: tx_hash + log_index + class)
        └─ catalog.build() → catalog.json + DATASETS.md (measured, never typed)
@@ -40,15 +40,24 @@ the era, never the run date), so `classify_usd(usd, ts)` and `band(usd, ts)`
 both take the row's timestamp:
 
 - **v1** (until 2026-08-21T13:55Z): micro <$0.06 · invoke ≈$0.10 · equip ≈$1 (±8%)
-- **pause** (to 2026-09-14T14:19Z): no reward sizes; a $1 is a **legacy free
-  top-up** (`growth`, fine `$1 top-up (legacy)`); a $0.10 is `invoke (retired)`
+- **pause** (to 2026-09-14T14:19Z): no reward sizes; a ≈$1 is a **system free
+  top-up** (`growth`, fine `$1 system free top-up` — a growth grant, not
+  creator earnings); a $0.10 is `invoke (retired)`
 - **v2** (from 2026-09-14T14:19Z, Creator Rewards v2): micro <$0.003 ·
-  invoke ≈$0.005 · equip ≈$0.05 (±12%); the $1 legacy top-up continues
+  invoke ≈$0.005 · equip ≈$0.05 (±12%); system free top-ups (≈$1) continue, rare
 - $3 credit / $5 referral (±8%) in every era
 - Stripe packs $10/$20/$25/$50/$100 matched on the **fee-adjusted** value
   (÷0.94, ±15%) — deliveries land ~6% short of the pack price
 - everything else is **nonstandard** (swaps, treasury moves) and is *excluded*
   from economy figures, reported as the "ops" residual so totals always close
+- **one grouping layer** (`classify.group_for(cat, fine)`) buckets every row
+  as `skill_rewards` (to creator wallets) · `credit_grants` ($3 / $5) ·
+  `system_topups` (≈$1) · `topups_delivered` (Stripe packs) · `ops`
+  (nonstandard) · `micro` (dust). Page tiles, the exec summary, Telegram and
+  `tests/test_parity.py` all call it — no surface hand-lists categories, and
+  the six sums close on total outflow to the cent. There is deliberately **no
+  paid-vs-free / backed-vs-unbacked split anywhere**: the chain cannot see the
+  source of a user's credit, so no figure claims to (Po rule 5, 2026-09-15)
 - pricing is **day-pinned** via `pin_rate()` (carry-forward/back), never the
   live rate — history cannot reprice with the market. Since 2026-09-14 a
   newly closed day is priced ONLY from its market close (the implied leg
@@ -77,7 +86,9 @@ in `stripe_snapshot.json`).
 | repo secrets | TELEGRAM_*, LEDGER_*, HEALTHCHECK_URL, POSTHOG_API_KEY | never in code or artifacts |
 
 CI enforces this in `check_publish.py`. `--scan` fails the run if per-wallet
-detector fields or identity strings reach a public artifact, if a detector
+detector fields, **monitoring-status counts** (`flagged_n`, `monitored_n`,
+`at_risk_usd` — private since 2026-09-15, digest-only), the cap switch-on
+instant, or identity strings reach a public artifact, if a detector
 field or a review/flagged status ever appears next to an address in one, or if
 a monitored address turns up in a **curated** surface (`DATASETS.md`,
 `README.md`, `catalog.json`, `data.json`'s registry) without being on the
@@ -107,11 +118,19 @@ is a broader surface than repo secrets — treat its contents accordingly.
 - **Retired payouts**: any transfer matching a retired category
   (`classify.RETIRED`, today the v1 $0.10 invoke after 2026-08-21T13:55Z) —
   chain-recomputed ledger in guard_private.json is the record; alert state is
-  just dedup (30d window). The legacy $1 top-up (`classify.LEGACY`) is
-  legitimate but shape-constrained; a wallet receiving a second one fires
-  the same 🧟 class
-- **Creator-reward cap (v2)**: `cap_detect.py` — per-creator clock-hour and
-  rolling-60-min unit counters (equip 1, invoke 0.1) since the 14 Sep resume;
+  just dedup (30d window). The system free top-up (`classify.SYSTEM_TOPUP`,
+  ≈$1) is legitimate but shape-constrained — one per wallet; a wallet
+  receiving a second one fires "Repeat system free top-up to one wallet"
+- **Edge alerts (2026-09-15, `alerts.py`, edge-triggered with a 24h
+  cooldown)**: *credit-grant spike* — trailing-24h credit grants ≥ $20,000
+  AND ≥ 3× the prior 24h (the 1–15 Sep replay peaked at $13,483 / 33× on the
+  11 Sep batch, so routine $3-credit batches stay silent and show in the
+  daily instead; only a runaway job fires); *first-ever creator-wallet
+  surge* — ≥ 10 wallets paid their first-ever skill reward in the trailing
+  24h AND > 50% of wallets paid in that window (replay max: 4 / 52)
+- **Creator-reward cap (v2)**: `cap_detect.py` — per-WALLET clock-hour and
+  rolling-60-min unit counters (equip 1, invoke 0.1) since the 14 Sep resume
+  (a per-wallet check is a lower bound: the chain shows wallets, not accounts);
   🔴 breach, 🟠 straddle / saturated / fan-out, 📈 pool fence, 🟠 oracle
   disagreement (grid agreement < 0.5) — all edge-triggered with cooldowns,
   Telegram + private state only; a heartbeat older than 2h turns the
@@ -134,10 +153,10 @@ entry. **If you are about to quote a number in a deck, quote the safe sentence.*
 - **Safe to say**: "The treasury sent $X of MOCA and MENTE out of this one wallet in the last 24 hours."
 
 ### `economy_out_usd` — the part of outflow that is the economy
-- **Formula**: `refresh.py:facts_window` — `sum(r["usd"] for r in rows if r["cat"] != "nonstandard")`, where `cat` comes from `classify.py:classify_usd`.
+- **Formula**: `refresh.py:facts_window` — `sum(r["usd"] for r in rows if r["cat"] != "nonstandard")`, where `cat` comes from `classify.py:classify_usd`. Equals every group below except `ops`.
 - **Source**: same rows as `out_usd`. **Coverage**: same windows.
-- **Bias**: membership is inferred from **transfer size**, not from a platform event. A swap that happens to land on $1.00 is counted as an equip.
-- **Safe to say**: "Of that, $Y was payout-shaped activity — invokes, equips, incentives and top-up deliveries."
+- **Bias**: membership is inferred from **transfer size**, not from a platform event. A swap that happens to land on $1.00 is counted as a payout.
+- **Safe to say**: "Of that, $Y was payout-shaped activity — skill rewards, credit grants, system free top-ups and top-up deliveries."
 
 ### `ops_out_usd` — the residual
 - **Formula**: `refresh.py:facts_window` — `out_usd - economy_out_usd`. Computed as a residual **by design**, so the two always sum to the total exactly.
@@ -145,29 +164,23 @@ entry. **If you are about to quote a number in a deck, quote the safe sentence.*
 - **Bias**: it is a residual, not a measurement. Anything mis-sized out of the economy lands here; a negative value would mean a basis mismatch and is flagged, never printed.
 - **Safe to say**: "The rest was treasury logistics — swaps and internal moves, not user activity."
 
-### `usd_ce` — paid to creators
-- **Formula**: `notify.py:win` — `sum(usd for rows classified invoke or equip)` on the row's own era grid (`classify.ERAS`: $0.10 / $1 until 2026-08-21T13:55Z, $0.005 / $0.05 from 2026-09-14T14:19Z); the page's parity check is `tests/test_parity.py`.
-- **Source**: `transfers/` priced day-pinned. **Coverage**: 24h (hourly/daily digest) or 7d (weekly digest), plus all-time.
-- **Bias**: matched at ±8% (v1) / ±12% (v2) of the day-pinned USD. **Excludes the $1 legacy free top-ups** paid after 2026-08-21T13:55Z (those are `growth`), so all-time and window figures are not the same mix; the 08-21 $1 rows before the v1 close stay creator earnings.
-- **Safe to say**: "$Z went to creator wallets for skill invokes and equips in the period."
-
-### `usd_incent` — incentive spend
-- **Formula**: `notify.py:win` — `sum(usd)` over rows whose fine class is `$3 credit`, `referral $5` or `$1 top-up (legacy)` (`classify.INCENT`, ±8%; the $1 fine only after 2026-08-21T13:55Z).
-- **Source**: `transfers/` priced day-pinned. **Coverage**: 24h / 7d.
-- **Bias**: size-inferred. A $3 payout that was not a credit is counted; a credit paid at an unusual size is not.
-- **Safe to say**: "$W of growth incentives were paid out — $3 credits, $5 referrals and $1 legacy free top-ups."
+### `groups` — where the outflow went (the one grouping layer)
+- **Formula**: `refresh.py:facts_window` — `data.json:facts.windows[].groups[g] = {n, usd, wallets}` for `g` in `skill_rewards` · `credit_grants` · `system_topups` · `topups_delivered` · `ops` · `micro`, each row assigned by `classify.group_for(cat, fine)`. The six sums close on `out_usd` to the cent; the non-ops five close on `economy_out_usd` (`tests/test_parity.py`).
+- **Source**: `transfers/` priced day-pinned. **Coverage**: every window, every month.
+- **Bias**: size-inferred on the row's own era grid (±8% v1 / ±12% v2). `skill_rewards` = invoke/equip-sized rows **to creator wallets** (a creator may hold several wallets); `credit_grants` = `$3 credit` + `referral $5`; `system_topups` = the ≈$1 `$1 system free top-up` after 2026-08-21T13:55Z (a growth grant, not creator earnings); `topups_delivered` = Stripe-pack-sized deliveries (size-inferred, may include coupon-delivered credits — **not** verified revenue); `micro` = sub-floor dust, shown only when non-zero.
+- **Safe to say**: "$A went to creator wallets as skill rewards, $B was credit grants to users, $C system free top-ups, $D top-ups delivered, $E ops."
 
 ### `rewards_v2` — Creator Rewards v2 (from 2026-09-14T14:19Z)
-- **Formula**: `refresh.py` — `data.json:facts.rewards_v2`: `usd_24h` / `usd_since_resume` = `sum(usd)` over rows since the resume whose fine class is `equip` or `invoke`; `n_equip_24h`, `n_invoke_24h`, `creators_24h` (distinct recipient wallets); `implied_user_spend_24h = 2 × usd_24h`.
+- **Formula**: `refresh.py` — `data.json:facts.rewards_v2`: `usd_24h` / `usd_since_resume` = `sum(usd)` over rows since the resume whose fine class is `equip` or `invoke`; `n_equip_24h`, `n_invoke_24h`, `creator_wallets_24h`, `creator_wallets_since_resume` (distinct recipient wallets); `grid` = the era's reward sizes from `classify.ERAS`.
 - **Source**: `transfers/` priced day-pinned. **Coverage**: 24h and since the resume.
-- **Bias**: size-inferred at ±12%. `implied_user_spend_24h` is **AI-inferred**: rewards are 50% of the $0.10 equip / $0.01 invoke user price, and the chain cannot tell whether the user's credit was paid or gifted — **users may spend gifted credits**, so it is never revenue and never "self-funded".
-- **Safe to say**: "Creators earned $Z, paid at half the user price — self-funding holds only to the extent those credits were paid, not gifted." The per-creator hourly cap is never quoted with a figure from the page.
+- **Bias**: size-inferred at ±12%; per **wallet**, not per creator. Carries no cap figure, no cap instant, no headroom and no implied user spend (the chain cannot see how a user's credit was funded, so no figure reasons about it).
+- **Safe to say**: "Creator wallets earned $Z at half the user price since the 14 Sep resume." Never quote a cap figure from the page.
 
-### `usd_topup` — top-ups delivered
-- **Formula**: `notify.py:win` — `sum(usd)` over rows whose fine class starts `stripe $` (`classify.classify_usd`: value ÷ 0.94 within ±15% of $10/$20/$25/$50/$100).
-- **Source**: `transfers/` priced day-pinned. **Coverage**: 24h / 7d. Verified counterpart: `stripe_snapshot.json` (one-time).
-- **Bias**: **size-inferred, may include coupon-delivered credits — NOT verified revenue.** The Stripe ledger is not read. `data.json:server.diverge_usd` tracks the open gap against PostHog.
-- **Safe to say**: "$V of flows were Stripe-pack-sized deliveries. That is a size inference, not booked revenue."
+### `creator_wallets` — top creator wallets, four windows
+- **Formula**: `refresh.py` — `data.json:facts.creator_wallets.windows[w]` for `w` in `24h` · `7d` · `since_resume` (page default) · `all`: skill-reward rows grouped per recipient wallet → `wallets`, `usd`, `equips`, `invokes`, `top1/top5/top10_share_pct`, `median_usd` (null when fewer than 10 wallets), `new_wallets` (24h/7d only: first-ever reward inside the window) and a `top` list of 10 `{addr, usd, equips, invokes, first_seen}` (first_seen at **day** grain).
+- **Source**: `transfers/` priced day-pinned. **Coverage**: the four windows; `all` spans **both** reward eras (v1 $1 equip / $0.10 invoke to 2026-08-21T13:55Z, so wallets paid at those larger sizes rank high there).
+- **Bias**: per wallet, never per creator; never appended to `stats_history.json`; no hourly figure of any kind.
+- **Safe to say**: "N creator wallets were paid in the window; the top wallet took X% of it."
 
 ### wallet balance
 - **Formula**: `refresh.py:balance_at` — `eth_call` `balanceOf` per token at latest block, USD at the live rate; block-pinned copy at `RECON_BLOCK` drives the drift fence.
@@ -175,23 +188,11 @@ entry. **If you are about to quote a number in a deck, quote the safe sentence.*
 - **Bias**: **this wallet only.** Other Minds treasury wallets (incl. the rebate sink) are out of scope. On a failed fetch the digest falls back to the last non-null snapshot and marks it stale.
 - **Safe to say**: "The distribution wallet holds about $B across MOCA and MENTE — this wallet only, not all of Minds."
 
-### subsidy ratio
-- **Formula**: `refresh.py` — `unbacked_7d / ph_topup_usd`, where `unbacked_7d` is invoke/equip/growth USD excluding Stripe-sized rows over the last 7 **settled** platform days, and `ph_topup_usd` is PostHog's top-up revenue for the same days (`data.json:server.subsidy_ratio`).
-- **Source**: `transfers/` + `posthog_cache.json`. **Coverage**: trailing 7 settled days; weekly trend in `server.ratio_weeks`.
-- **Bias**: the denominator is client-side PostHog events, which are lossy — `server.diverge_meta` documents the open reconciliation. A lossy denominator **overstates** the ratio.
-- **Safe to say**: "For every $1 of top-up revenue we saw last week, roughly $R of unbacked payouts went out — the revenue side is a lossy client-side count, so treat it as an upper bound on the subsidy."
-
-### user-funded cognition lower bound
-- **Formula**: `refresh.py` — per mind wallet, `max(0, consumed_usd - treasury_credits_usd)`, summed (`data.json:facts.cognition.funding_split.user_funded_usd`; SWARM era in `swarm_split`).
-- **Source**: `cognition_in/` (MENTE into the collector) + `transfers/` credits. **Coverage**: 2026-04-12 → now.
-- **Bias**: **a strict LOWER bound.** Credits are assumed spent first, so any user-brought token that a credit could have covered is attributed to the treasury.
-- **Safe to say**: "At least $U of cognition was paid for with tokens users brought themselves. The real figure is higher — we cannot see how much."
-
-### distribution float / runway
-- **Formula**: `refresh.py` — `runway7 = bal_usd / burn7avg`, `runway24 = bal_usd / burn24` (`data.json:infer.guard.runway7` / `runway24`); the digest prints the lower of the two.
-- **Source**: wallet balance + day-pinned outflow history. **Coverage**: trailing 24h and 7d burn.
+### distribution float / runway — ONE number, total-outflow basis
+- **Formula**: `refresh.py` — `data.json:facts.float`: `days_7d_pace = bal_usd / out_7d_avg_usd` (the headline everywhere: exec summary, hero strip, tile, Telegram) and `days_24h_pace = bal_usd / out_24h_usd` (yesterday's pace); `driver_24h` names the group that dominated the last 24h. `out_*` are **total** outflow (every category), never an "unbacked" subset. `stats_history.runway7` carries `days_7d_pace` from 2026-09-15.
+- **Source**: wallet balance + day-pinned outflow history. **Coverage**: trailing 24h and 7d.
 - **Bias**: **top-up cadence, not solvency.** It measures how long this one wallet lasts before someone refills it — it says nothing about company runway, and a single large swap in the window collapses it.
-- **Safe to say**: "At the current pace this wallet has about N days before it needs a top-up. That is a refill schedule, not a solvency number."
+- **Safe to say**: "At the 7-day pace this wallet has about N days before it needs a top-up. That is a refill schedule, not a solvency number."
 
 ## Data catalog
 

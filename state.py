@@ -24,10 +24,13 @@ def load():
         return {}
 
 
-def update(mutation):
-    """Merge mutation onto the latest on-disk state, atomically."""
+def update(mutation, drop=()):
+    """Merge mutation onto the latest on-disk state, atomically. `drop` names
+    keys to remove (a merge alone can never retire a renamed key)."""
     st = load()
     st.update(mutation)
+    for k in drop:
+        st.pop(k, None)
     tmp = PATH + ".tmp"
     with open(tmp, "w") as fh:
         json.dump(st, fh)

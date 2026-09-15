@@ -21,16 +21,29 @@ Taxonomy (per era e = era_for(ts)):
   invoke/equip within e.reward_tol of e.rewards  fine == coarse
   invoke       ~= $0.10 (±8%) AFTER v1 closed     fine "invoke (retired)"
                (coarse stays "invoke": economy-side, digest-neutral)
-  growth       ~= $1 (±8%) AFTER v1 closed        fine "$1 top-up (legacy)"
+  growth       ~= $1 (±8%) AFTER v1 closed        fine "$1 system free top-up"
   growth       ~= $3/$5 (±8%)                     fine "$3 credit" / "referral $5"
   growth       Stripe pack: usd/NET_OF_FEES within ±15% of $10/$20/$25/$50/$100
                (deliveries land ~6% short of the pack price — the processor's
                cut; snapshot fee rate 7.2%)     fine "stripe $N"
   nonstandard  everything else                    fine "nonstandard (small|large)"
+
+GROUPS (2026-09-15 iteration, Po rule 5): every public rollup — page tiles,
+exec summary, Telegram lines, CSV readers — buckets rows through group_for()
+and never by hand-listing categories. The six groups partition every row, so
+their sums close on total outflow to the cent (tests/test_parity.py):
+  skill_rewards    invoke / equip (creator-wallet rewards, any era)
+  credit_grants    $3 credit · referral $5
+  system_topups    the ≈$1 system free top-up (after the v1 close)
+  topups_delivered Stripe-pack-sized deliveries
+  ops              nonstandard (swaps, treasury moves)
+  micro            sub-floor dust (counted inside economy, shown only if non-zero)
+There is deliberately NO paid-vs-free / backed-vs-unbacked split anywhere:
+the chain cannot see the source of a user's credit, so no figure claims to.
 """
 
 PACKS = (10, 20, 25, 50, 100)
-INCENT = ((1, "$1 top-up (legacy)"), (3, "$3 credit"), (5, "referral $5"))
+INCENT = ((1, "$1 system free top-up"), (3, "$3 credit"), (5, "referral $5"))
 NET_OF_FEES = 0.94
 PACK_TOL = 0.15
 GRID_TOL = 0.08
@@ -49,13 +62,13 @@ STRIPE_FINE = tuple(f"stripe ${p}" for p in PACKS)
 ERAS = (
     {"from": "0000-00-00T00:00", "name": "v1",
      "rewards": {"invoke": 0.10, "equip": 1.0}, "reward_tol": GRID_TOL,
-     "micro_lt": 0.06, "legacy_topup": None},
+     "micro_lt": 0.06, "system_topup": None},
     {"from": "2026-08-21T13:55", "name": "pause",
      "rewards": {}, "reward_tol": GRID_TOL,
-     "micro_lt": 0.06, "legacy_topup": 1.0},
+     "micro_lt": 0.06, "system_topup": 1.0},
     {"from": "2026-09-14T14:19", "name": "v2",
      "rewards": {"invoke": 0.005, "equip": 0.05}, "reward_tol": V2_TOL,
-     "micro_lt": 0.003, "legacy_topup": 1.0},
+     "micro_lt": 0.003, "system_topup": 1.0},
 )
 PAUSED_UTC = ERAS[1]["from"]           # v1 rewards stopped
 RESUMED_UTC = ERAS[2]["from"]          # v2 rewards started
@@ -132,11 +145,11 @@ def classify_usd(usd, ts):
         # digests (economy/ops split on cat != nonstandard) keep their sha;
         # the fine label is what the tripwire and fine_table show
         return "invoke", "invoke (retired)", None
-    if e["legacy_topup"] and _snap(usd, (e["legacy_topup"],), GRID_TOL) is not None:
+    if e["system_topup"] and _snap(usd, (e["system_topup"],), GRID_TOL) is not None:
         return "growth", INCENT[0][1], 1
     for amt, fine in INCENT:
         if amt == 1:
-            continue            # assigned only by the legacy step above
+            continue            # assigned only by the system-top-up step above
         if _snap(usd, (amt,), GRID_TOL) is not None:
             return "growth", fine, amt
     pack = _snap(usd / NET_OF_FEES, PACKS, PACK_TOL)
@@ -149,15 +162,43 @@ def classify_usd(usd, ts):
 # auditable ledger): key -> {cutoff (ISO, UTC — same boundary the classifier
 # uses), nominal $ size, recall tolerance}. DERIVED meaning: a reward size of a
 # closed era that is not a legal size in the current era. Only the v1 $0.10
-# invoke qualifies today (the v1 $1 equip size lives on as the legacy top-up
-# below). Detection wants recall (±15%), wider than the page's ±8%.
+# invoke qualifies today (the v1 $1 equip size lives on as the system free
+# top-up below). Detection wants recall (±15%), wider than the page's ±8%.
 RETIRED = {"invoke_v1": {"cutoff": PAUSED_UTC, "point": 0.10, "tol": 0.15}}
 RETIRED_LABEL = {"invoke_v1": "$0.10 invoke"}
 
-# Legacy streams that are legitimate but shape-constrained. The per-wallet
-# rule is a private invariant (alerts.py); the public page gets aggregates.
-LEGACY = {"topup1": {"since": PAUSED_UTC, "point": 1.0, "tol": 0.15,
-                     "fine": INCENT[0][1], "max_per_wallet": 1}}
+# System free top-ups: legitimate but shape-constrained (the platform grants
+# one ≈$1 free top-up per wallet). The per-wallet rule is a private invariant
+# (alerts.py); the public page gets aggregates only.
+SYSTEM_TOPUP = {"topup1": {"since": PAUSED_UTC, "point": 1.0, "tol": 0.15,
+                           "fine": INCENT[0][1], "max_per_wallet": 1}}
+
+# ---- the one grouping layer (see docstring) ----
+GROUP_LABEL = {"skill_rewards": "Skill rewards", "credit_grants": "Credit grants",
+               "system_topups": "System free top-ups", "topups_delivered": "Top-ups delivered",
+               "ops": "Ops", "micro": "Dust"}
+GROUP_KEYS = list(GROUP_LABEL)
+# public sub-labels (who receives what) — the vocabulary every surface uses
+GROUP_TO = {"skill_rewards": "to creator wallets", "credit_grants": "to users",
+            "system_topups": "to users", "topups_delivered": "to users",
+            "ops": "swaps / treasury moves", "micro": "sub-floor transfers"}
+
+
+def group_for(cat, fine):
+    """(coarse, fine) from classify_usd -> one GROUP_KEYS member. Total: every
+    row lands in exactly one group, so per-window group sums close on
+    out_usd; economy_out_usd == every group except `ops`."""
+    if cat in ("invoke", "equip"):
+        return "skill_rewards"
+    if cat == "micro":
+        return "micro"
+    if cat == "nonstandard":
+        return "ops"
+    if fine == INCENT[0][1]:
+        return "system_topups"
+    if fine in STRIPE_FINE:
+        return "topups_delivered"
+    return "credit_grants"
 
 
 def pin_rate(day_rates, day, fallback):
