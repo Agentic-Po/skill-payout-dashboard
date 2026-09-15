@@ -44,7 +44,7 @@ Rows, bytes and coverage are measured off the files, never asserted.
 
 | Dataset | Path | Rows | Size | Coverage | Cadence |
 |---|---|---:|---:|---|---|
-| `day_rates` | `day_rates.json` | 147 | 35.3 KB | 2026-04-24 → 2026-09-14 | one immutable entry per token per day |
+| `day_rates` | `day_rates.json` | 147 | 35.2 KB | 2026-04-24 → 2026-09-14 | one immutable entry per token per day |
 
 **`day_rates`** — day_rates[symbol][YYYY-MM-DD] -> USD rate; day_rate_src[symbol][YYYY-MM-DD] -> 'implied'|'market'; plus last_accepted_rate, recon, pending_rate, open_day_rate, market_rates, coupon.next_block (the coupon crawl's per-direction block cursor)
 
@@ -104,11 +104,5 @@ they feed.
 
 ## peer repo — Agentic-Po/moca-ledger
 
-Fetched from `catalog.json` at build time: **239,956 rows · 60.5 MB across 3 datasets**.
-
-| Dataset | Rows | Size | Coverage |
-|---|---:|---:|---|
-| `ledger` | 239,854 | 60.5 MB | 2026-07-06 → 2026-09-15 |
-| `labels` | 101 | 5.5 KB | 2026-08-22 → 2026-08-22 |
-| `heartbeat` | 1 | 511 B | 2026-09-15 → 2026-09-15 |
+_peer catalog unavailable this run_ (not fetched).
 

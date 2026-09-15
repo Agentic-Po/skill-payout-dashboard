@@ -481,6 +481,12 @@ phase("setup+treasury_crawl")
 # how far a live quote may sit from the latest market close before it is
 # treated as stale rather than as a price move (see the blockscout note below)
 MARKET_AGREE = 0.06
+# first day an implied rate can collide with creator-reward sizes ($0.05 equip)
+IMPLIED_NEEDS_MARKET_FROM = "2026-09-14"
+try:
+    _SEALED = set(json.load(open(os.path.join(HERE, "day_digests.json"))))
+except (OSError, ValueError):
+    _SEALED = set()
 RATE, RATE_SRC, BALANCE, DECIMALS = {}, {}, {}, {}
 if OFFLINE:
     # the run that published data.json already validated these — reuse them
@@ -722,14 +728,43 @@ for sym in TOKENS:
             by_day[r["ts"][:10]].append(r["val"])
     ref = RATE[sym]
     today_utc = utcnow().strftime("%Y-%m-%d")
+    mkt = STATE["market_rates"].get(sym) or {}
+    # Self-heal: an implied rate on/after IMPLIED_NEEDS_MARKET_FROM that
+    # disagrees with its day's market close is the $0.05-equip collision (see
+    # below), not a price. While the day is UNSEALED it is dropped and
+    # re-derived; sealed days stay final (digests.enforce would hard-fail).
+    for d in [k for k, v in persisted.items()
+              if k >= IMPLIED_NEEDS_MARKET_FROM and k not in _SEALED
+              and src.get(k) == "implied" and mkt.get(k)
+              and abs(v / mkt[k] - 1) > MARKET_AGREE]:
+        print(f"DATA-QUALITY: {sym} {d} unsealed implied rate {persisted[d]} "
+              f"disagrees with market close {mkt[d]} — dropped, re-deriving")
+        del persisted[d]
+        src.pop(d, None)
+    _od = (STATE.get("open_day_rate") or {}).get(sym)
+    if _od and _od["d"] >= IMPLIED_NEEDS_MARKET_FROM and not (
+            mkt.get(_od["d"]) and abs(_od["rate"] / mkt[_od["d"]] - 1) <= MARKET_AGREE):
+        print(f"DATA-QUALITY: {sym} open-day implied rate {_od['rate']} for {_od['d']} "
+              f"has no agreeing market close — dropped")
+        STATE["open_day_rate"].pop(sym)
     for d in sorted(by_day, reverse=True):
         if d in persisted:
             ref = persisted[d]
             continue
         target = 0.10 / ref
         seed = [v for v in by_day[d] if target / 2.5 < v < target * 2.5]
-        if len(seed) >= 5:
-            ref = 0.10 / statistics.median(seed)
+        cand = 0.10 / statistics.median(seed) if len(seed) >= 5 else None
+        # The implied leg reads a >=5-row cluster near $0.10 as invokes. Creator
+        # rewards resumed at $0.05/equip on 2026-09-14 14:21 UTC; that cluster
+        # is equips and back-solved exactly 2x the market close. From then on an
+        # implied rate must agree with the day's market close to be accepted.
+        if cand is not None and d >= IMPLIED_NEEDS_MARKET_FROM and not (
+                mkt.get(d) and abs(cand / mkt[d] - 1) <= MARKET_AGREE):
+            print(f"DATA-QUALITY: {sym} {d} implied rate {cand:.8g} rejected "
+                  f"(market close {mkt.get(d)})")
+            cand = None
+        if cand is not None:
+            ref = cand
             if d == today_utc:
                 STATE.setdefault("open_day_rate", {})[sym] = {"d": d, "rate": round(ref, 10)}
             else:

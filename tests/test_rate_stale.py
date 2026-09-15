@@ -34,4 +34,19 @@ for sym, live in D["facts"]["rate"].items():
     assert mkt * (1 - band) < live < mkt * (1 + band), \
         f"published {sym} rate {live} disagrees with market close {mkt} by more than {band:.0%}"
     print(f"ok {sym} live {live} within {band:.0%} of market close {mkt}")
+# 2026-09-14: the implied oracle read the new $0.05 equips as $0.10 invokes and
+# persisted MOCA at exactly 2x the market close. From that day on every
+# persisted day rate (and any open-day rate) must agree with its market close.
+FROM = re.search(r'^IMPLIED_NEEDS_MARKET_FROM\s*=\s*"([\d-]+)"', src, re.M).group(1)
+for sym, days in S["day_rates"].items():
+    mrs = (S.get("market_rates") or {}).get(sym) or {}
+    for d, v in days.items():
+        if d >= FROM and mrs.get(d):
+            assert abs(v / mrs[d] - 1) <= band, \
+                f"{sym} {d} day rate {v} disagrees with market close {mrs[d]} (2x-oracle class)"
+    od = (S.get("open_day_rate") or {}).get(sym)
+    if od and od["d"] >= FROM:
+        assert mrs.get(od["d"]) and abs(od["rate"] / mrs[od["d"]] - 1) <= band, \
+            f"{sym} open-day rate {od} has no agreeing market close"
+print(f"ok day rates from {FROM} agree with market closes")
 print("test_rate_stale: PASS")
