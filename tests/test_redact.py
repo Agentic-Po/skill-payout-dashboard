@@ -28,6 +28,15 @@ AUDIT_FRAGS = ["DAT top" + " ups requested", "381," + "774"]
 NAME_RES = [re.compile("ja" + "son" + r"\s+o" + "ng", re.I),
             re.compile("kat" + "herine" + r"\s+w" + "ebb", re.I)]
 DENIED_SUBSTRINGS = [CUSTODIAN, MIND, MIMIC_OF] + AUDIT_FRAGS
+# Creator Rewards v2 (2026-09-15): cap / sybil detector state and the legacy
+# top-up ledger are calibration oracles — key names as EMITTED, never in any
+# public artifact. No bare "4.00" substring test: it would match $14.00 and
+# any rate ending in 4.00; the key-name assertions are the guard.
+DETECTOR_KEYS = ["cap_table", "cap_hits", "cap_probe", "cap_state", "max_h60_units",
+                 "max_clock_units", "hours_at_90pct", "fanout_hours", "grid_agreement",
+                 "legacy_ledger", "repeat_wallets"]
+PUBLIC_ARTIFACTS = ("data.json", "index.html", "legacy.html", "coupon_data.json",
+                    "transfers_export.csv")
 
 
 def _clean(rel):
@@ -46,6 +55,19 @@ def main():
     D = json.load(open(os.path.join(ROOT, "data.json")))
     assert D.get("schema_version") == 2, "data.json is not the v2 (redacted) contract"
     print("ok data.json schema_version == 2")
+    for rel in PUBLIC_ARTIFACTS:
+        p = os.path.join(ROOT, rel)
+        if not os.path.exists(p):
+            continue
+        text = open(p, errors="replace").read()
+        hits = [k for k in DETECTOR_KEYS if k in text]
+        assert not hits, f"{rel}: detector/ledger key(s) {hits} reached a public artifact"
+    # the public rewards block carries no cap data of any kind
+    rv = D["facts"].get("rewards_v2") or {}
+    assert not [k for k in rv if "cap" in k and k != "cap_on_utc"], f"rewards_v2 carries cap data: {sorted(rv)}"
+    for lp in D["infer"].get("legacy_public") or []:
+        assert "wallets" not in lp and "repeat" not in json.dumps(lp), f"legacy_public leaks per-wallet data: {lp}"
+    print(f"ok {len(DETECTOR_KEYS)} detector/ledger key names absent from every public artifact; rewards_v2 / legacy_public carry no cap or per-wallet data")
 
     # 2. CSV header: counterparty stays, its label column is gone
     with open(os.path.join(ROOT, "transfers_export.csv"), newline="") as fh:

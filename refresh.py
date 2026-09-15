@@ -16,7 +16,8 @@ import csv, json, math, os, statistics, sys, time, urllib.request
 import posthog_source
 import shards
 # taxonomy lives in classify.py — the ONE classifier shared with notify/alerts
-from classify import band, classify_usd, pin_rate, BAND_LABEL, BAND_KEYS, STRIPE_FINE
+from classify import (band, classify_usd, pin_rate, era_for, BAND_LABEL, BAND_KEYS, STRIPE_FINE,
+                      RETIRED, LEGACY, RESUMED_UTC, CAP_ON_UTC)
 from datetime import datetime, timezone, timedelta
 from collections import Counter, defaultdict
 
@@ -509,10 +510,16 @@ for sym, t in ([] if OFFLINE else list(TOKENS.items())):
         # ~0.00845 — an 8-11% error that moved the published balance ~$3-4K
         # every time the run flipped between this source and DexScreener).
         # A quote is only trusted if it agrees with the most recent market
-        # close (GeckoTerminal daily, already fetched) within MARKET_AGREE.
+        # print banked by the previous run (GeckoTerminal daily) within
+        # MARKET_AGREE: today's running candle (STATE["market_open"]) when it
+        # is today's, else the last CLOSED day — market_rates holds closes
+        # only now, and yesterday's close can be 24h+ old.
         _mkt = None
         _mrs = (STATE.get("market_rates") or {}).get(sym) or {}
-        if _mrs:
+        _mo = (STATE.get("market_open") or {}).get(sym) or {}
+        if _mo.get("d") == utcnow().strftime("%Y-%m-%d") and _mo.get("close"):
+            _mkt = _mo["close"]
+        elif _mrs:
             _mkt = _mrs[max(_mrs)]
         if _mkt and not (_mkt * (1 - MARKET_AGREE) < r < _mkt * (1 + MARKET_AGREE)):
             print(f"{sym} rate rejected as stale: blockscout {r} vs market close {_mkt}")
@@ -641,21 +648,58 @@ MARKET_POOLS = {
     "MOCA":  [("0x2a5eeea4d91042f779ee6014f4f6fd41f375262d", "base")],
 }
 STATE.setdefault("market_rates", {})
+STATE.setdefault("market_open", {})
+# CLOSED candles only (2026-09-15). Until then mr[day] was written for any
+# day absent from market_rates — including today's partial candle at ~00:12
+# UTC — and then frozen. Because the refetch trigger was satisfied by that
+# partial print for today AND tomorrow, a fetch landed every second day and
+# banked D-1 (a true close) + D (a partial): alternating, so a market_rates
+# value first committed on its own day D is an open+~12min print (auditors:
+# `git log -S` on day_rates.json). Closed days never reprice, so those values
+# stand and are stamped below; from MARKET_CLOSED_FROM a day is banked only
+# after it closes, and today's running candle lives in STATE["market_open"]
+# (overwritten every online run, never banked).
+MARKET_CLOSED_FROM = "2026-09-16"
+MARKET_OPEN_REFRESH_MIN = 55
+STATE["market_rates_note"] = {
+    "open12_through": "2026-09-15",
+    "note": "values for days through 2026-09-15 were banked by the first fetch after 00:00 UTC of "
+            "the day they were first committed; a day first committed on its own date is an "
+            "open+~12min print, not a close (alternating days — derive the list with git log -S). "
+            f"From {MARKET_CLOSED_FROM} a day is banked only after it closes; today's running candle "
+            "is market_open and is never banked."}
 try:
-    from datetime import datetime as _dt
+    _mkt_today = utcnow().strftime("%Y-%m-%d")
+    _mkt_yday = (utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+    for sym in MARKET_POOLS:
+        mr = STATE["market_rates"].setdefault(sym, {})
+        # migration (runs offline too): a partial print of TODAY banked by the
+        # old code is not a close — move it to market_open (fetched stamp
+        # unknown, so the online path refreshes it immediately).
+        if _mkt_today in mr:
+            _mo_old = STATE["market_open"].get(sym) or {}
+            if _mo_old.get("d") != _mkt_today:
+                STATE["market_open"][sym] = {"d": _mkt_today, "close": mr[_mkt_today], "fetched": None}
+            del mr[_mkt_today]
+            print(f"{sym}: market_rates[{_mkt_today}] was today's partial print — moved to market_open")
     # offline: no OHLCV refetch — the oracle's market leg runs on the closes
     # already banked in day_rates.json's market_rates.
     for sym, pools in ([] if OFFLINE else list(MARKET_POOLS.items())):
-        mr = STATE["market_rates"].setdefault(sym, {})
-        # 1 day, not 3: the oracle's market leg can only fill YESTERDAY if
-        # yesterday's close is already banked, so the refetch trigger has to be
-        # tighter than the gap it is meant to close.
-        need_recent = (_dt.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
-        if not any(d >= need_recent for d in mr):
+        mr = STATE["market_rates"][sym]
+        mo = STATE["market_open"].get(sym) or {}
+        _fetched = mo.get("fetched")
+        _open_stale = (mo.get("d") != _mkt_today or not _fetched
+                       or (datetime.now(timezone.utc) - datetime.fromisoformat(_fetched.rstrip("Z"))
+                           .replace(tzinfo=timezone.utc)).total_seconds() > MARKET_OPEN_REFRESH_MIN * 60)
+        # refetch when yesterday's close is not banked yet OR today's running
+        # candle is missing/stale. limit=3 is enough for that; 120 only makes
+        # sense on a cold market_rates.
+        if _mkt_yday not in mr or _open_stale:
             merged = {}
+            limit = 120 if len(mr) < 30 else 3
             for pool, side in pools:
                 try:
-                    dd = get(f"https://api.geckoterminal.com/api/v2/networks/base/pools/{pool}/ohlcv/day?limit=120&token={side}")
+                    dd = get(f"https://api.geckoterminal.com/api/v2/networks/base/pools/{pool}/ohlcv/day?limit={limit}&token={side}")
                     for ts, o, h, l, c, v in dd["data"]["attributes"]["ohlcv_list"]:
                         day = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
                         if day not in merged or v > merged[day][1]:
@@ -664,8 +708,14 @@ try:
                 except Exception as e:
                     print(sym, pool, "ohlcv failed:", e)
             for day, (c, v) in merged.items():
-                if day not in mr and c:
-                    mr[day] = round(c, 8)
+                if not c:
+                    continue
+                if day < _mkt_today:
+                    if day not in mr:
+                        mr[day] = round(c, 8)          # closed candle: banked once
+                elif day == _mkt_today:
+                    STATE["market_open"][sym] = {"d": day, "close": round(c, 8),
+                                                 "fetched": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
 except Exception as e:
     print("market rate fetch failed:", e)
 
@@ -717,6 +767,52 @@ def _market_band(day, known):
 
 MARKET_REFUSED = []              # (sym, day, why, close, anchor_day, anchor_rate, gap)
 STATE.setdefault("day_rate_src", {})
+
+
+def _price_day(d, vals, ref, mkt_close, persisted, today_utc, open_close=None):
+    """The one per-day pricing decision, as a pure function so
+    tests/test_rate_stale.py can feed it a synthetic 2x cluster.
+
+    -> (kind, rate). kind is one of
+       "implied"          history only: d < IMPLIED_NEEDS_MARKET_FROM and a
+                          >=5-row $0.10 cluster back-solves a rate
+       "market"           the day's close, inside the gap-scaled band
+       "market-open"      d == today: today's running candle inside ×1.10 of
+                          the calendar-nearest known day
+       "market-rejected"  close outside the band (refused, stamped)
+       "market-unbanded"  no defensible anchor (refused, stamped)
+       "carry-forward"    nothing to price with: pin_rate carries forward
+    The implied leg is RETIRED as a pricer from IMPLIED_NEEDS_MARKET_FROM: it
+    back-solves from rows the reward engine emits (rows a farmer can shape)
+    and cannot tell $0.10@r from $0.05@2r — which is exactly how 2026-09-14
+    was priced 2.00x wrong. Market close is the only source for new closed
+    days; grid knowledge lives in classify.py as a validator (grid agreement).
+    """
+    if d == today_utc:
+        if open_close:
+            mb = _market_band(d, persisted)
+            if mb is not None and mb[2] <= MARKET_MAX_GAP_DAYS and \
+                    mb[1] / mb[3] < open_close < mb[1] * mb[3]:
+                return "market-open", round(open_close, 10)
+        return "carry-forward", None
+    if d < IMPLIED_NEEDS_MARKET_FROM:
+        target = 0.10 / ref
+        seed = [v for v in vals if target / 2.5 < v < target * 2.5]
+        if len(seed) >= 5:
+            return "implied", round(0.10 / statistics.median(seed), 10)
+    if not mkt_close:
+        return "carry-forward", None
+    mb = _market_band(d, persisted)
+    if mb is None:
+        return "market-unbanded", None
+    adj, arate, gap, factor = mb
+    if gap > MARKET_MAX_GAP_DAYS:
+        return "market-unbanded", None
+    if arate / factor < mkt_close < arate * factor:
+        return "market", round(mkt_close, 10)
+    return "market-rejected", None
+
+
 for sym in TOKENS:
     persisted = STATE["day_rates"][sym]
     src = STATE["day_rate_src"].setdefault(sym, {})
@@ -741,62 +837,46 @@ for sym in TOKENS:
               f"disagrees with market close {mkt[d]} — dropped, re-deriving")
         del persisted[d]
         src.pop(d, None)
-    _od = (STATE.get("open_day_rate") or {}).get(sym)
-    if _od and _od["d"] >= IMPLIED_NEEDS_MARKET_FROM and not (
-            mkt.get(_od["d"]) and abs(_od["rate"] / mkt[_od["d"]] - 1) <= MARKET_AGREE):
-        print(f"DATA-QUALITY: {sym} open-day implied rate {_od['rate']} for {_od['d']} "
-              f"has no agreeing market close — dropped")
-        STATE["open_day_rate"].pop(sym)
-    for d in sorted(by_day, reverse=True):
+    # The open-day rate is RECOMPUTED every run from today's running market
+    # candle (STATE["market_open"], §2.3) — never carried from a previous
+    # run's implied leg. This subsumes the hotfix's open-day drop: an entry
+    # that has no agreeing market print simply is not produced.
+    STATE.setdefault("open_day_rate", {}).pop(sym, None)
+    _mo = STATE["market_open"].get(sym) or {}
+    _open_close = _mo.get("close") if _mo.get("d") == today_utc else None
+    # days to decide: every day with rows, plus today (the open-day rule
+    # needs no rows to stamp its provenance) — newest first so the implied
+    # history leg keeps its backward-walk anchor
+    for d in sorted(set(by_day) | {today_utc}, reverse=True):
         if d in persisted:
             ref = persisted[d]
             continue
-        target = 0.10 / ref
-        seed = [v for v in by_day[d] if target / 2.5 < v < target * 2.5]
-        cand = 0.10 / statistics.median(seed) if len(seed) >= 5 else None
-        # The implied leg reads a >=5-row cluster near $0.10 as invokes. Creator
-        # rewards resumed at $0.05/equip on 2026-09-14 14:21 UTC; that cluster
-        # is equips and back-solved exactly 2x the market close. From then on an
-        # implied rate must agree with the day's market close to be accepted.
-        if cand is not None and d >= IMPLIED_NEEDS_MARKET_FROM and not (
-                mkt.get(d) and abs(cand / mkt[d] - 1) <= MARKET_AGREE):
-            print(f"DATA-QUALITY: {sym} {d} implied rate {cand:.8g} rejected "
-                  f"(market close {mkt.get(d)})")
-            cand = None
-        if cand is not None:
-            ref = cand
-            if d == today_utc:
-                STATE.setdefault("open_day_rate", {})[sym] = {"d": d, "rate": round(ref, 10)}
-            else:
-                persisted[d] = round(ref, 10)
-                src[d] = "implied"
-        elif d != today_utc:
-            # Market leg. Banded against the calendar-nearest KNOWN day rate
-            # with a gap-scaled drift budget (see MARKET_* above). A close
-            # outside the band is a broken pool print, not a price move, and is
-            # refused; the day then falls through to carry-forward as before,
-            # but the refusal is stamped so it is not silent.
-            m = (STATE["market_rates"].get(sym) or {}).get(d)
-            if not m:
-                continue
-            # local name must NOT be "band" — that shadows classify.band at
-            # module scope and crashed the first post-midnight run (2026-08-31)
-            mband = _market_band(d, persisted)
-            if mband is None:
-                MARKET_REFUSED.append((sym, d, "market-unbanded", m, None, None, None))
-                src[d] = "market-unbanded"
-                continue
-            adj, arate, gap, factor = mband
-            if gap > MARKET_MAX_GAP_DAYS:
-                MARKET_REFUSED.append((sym, d, "market-unbanded", m, adj, arate, gap))
-                src[d] = "market-unbanded"
-            elif arate / factor < m < arate * factor:
-                persisted[d] = round(m, 10)
-                src[d] = "market"
-                ref = m
-            else:
-                MARKET_REFUSED.append((sym, d, "market-rejected", m, adj, arate, gap))
-                src[d] = "market-rejected"
+        m = (STATE["market_rates"].get(sym) or {}).get(d)
+        kind, rate = _price_day(d, by_day.get(d, []), ref, m, persisted, today_utc, _open_close)
+        if kind == "implied":
+            persisted[d] = rate
+            src[d] = "implied"
+            ref = rate
+        elif kind == "market":
+            persisted[d] = rate
+            src[d] = "market"
+            ref = rate
+        elif kind == "market-open":
+            STATE["open_day_rate"][sym] = {"d": d, "rate": rate}
+            src[d] = "market-open"
+        elif kind in ("market-rejected", "market-unbanded"):
+            mb = _market_band(d, persisted)
+            MARKET_REFUSED.append((sym, d, kind, m) + ((mb[0], mb[1], mb[2]) if mb else (None, None, None)))
+            src[d] = kind
+        else:
+            # carry-forward: pin_rate prices the day off the nearest known
+            # day. Stamped on the (absent-from-day_rates) day so the count is
+            # public — but never OVER a refusal stamp, which is audit info.
+            if src.get(d) not in ("market-rejected", "market-unbanded"):
+                src[d] = "carry-forward"
+            if d != today_utc and d >= IMPLIED_NEEDS_MARKET_FROM:
+                print(f"DATA-QUALITY: {sym} {d} has no market close — carry-forward pricing "
+                      f"(implied leg retired from {IMPLIED_NEEDS_MARKET_FROM})")
 
 # One greppable line per refusal plus a count — a rejection cascade must not
 # scroll past unnoticed (it silently reverts days to carry-forward pricing,
@@ -829,6 +909,7 @@ for _s in TOKENS:
 PRICING_RESTATEMENT_USD = 2587
 PRICING_RESTATEMENT_DATE = "2026-08-30"
 pricing_provenance = {"by_token": {}, "implied": 0, "market": 0, "refused": 0,
+                      "carry_forward": 0, "market_open": 0,
                       "restatement_usd": PRICING_RESTATEMENT_USD,
                       "restatement_date": PRICING_RESTATEMENT_DATE}
 for _s in TOKENS:
@@ -838,6 +919,8 @@ for _s in TOKENS:
     pricing_provenance["market"] += _counts.get("market", 0)
     pricing_provenance["refused"] += (_counts.get("market-rejected", 0)
                                       + _counts.get("market-unbanded", 0))
+    pricing_provenance["carry_forward"] += _counts.get("carry-forward", 0)
+    pricing_provenance["market_open"] += _counts.get("market-open", 0)
 # Build-time assertion: the published summary must equal a direct len-by-value
 # recount of day_rate_src — a summary that drifts from the stamps it claims to
 # summarise is worse than no summary.
@@ -848,7 +931,8 @@ for _s in TOKENS:
     assert sum(pricing_provenance["by_token"][_s].values()) == len(STATE["day_rate_src"].get(_s) or {}), \
         f"{_s}: pricing_provenance count != number of stamped days"
 assert (pricing_provenance["implied"] + pricing_provenance["market"]
-        + pricing_provenance["refused"]) == sum(
+        + pricing_provenance["refused"] + pricing_provenance["carry_forward"]
+        + pricing_provenance["market_open"]) == sum(
             sum(c.values()) for c in pricing_provenance["by_token"].values()), \
     "pricing_provenance totals do not cover every day_rate_src value"
 
@@ -859,7 +943,7 @@ def day_rate(sym, ts):
         return dr[d], ("day-market" if (STATE.get("day_rate_src", {}).get(sym) or {}).get(d) == "market"
                        else "day-implied")
     od = STATE.get("open_day_rate", {}).get(sym)
-    if od and od["d"] == d: return od["rate"], "day-implied (open)"
+    if od and od["d"] == d: return od["rate"], "day-market (open)"
     prior = [k for k in sorted(dr) if k <= d]
     later = [k for k in sorted(dr) if k > d]
     if prior: return dr[prior[-1]], "carry-forward"
@@ -871,7 +955,7 @@ for r in rows:
     r["usd"] = r["val"] * r["rate"]
     # classify HERE (not in Layer 2) so facts_window's economy/ops split can
     # see r["cat"] — adversary-caught ordering bug in council loop 3
-    r["cat"], r["fine"], _ = classify_usd(r["usd"])
+    r["cat"], r["fine"], _ = classify_usd(r["usd"], r["ts"])
 for f in inflows:
     f["rate"], f["rsrc"] = day_rate(f["tok"], f["ts"])
     f["usd"] = f["val"] * f["rate"]
@@ -1133,7 +1217,7 @@ for d in days:
     bc, bu = Counter(), defaultdict(float)
     bw = defaultdict(set)
     for r in rs:
-        b = band(r["usd"]); bc[b] += 1; bu[b] += r["usd"]; bw[b].add(r["to"])
+        b = band(r["usd"], r["ts"]); bc[b] += 1; bu[b] += r["usd"]; bw[b].add(r["to"])
     out_usd = sum(r["usd"] for r in rs)
     in_usd = sum(f["usd"] for f in ins)
     # Provenance marker: day_rate_src is per-TOKEN per-day while a daily row
@@ -1162,6 +1246,17 @@ import digests as _digests
 # feeding a second wallet's days in would restate every sealed day at once.
 # The coupon page is a separate read-only surface with its own artifacts.
 _dig_records = _digests.records_for_closed_days(rows, today)
+# Seal guard (2026-09-15): the implied leg is retired from
+# IMPLIED_NEEDS_MARKET_FROM, so an implied-priced day on/after it can only be
+# the $0.05-equip collision class. Refuse to seal such a day — this is the
+# guarantee that the 09-14 failure can never be frozen into history. Lives
+# HERE (not in digests.enforce) so the ledger API stays unchanged.
+for _d in sorted(_dig_records):
+    if _d >= IMPLIED_NEEDS_MARKET_FROM and _d not in _SEALED:
+        for _s in TOKENS:
+            if (STATE["day_rate_src"].get(_s) or {}).get(_d) == "implied":
+                raise SystemExit(f"FATAL: refusing to seal {_d}: {_s} is implied-priced after "
+                                 f"implied retirement ({IMPLIED_NEEDS_MARKET_FROM})")
 try:
     _digests.enforce(_dig_records,
                      now_iso=now.strftime("%Y-%m-%dT%H:%M:%SZ"))
@@ -1363,7 +1458,25 @@ large_inflows = [{"ts": f["ts"][:16], "tok": f["tok"], "val": round(f["val"], 0)
                   "label": in_label(f["from"])[0], "note": in_label(f["from"])[1]}
                  for f in inflows if f["usd"] >= 10000]
 
+# Creator Rewards v2 tile row (public, AGGREGATE ONLY). Deliberately carries
+# no cap figure, no headroom, no peak creator-hour and no utilisation — a
+# live cap gauge is a farmer's dashboard (detector data stays in
+# alert_state.json / guard_private.json). implied_user_spend is AI-inferred:
+# rewards are half the user price ($0.10 equip / $0.01 invoke), and the
+# chain cannot tell whether the user's credit was paid or gifted.
+_v2 = [r for r in rows if r["ts"] >= RESUMED_UTC and r["fine"] in ("equip", "invoke")]
+_v2_24 = [r for r in _v2 if r["ts"] > cut24]
+rewards_v2 = {"resumed_utc": RESUMED_UTC + "Z", "cap_on_utc": CAP_ON_UTC + "Z",
+              "usd_24h": round(sum(r["usd"] for r in _v2_24), 2),
+              "usd_since_resume": round(sum(r["usd"] for r in _v2), 2),
+              "n_equip_24h": sum(1 for r in _v2_24 if r["fine"] == "equip"),
+              "n_invoke_24h": sum(1 for r in _v2_24 if r["fine"] == "invoke"),
+              "creators_24h": len({r["to"] for r in _v2_24}),
+              "creators_since_resume": len({r["to"] for r in _v2}),
+              "implied_user_spend_24h": round(2 * sum(r["usd"] for r in _v2_24), 2)}
+
 facts = {"windows": windows, "prev24": prev24, "monthly": monthly, "daily": daily, "hourly": hourly,
+         "rewards_v2": rewards_v2,
          "large_inflows": large_inflows,
          "balance_series": balance_series,
          "top_recipients": top_recip, "in_sources": in_sources, "in_ledger": in_ledger,
@@ -1498,17 +1611,60 @@ guard = {"flagged_n": len(flagged), "monitored_n": len(grows), "at_risk_usd": at
 # chain every run (council loop 3): the tripwire's alert_state copy rides an
 # evictable cache; THIS is the ledger of record, tying every straggler to a
 # tx hash. Private file — the member list is band-derived (oracle class).
-from classify import RETIRED
 retired_ledger = {}
 for _cat, _rule in RETIRED.items():
+    # ROW timestamp against the same instant the classifier uses (PAUSED_UTC),
+    # never the run date and never a whole-day cutoff: the 08-21 13:55Z
+    # boundary splits a day, and a day-granular ledger would disagree with
+    # the classifier about that day's rows.
     _hits = [{"ts": r0["ts"], "to": r0["to"], "tx": r0["tx"], "li": r0.get("li", ""),
               "usd": round(r0["usd"], 2)}
-             for r0 in rows if r0["ts"][:10] > _rule["cutoff"]
+             for r0 in rows if r0["ts"] > _rule["cutoff"]
              and abs(r0["usd"] - _rule["point"]) / _rule["point"] <= _rule["tol"]]
     retired_ledger[_cat] = {"cutoff": _rule["cutoff"], "n": len(_hits),
                             "usd": round(sum(h["usd"] for h in _hits), 2), "entries": _hits}
+# Legacy $1 free top-up ledger (private): same tx-hash-level discipline plus
+# the per-wallet shape (one per wallet) the alerts leg checks.
+legacy_ledger = {}
+for _cat, _rule in LEGACY.items():
+    _hits = [{"ts": r0["ts"], "to": r0["to"], "tx": r0["tx"], "li": r0.get("li", ""),
+              "usd": round(r0["usd"], 2)}
+             for r0 in rows if r0["ts"] > _rule["since"]
+             and abs(r0["usd"] - _rule["point"]) / _rule["point"] <= _rule["tol"]]
+    _per = Counter(h["to"].lower() for h in _hits)
+    legacy_ledger[_cat] = {"since": _rule["since"], "fine": _rule["fine"], "n": len(_hits),
+                           "usd": round(sum(h["usd"] for h in _hits), 2),
+                           "wallets": len(_per),
+                           "repeat_wallets": sorted(a for a, c in _per.items() if c > _rule["max_per_wallet"]),
+                           "entries": _hits}
+# Grid agreement (§2.4): the implied leg's only surviving role. Per token
+# per day over the last 30 days, the share of non-dust rows whose fine class
+# is a size that is LEGAL in the row's own era (so "invoke (retired)",
+# nonstandard and dust do not count as agreement). Under the 2x-rate bug
+# 09-14 scores ~0.2; a clean day scores ≥0.95. Private + Telegram only.
+_grid = {}
+for r0 in rows:
+    if r0["ts"] <= cut30:
+        continue
+    if r0["usd"] < era_for(r0["ts"])["micro_lt"]:
+        continue
+    _g = _grid.setdefault(r0["tok"], {}).setdefault(r0["ts"][:10], {"n": 0, "ok": 0})
+    _g["n"] += 1
+    if r0["fine"] not in ("invoke (retired)", "nonstandard (small)", "nonstandard (large)", "test"):
+        _g["ok"] += 1
+grid_agreement = {s: {d: {"n": g["n"], "agree": round(g["ok"] / g["n"], 3),
+                          "rate": (STATE["day_rates"][s].get(d)
+                                   or ((STATE.get("open_day_rate") or {}).get(s) or {}).get("rate"))}
+                      for d, g in sorted(days_.items())}
+                  for s, days_ in _grid.items()}
+for _s, _days in grid_agreement.items():
+    for _d, _g in _days.items():
+        if _g["n"] >= 30 and _g["agree"] < 0.5:
+            print(f"DATA-QUALITY: {_s} {_d} grid agreement {_g['agree']} (n={_g['n']}) < 0.5 — "
+                  f"day rate {_g['rate']} may be wrong")
 json.dump({"generated": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "rows": grows,
-           "retired_ledger": retired_ledger},
+           "retired_ledger": retired_ledger, "legacy_ledger": legacy_ledger,
+           "grid_agreement": grid_agreement},
           open(os.path.join(HERE, "guard_private.json"), "w"))
 
 # Public aggregate for the retired-payout stragglers, derived from the SAME
@@ -1529,6 +1685,21 @@ for _rp in retired_public:
         f"retired_public {_rp['cat']}: usd != sum(entries)"
     assert set(_rp) == {"cat", "cutoff", "n", "usd", "last_seen"}, \
         "retired_public carries a field outside the published aggregate contract"
+# Public aggregate for the legacy $1 top-ups — same shape class, same
+# one-codepath rule. NO per-wallet field: the one-per-wallet rule is a
+# detector; the daily mix bar's per-day b1 wallet count is the public view.
+legacy_public = []
+for _cat, _v in legacy_ledger.items():
+    legacy_public.append({
+        "cat": _v["fine"], "since": min((h["ts"][:10] for h in _v["entries"]), default=None),
+        "n": _v["n"], "usd": _v["usd"],
+        "last_seen": max((h["ts"][:10] for h in _v["entries"]), default=None)})
+for _lp, (_cat, _src) in zip(legacy_public, legacy_ledger.items()):
+    assert _lp["n"] == len(_src["entries"]), f"legacy_public {_cat}: n != len(entries)"
+    assert _lp["usd"] == round(sum(h["usd"] for h in _src["entries"]), 2), \
+        f"legacy_public {_cat}: usd != sum(entries)"
+    assert set(_lp) == {"cat", "since", "n", "usd", "last_seen"}, \
+        "legacy_public carries a field outside the published aggregate contract"
 
 # permanent Stripe snapshot (verified server-side revenue reference)
 stripe_snap = None
@@ -1544,7 +1715,7 @@ if os.path.exists(_snap_path):
     stripe_snap["period_subsidy_ratio"] = round(_dist / _proceeds, 1) if _proceeds else None
 
 infer = {"S": S, "creators": creators[:25], "ce_total": ce_total, "fine_table": fine_table, "guard": guard,
-         "retired_public": retired_public}
+         "retired_public": retired_public, "legacy_public": legacy_public}
 
 phase("layer1+digests+layer2")
 # ================= SERVER-RECORDED TIER (PostHog, optional) =================
@@ -1989,7 +2160,7 @@ with open(os.path.join(HERE, "transfers_export.csv"), "w", newline="") as fh:
     w.writerow(["timestamp_utc", "direction", "token", "amount", "rate_usd", "rate_source", "usd", "size_band", "counterparty", "tx_hash", "log_index", "class_coarse", "class_fine"])
     for r in rows:
         w.writerow([r["ts"], "OUT", r["tok"], f"{r['val']:.6f}", f"{r['rate']:.8f}", r["rsrc"], f"{r['usd']:.4f}",
-                    BAND_LABEL[band(r["usd"])], r["to"], r["tx"],
+                    BAND_LABEL[band(r["usd"], r["ts"])], r["to"], r["tx"],
                     r.get("li", ""), r.get("cat", ""), r.get("fine", "")])
     for f in inflows:
         w.writerow([f["ts"], "IN", f["tok"], f"{f['val']:.6f}", f"{f['rate']:.8f}", f["rsrc"], f"{f['usd']:.4f}",

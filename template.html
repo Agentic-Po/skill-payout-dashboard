@@ -6,25 +6,25 @@
   --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#6f6e69;
   --line:#e6e5e0; --acc:#1a5fb0;
   --c-mente:#7c5cd6; --c-moca:#2a78d6; --c-in:#008300; --warn:#9a5800; --warnbg:#fdf6ec;
-  --band1:#00907c; --band2:#4f8fdd; --band3:#3f3fb8; --band4:#a855d6; --band5:#8f1770; --band6:#e0447a; --band7:#a35400; --band8:#8a8984; --band9:#c6c5bf; --band10:#0b6bab; --band11:#5e5a00;
+  --band1:#00907c; --band2:#4f8fdd; --band3:#3f3fb8; --band4:#a855d6; --band5:#8f1770; --band6:#e0447a; --band7:#a35400; --band8:#8a8984; --band9:#c6c5bf; --band10:#0b6bab; --band11:#5e5a00; --band12:#3fb39f; --band13:#7fa9e8;
 }
 @media (prefers-color-scheme: dark){:root{
   --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#9d9c96;
   --line:#2e2e2b; --acc:#3987e5;
   --c-mente:#9b83e8; --c-moca:#3987e5; --c-in:#3fa93f; --warn:#e8a44a; --warnbg:#241c10;
-  --band1:#12a389; --band2:#3d63d6; --band3:#8f7bea; --band4:#8f3ec4; --band5:#d557b3; --band6:#c33556; --band7:#c87f26; --band8:#888782; --band9:#4e4e49; --band10:#3f9bd9; --band11:#b3ac33;
+  --band1:#12a389; --band2:#3d63d6; --band3:#8f7bea; --band4:#8f3ec4; --band5:#d557b3; --band6:#c33556; --band7:#c87f26; --band8:#888782; --band9:#4e4e49; --band10:#3f9bd9; --band11:#b3ac33; --band12:#5ccbb1; --band13:#6f8fe6;
 }}
 :root[data-theme="dark"]{
   --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#9d9c96;
   --line:#2e2e2b; --acc:#3987e5;
   --c-mente:#9b83e8; --c-moca:#3987e5; --c-in:#3fa93f; --warn:#e8a44a; --warnbg:#241c10;
-  --band1:#12a389; --band2:#3d63d6; --band3:#8f7bea; --band4:#8f3ec4; --band5:#d557b3; --band6:#c33556; --band7:#c87f26; --band8:#888782; --band9:#4e4e49; --band10:#3f9bd9; --band11:#b3ac33;
+  --band1:#12a389; --band2:#3d63d6; --band3:#8f7bea; --band4:#8f3ec4; --band5:#d557b3; --band6:#c33556; --band7:#c87f26; --band8:#888782; --band9:#4e4e49; --band10:#3f9bd9; --band11:#b3ac33; --band12:#5ccbb1; --band13:#6f8fe6;
 }
 :root[data-theme="light"]{
   --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#6f6e69;
   --line:#e6e5e0; --acc:#1a5fb0;
   --c-mente:#7c5cd6; --c-moca:#2a78d6; --c-in:#008300; --warn:#9a5800; --warnbg:#fdf6ec;
-  --band1:#00907c; --band2:#4f8fdd; --band3:#3f3fb8; --band4:#a855d6; --band5:#8f1770; --band6:#e0447a; --band7:#a35400; --band8:#8a8984; --band9:#c6c5bf; --band10:#0b6bab; --band11:#5e5a00;
+  --band1:#00907c; --band2:#4f8fdd; --band3:#3f3fb8; --band4:#a855d6; --band5:#8f1770; --band6:#e0447a; --band7:#a35400; --band8:#8a8984; --band9:#c6c5bf; --band10:#0b6bab; --band11:#5e5a00; --band12:#3fb39f; --band13:#7fa9e8;
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -291,8 +291,11 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <details class="aiwrap">
       <summary><span class="aibadge">AI-inferred</span>Payout type classification — invokes, equips, credits, Stripe</summary>
       <div class="inner">
-        <p class="method"><b>Method:</b> each transfer is classified by its USD value at that day's token price: $0.10 invoke, $1 equip, $3 credit, $5 referral at ±8%; Stripe packs $10/$20/$25/$50/$100 matched on the fee-adjusted value (÷0.94, ±15% — deliveries land ~6% short of the pack price after processing). One shared classifier (classify.py) produces this table, the Telegram digest and the CSV export, so the three always agree. This is inference from size, not ground truth: a per-transfer memo from the payout contract (requested) would make it exact. The $3 bucket mixes new-user credits and internal top-ups — the internal top-ups sheet is the authoritative split. Pack-sized transfers are size-inferred and may include coupon-delivered credits — not verified revenue (this page does not read the Stripe ledger)</p>
+        <p class="method"><b>Method:</b> each transfer is classified by its USD value at that day's token price, on the reward grid of its own era (the row's timestamp decides, never the run date): until 21 Aug 2026 13:55 UTC — $0.10 invoke, $1 equip; from 14 Sep 2026 14:19 UTC — $0.05 equip, $0.005 invoke (±12%); a $1 after 21 Aug is a legacy free top-up (growth, not creator earnings); $3 credit, $5 referral at ±8%; Stripe packs $10/$20/$25/$50/$100 matched on the fee-adjusted value (÷0.94, ±15% — deliveries land ~6% short of the pack price after processing). One shared classifier (classify.py) produces this table, the Telegram digest and the CSV export, so the three always agree. This is inference from size, not ground truth: a per-transfer memo from the payout contract (requested) would make it exact. The $3 bucket mixes new-user credits and internal top-ups — the internal top-ups sheet is the authoritative split. Pack-sized transfers are size-inferred and may include coupon-delivered credits — not verified revenue (this page does not read the Stripe ledger)</p>
         <div class="tiles" id="itiles"></div>
+        <div class="tiles" id="rtiles" style="display:none"></div>
+        <p class="note" id="rfoot" style="display:none"></p>
+        <p class="note" id="legline" style="display:none"></p>
         <div class="scroll"><table id="fineT"></table></div>
       </div>
     </details>
@@ -401,7 +404,7 @@ document.getElementById("scope").innerHTML=
  `<span><b>Scope:</b> one wallet · MENTE + MOCA only (${SC.excluded_in_tx} inbound transfers of other tokens excluded)</span>`+
  `<span><b>Data range:</b> ${F.range.from} → ${F.range.to} UTC${SC.complete?"":" · <b style='color:var(--warn)'>⚠ fetch incomplete this run</b>"}</span>`+
  `<span><b>Rates:</b> MENTE $${F.rate.MENTE.toFixed(6)} (${F.rate_src.MENTE}) · MOCA $${F.rate.MOCA.toFixed(6)} (${F.rate_src.MOCA})`
-  +(PP?` · <b>day pricing:</b> ${PP.implied} days implied · ${PP.market} market-filled · ${PP.refused} refused (out-of-band market closes, fell back to implied) — market fills carry a <sup class="mkt">m</sup> below; per-day provenance in day_rates.json. Restating history on this basis moved the lifetime total by +$${PP.restatement_usd.toLocaleString()} (${PP.restatement_date}).`:"")
+  +(PP?` · <b>day pricing:</b> ${PP.implied} days implied (history, before 14 Sep 2026) · ${PP.market} market-filled · ${PP.refused} refused (out-of-band market closes, carried forward instead)${PP.carry_forward!=null?` · ${PP.carry_forward} carry-forward`:""}${PP.market_open?` · open day: market-open`:""} — market fills carry a <sup class="mkt">m</sup> below; per-day provenance in day_rates.json. Restating history on this basis moved the lifetime total by +$${PP.restatement_usd.toLocaleString()} (${PP.restatement_date}).`:"")
   +`</span>`+
  `<span><b>Independent check:</b> ${SC.cross_check?SC.cross_check.text:"Cross-checked weekly, row-exact, against an independent second crawler"} (public <a href="${SC.cross_check?SC.cross_check.repo:"https://github.com/Agentic-Po/moca-ledger"}" target="_blank">moca-ledger</a> repo)</span>`+
  (F.market_check&&Object.keys(F.market_check).length?`<span><b>Rate validation:</b> ${Object.entries(F.market_check).map(([k,v])=>`${k} ${v.within15}/${v.n} typically within ${v.median_dev??"?"}% of market price (${v.within15}/${v.n} days inside the 15% gate; worst day ${v.max_dev}%)`).join(" · ")} — each day priced at its own day's rate, cross-checked against the right trading pool for that period</span>`:"")+
@@ -444,7 +447,9 @@ document.getElementById("monT").innerHTML=flowHead+`<tbody>`+flowRows(F.monthly)
 bindTips(document.getElementById("winT"));bindTips(document.getElementById("monT"));
 // daily table — compact with band mix bar + tooltip
 const BK=F.band_keys;
-const BC={micro:"var(--band9)",b010:"var(--band1)",b1:"var(--band2)",b3:"var(--band3)",b5:"var(--band4)",b10:"var(--band5)",b20:"var(--band10)",b25:"var(--band6)",b50:"var(--band7)",b100:"var(--band11)",other:"var(--band8)"};
+// b0005/b005 (Creator Rewards v2 sizes, from 14 Sep 2026) sit next to b010/b1
+// in hue so "reward-sized" reads as one family; b010/b1 stay forever (history).
+const BC={micro:"var(--band9)",b0005:"var(--band12)",b005:"var(--band13)",b010:"var(--band1)",b1:"var(--band2)",b3:"var(--band3)",b5:"var(--band4)",b10:"var(--band5)",b20:"var(--band10)",b25:"var(--band6)",b50:"var(--band7)",b100:"var(--band11)",other:"var(--band8)"};
 document.getElementById("bleg").innerHTML=BK.map(k=>`<span class="bandchip" style="background:${BC[k]}${(k==="micro"||k==="other")?";color:var(--ink)":""}">${F.band_labels[k]}</span>`).join(" ");
 document.getElementById("d0").textContent=F.range.from;
 function buildRows(list){
@@ -836,6 +841,31 @@ const itiles=[
  ["Nonstandard size", S.tot.nonstandard.n.toLocaleString(), "$"+S.tot.nonstandard.usd.toLocaleString()+" — off-grid, not counted above"],
 ];
 document.getElementById("itiles").innerHTML=itiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
+// Creator Rewards v2 (from 14 Sep 2026): aggregate tiles only. Times in HKT
+// with the UTC instant in the tooltip. Absent in an older data.json => the
+// row stays hidden (render-gate lesson).
+const RV=F.rewards_v2||null;
+if(RV){
+ const hk=iso=>{const t=Date.parse(iso);return isNaN(t)?iso:new Date(t+8*3.6e6).toISOString().slice(0,16).replace("T"," ")+" HKT";};
+ const rtiles=[
+  ["Creator rewards — 24h", "$"+RV.usd_24h.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}), RV.n_equip_24h.toLocaleString()+" equips · "+RV.n_invoke_24h.toLocaleString()+" invokes · "+RV.creators_24h.toLocaleString()+" creators"],
+  ["Creator rewards — since resume", "$"+RV.usd_since_resume.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}), RV.creators_since_resume.toLocaleString()+" creators paid since <span title=\""+RV.resumed_utc+"\">"+hk(RV.resumed_utc)+"</span>"],
+  ["<span class=\"aibadge\">AI-inferred</span>Implied user spend — 24h", "≈$"+RV.implied_user_spend_24h.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}), "rewards are 50% of the $0.10 equip / $0.01 invoke user price — backing of the user's credit (paid vs gifted) is not observable on-chain; users may spend gifted credits"],
+ ];
+ const rt=document.getElementById("rtiles");
+ rt.innerHTML=rtiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
+ rt.style.display="";
+ const rf=document.getElementById("rfoot");
+ rf.innerHTML=`Rewards resumed <span title="${RV.resumed_utc}">${hk(RV.resumed_utc)}</span> at half the user price; a per-creator hourly cap applies.`;
+ rf.style.display="";
+}
+// Legacy $1 free top-ups (the v1 $1 size after v1 closed): aggregate line, neutral.
+const LEG=(I.legacy_public||[]).filter(x=>x&&x.n);
+if(LEG.length){
+ const lg=document.getElementById("legline");
+ lg.innerHTML=LEG.map(x=>`$1 legacy free top-ups: <b>${x.n.toLocaleString()}</b> · <b>$${x.usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</b>${x.since?` since ${x.since}`:""}${x.last_seen?` · last ${x.last_seen}`:""} (UTC dates; counted as growth incentives, not creator earnings)`).join("<br>");
+ lg.style.display="";
+}
 document.getElementById("fineT").innerHTML=`<thead><tr><th>Inferred type</th><th class="r">Count</th><th class="r">USD</th></tr></thead><tbody>`+
  I.fine_table.map(f=>`<tr><td>${f.fine}</td><td class="r mono">${f.n.toLocaleString()}</td><td class="r mono">$${f.usd.toLocaleString()}</td></tr>`).join("")+`</tbody>`;
 document.getElementById("creatT").innerHTML=`<thead><tr><th>#</th><th>Creator wallet</th><th class="r">Invokes</th><th class="r">Equips</th><th class="r">USD</th><th class="r">Share</th></tr></thead><tbody>`+
@@ -846,11 +876,12 @@ document.getElementById("patSum").innerHTML=`<span class="aibadge">AI-inferred</
 // the band live in the private reviewer file, and check_publish.py --scan
 // fails the build if any of them reach data.json or the page. Hidden when
 // n === 0, and absent entirely from an older data.json.
+const RET_LABEL={invoke_v1:"$0.10 invoke",equip:"$1 equip"};
 const RETLINE=(I.retired_public||[]).filter(x=>x&&x.n).map(x=>
  `<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line);color:var(--warn)">
-   Retired &lsquo;$1 ${x.cat}&rsquo; rewards: <b>${x.n}</b> straggler transfer${x.n===1?"":"s"}
+   Retired &lsquo;${RET_LABEL[x.cat]||x.cat}&rsquo; rewards: <b>${x.n}</b> straggler transfer${x.n===1?"":"s"}
    &asymp; <b>$${x.usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</b>
-   since the ${x.cutoff} cutoff${x.last_seen?`, last ${x.last_seen}`:""} — mis-configured job, tracked.
+   since the ${String(x.cutoff).replace("T"," ")} UTC cutoff${x.last_seen?`, last ${x.last_seen}`:""} — mis-configured job.
   </div>`).join("");
 // Per-wallet monitor rows are no longer published (calibration-oracle
 // lesson): the public page shows aggregates only; the row-level detail

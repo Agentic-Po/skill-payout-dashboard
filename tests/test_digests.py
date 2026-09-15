@@ -51,6 +51,20 @@ def main():
         assert led[day].get("first_written_iso"), f"{day}: no first_written_iso"
     print(f"ok ledger verifies: {len(led)} sealed days match "
           f"({len(records) - len(led)} in sealing grace)")
+    # Creator Rewards v2 (2026-09-15): the era-aware classifier must be
+    # digest-neutral — a dry enforce() on a COPY of the real ledger with the
+    # real RESTATEMENTS.md prints zero RESTATED lines, and the 09-14 note in
+    # RESTATEMENTS.md is NOT a standing '## YYYY-MM-DD' approval.
+    approved = digests.parse_restatements()
+    assert "2026-09-14" not in approved, "RESTATEMENTS.md carries a standing approval for 2026-09-14"
+    with tempfile.TemporaryDirectory() as td:
+        led_copy = os.path.join(td, "day_digests.json")
+        json.dump(led, open(led_copy, "w"))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            digests.enforce(records, ledger_path=led_copy, now_iso=today + "T00:00:00Z")
+        assert "RESTATED" not in buf.getvalue(), f"era-aware classifier restated a sealed day:\n{buf.getvalue()}"
+    print(f"ok zero RESTATED lines on a dry enforce ({len(approved)} approved restatement(s), none for 2026-09-14)")
 
     victim = sorted(records)[len(records) // 2]
     with tempfile.TemporaryDirectory() as td:

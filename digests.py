@@ -204,7 +204,7 @@ def rows_from_disk(root=HERE):
         ts = i["timestamp"][:19]
         rate = _pin(rates.get(sym, {}), ts[:10], D["facts"]["rate"].get(sym) or 0)
         usd = val * rate
-        coarse, fine, _ = classify_usd(usd)
+        coarse, fine, _ = classify_usd(usd, ts)
         rows.append({"ts": ts, "tok": sym, "val": val, "rate": rate, "usd": usd,
                      "cat": coarse, "fine": fine, "tx": i["transaction_hash"],
                      "li": i.get("log_index", "")})

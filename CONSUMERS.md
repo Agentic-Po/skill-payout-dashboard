@@ -13,9 +13,17 @@ last count — the LIVE numbers are always each repo's machine-generated
    shape over every ledger layout; addresses lowercased, `value_wei` int).
    Copy the module or vendor it; the two source schemas are frozen contracts,
    the adapter is the unification.
-3. **Classify ONLY through `classify.py`** (`classify_usd`, `pin_rate`) — the
-   one taxonomy behind the page, Telegram, and CSV. Re-implementing it is how
-   a $32K swap once became "revenue".
+3. **Classify ONLY through `classify.py`** (`classify_usd(usd, ts)`,
+   `band(usd, ts)`, `pin_rate`) — the one taxonomy behind the page, Telegram,
+   and CSV. Re-implementing it is how a $32K swap once became "revenue".
+   **Signature change (2026-09-15):** `classify_usd` and `band` now REQUIRE
+   the row's ISO timestamp as the second positional argument — the reward
+   grid is era-aware (v1 $1 equip / $0.10 invoke until 2026-08-21T13:55Z; v2
+   $0.05 equip / $0.005 invoke from 2026-09-14T14:19Z; a $1 after the v1
+   close is `growth` / `$1 top-up (legacy)`). The era table is
+   `classify.ERAS`; the row timestamp decides, never the run date. Callers
+   that passed one argument get a `TypeError` rather than a silently wrong
+   class.
 4. **Respect freshness**: call `rows.require_fresh(catalog, dataset, max_age_h)`
    before publishing anything derived; it raises on stale data.
 5. **Snapshot feeds**: `data.json` (schema_version 2) is the dashboard's full
@@ -33,6 +41,19 @@ last count — the LIVE numbers are always each repo's machine-generated
    the plain-English executive block the page shows above the hero strip,
    computed server-side from the same `facts` values. Consumers that
    asserted an exact top-level key set must add it; nothing else changed.
+   **Additive (2026-09-15, still schema_version 2, Creator Rewards v2)**:
+   `facts.rewards_v2` (`{resumed_utc, cap_on_utc, usd_24h, usd_since_resume,
+   n_equip_24h, n_invoke_24h, creators_24h, creators_since_resume,
+   implied_user_spend_24h}` — aggregates only, no cap figure or headroom);
+   `infer.legacy_public` (`[{cat, since, n, usd, last_seen}]`, same shape
+   class as `retired_public`, whose `cat` is now `invoke_v1`);
+   `facts.pricing_provenance` gained `carry_forward` and `market_open`
+   counts; `facts.band_keys` / `band_labels` gained `b0005` and `b005`
+   (the micro label now reads `< $0.003 (< $0.06 before 14 Sep)`). The CSV
+   header is unchanged; its `rate_source` vocabulary is `day-market`,
+   `day-implied` (history only), `day-market (open)`, `carry-forward`,
+   `carry-back`, `live`, and `class_fine` gained `invoke (retired)` and
+   `$1 top-up (legacy)`. The top-level key set is unchanged.
 6. **Coupon claims feed**: `coupon_data.json` (schema_version 1) is a SEPARATE
    file, published beside `data.json` and embedded verbatim in `coupon.html`.
    It covers the Coupon Distributor wallet only — a wallet funded outside the

@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Send a rich-format (HTML) Telegram status update with deltas.
 
-Usage: notify.py hourly|daily|weekly
+Usage: notify.py hourly|daily|weekly [--dry-run]
 Deltas are computed directly from the transfers/ shard timestamps, so they are
 exact from the very first message — no snapshot warm-up needed.
+Every timestamp in the message is HKT (Po's clock); UTC stays in logs and
+public artifacts. --dry-run prints the message and exits without sending or
+touching alert_state.json.
 Env vars: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID.
 """
 import json, os, sys, urllib.request, urllib.parse
@@ -12,10 +15,26 @@ from datetime import datetime, timezone, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 URL = "https://agentic-po.github.io/skill-payout-dashboard/"
-mode = sys.argv[1] if len(sys.argv) > 1 else "hourly"
+_args = [a for a in sys.argv[1:] if not a.startswith("--")]
+mode = _args[0] if _args else "hourly"
+DRY_RUN = "--dry-run" in sys.argv[1:]
 
 hist = json.load(open(os.path.join(HERE, "stats_history.json")))
 now = datetime.now(timezone.utc).replace(tzinfo=None)
+HKT = timedelta(hours=8)
+
+
+def hkt(dt, fmt="%d %b %H:%M"):
+    """HKT rendering for every timestamp that reaches Telegram."""
+    if isinstance(dt, str):
+        dt = datetime.fromisoformat(dt.rstrip("Z")[:19])
+    return (dt + HKT).strftime(fmt) + " HKT"
+
+
+def hkt_day(day):
+    """A UTC day label ('2026-09-14') -> '14 Sep' (its noon is the same HKT date)."""
+    return (datetime.fromisoformat(day) + timedelta(hours=12) + HKT).strftime("%d %b")
+
 
 # data.json is the versioned contract with refresh.py — no HTML scraping.
 # Fail LOUD on absence or staleness: a silent fallback to stale numbers is
@@ -38,12 +57,13 @@ if not _gen:
 #      while data.json stays arbitrarily stale (17 min of decoupling was
 #      already visible in the committed tree).
 import rows as _rows
-try:
-    _rows.require_fresh(os.path.join(HERE, "catalog.json"), "data", 2, field="generated_iso")
-except _rows.StaleData as e:
-    raise SystemExit(f"FATAL: {e} — refusing to send outdated figures")
+if not DRY_RUN:
+    try:
+        _rows.require_fresh(os.path.join(HERE, "catalog.json"), "data", 2, field="generated_iso")
+    except _rows.StaleData as e:
+        raise SystemExit(f"FATAL: {e} — refusing to send outdated figures")
 _gen_age_h = (now - datetime.fromisoformat(_gen.rstrip("Z")[:19])).total_seconds() / 3600
-if _gen_age_h > 2:
+if _gen_age_h > 2 and not DRY_RUN:
     raise SystemExit(f"FATAL: data.json is {_gen_age_h:.1f}h old (generated_iso {_gen}, "
                      f"limit 2h) — refusing to send outdated figures")
 F = _D["facts"]
@@ -55,36 +75,42 @@ RATE = F["rate"].get("MOCA") or hist[-1]["rate"]
 # page (refresh.py) and alerts.py. Rows are priced at the DAY-PINNED rate per
 # token (day_rates.json, incl. today's provisional open_day_rate) so history
 # can't reprice with the market; the live per-token rate is the last resort.
-from classify import classify_usd, INCENT, pin_rate
+# The classifier is ERA-AWARE: every call passes the row's own timestamp.
+from classify import classify_usd, INCENT, pin_rate, era_for, RESUMED_UTC, LEGACY, UNITS
 _dr_state = json.load(open(os.path.join(HERE, "day_rates.json")))
 _DAY_RATES = {sym: dict(_dr_state["day_rates"].get(sym, {})) for sym in TOKENS.values()}
 for sym, od in (_dr_state.get("open_day_rate") or {}).items():
     _DAY_RATES.setdefault(sym, {}).setdefault(od["d"], od["rate"])
 
-def classify(day, sym, v):
-    """-> (class, usd, tier) in the digest's local vocabulary."""
+def classify(ts, sym, v):
+    """-> (class, usd, tier, fine) in the digest's local vocabulary. ts is the
+    row's ISO timestamp (day-pins the rate AND selects the reward era)."""
     _fb = F["rate"].get(sym)
     if not _fb and not _DAY_RATES.get(sym):
         raise SystemExit(f"FATAL: no rate available for {sym} — refusing to price rows at $0")
-    usd = v * pin_rate(_DAY_RATES.get(sym, {}), day, _fb or 0)
-    coarse, fine, tier = classify_usd(usd)
+    usd = v * pin_rate(_DAY_RATES.get(sym, {}), ts[:10], _fb or 0)
+    coarse, fine, tier = classify_usd(usd, ts)
     if coarse == "growth":
-        return ("topup" if fine.startswith("stripe") else "incentive"), usd, tier
+        return ("topup" if fine.startswith("stripe") else "incentive"), usd, tier, fine
     if coarse == "nonstandard":
-        return "other", usd, None
-    return coarse, usd, None
+        return "other", usd, None, fine
+    return coarse, usd, None, fine
 
 # ALL tracked tokens (council loop 3: the digest previously classified only
 # MOCA, silently excluding the entire MENTE era from the all-time figures
 # while the page counted both — the one-figure-everywhere failure).
-rows = []          # (ts, cls, qty, wallet, tier, usd_day_pinned, sym)
+rows = []          # (ts, cls, qty, wallet, tier, usd_day_pinned, sym, fine)
 for i in shards.load(os.path.join(HERE, "transfers")):
     sym = TOKENS.get(i["token"]["address_hash"].lower())
     if not sym:
         continue
     v = int(i["total"]["value"]) / 1e18
-    cls, usd, tier = classify(i["timestamp"][:10], sym, v)
-    rows.append((datetime.fromisoformat(i["timestamp"][:19]), cls, v, i["to"]["hash"], tier, usd, sym))
+    ts_iso = i["timestamp"][:19]
+    cls, usd, tier, fine = classify(ts_iso, sym, v)
+    # wallet lowercased: Blockscout rows are EIP-55, eth_getLogs rows are
+    # lowercase, and a distinct-wallet count split by casing overstated
+    # "creators paid" vs the page (56 vs 47 on 2026-09-15)
+    rows.append((datetime.fromisoformat(ts_iso), cls, v, i["to"]["hash"].lower(), tier, usd, sym, fine))
 
 def win(hours=None):
     """Activity inside the trailing window (None = all history).
@@ -122,7 +148,17 @@ def win(hours=None):
         "tiers_topup": tiers("topup"),
         "other_n": sum(1 for r in rs if r[1] == "other"),
         "other_usd": sum(r[5] for r in rs if r[1] == "other"),
+        # Creator Rewards v2 (fine == equip/invoke on the v2 grid, since the resume)
+        "v2_equip": sum(1 for r in rs if r[7] == "equip" and r[0] >= RESUMED),
+        "v2_invoke": sum(1 for r in rs if r[7] == "invoke" and r[0] >= RESUMED),
+        "v2_usd_equip": sum(r[5] for r in rs if r[7] == "equip" and r[0] >= RESUMED),
+        "v2_usd_invoke": sum(r[5] for r in rs if r[7] == "invoke" and r[0] >= RESUMED),
+        "v2_creators": len({r[3] for r in rs if r[7] in UNITS and r[0] >= RESUMED}),
+        "legacy_n": sum(1 for r in rs if r[7] == LEGACY_FINE),
     }
+
+RESUMED = datetime.fromisoformat(RESUMED_UTC)
+LEGACY_FINE = LEGACY["topup1"]["fine"]
 
 def mix(tiers, labels=None):
     """'23 x $10 - 24 x $20' — biggest first, blank when empty."""
@@ -136,7 +172,13 @@ w1, w24, w7d, cum = win(1), win(24), win(24 * 7), win()
 # the window the body reports on: 24h hourly/daily, 7d weekly
 W, WLAB = (w7d, "7d") if mode == "weekly" else (w24, "24h")
 
-COUNTS = [("invoke", "skill invokes"), ("equip", "skill equips"),
+# reward-size labels follow the CURRENT era (classify.ERAS) — the next price
+# change is a table edit there, not here
+_ERA = era_for(now.isoformat(timespec="minutes"))
+def _sz(name):
+    p = _ERA["rewards"].get(name)
+    return f" (${p:g})" if p else ""
+COUNTS = [("invoke", f"skill invokes{_sz('invoke')}"), ("equip", f"skill equips{_sz('equip')}"),
           ("creators", "creator wallets paid"), ("incentive", "growth incentives")]
 
 def counts_line(w):
@@ -153,6 +195,9 @@ def usd_line(label, key, w, note=""):
 head = {"hourly": "🟢 <b>Hourly refresh OK</b>",
         "daily": "📊 <b>Daily summary</b>",
         "weekly": "🗓 <b>Weekly summary</b>"}[mode]
+
+import state as _state
+_ST = _state.load()
 
 health = []
 w24_f = F["windows"][0]
@@ -171,7 +216,7 @@ if bal_m is None or bal_e is None:
 r_m, r_e = F["rate"].get("MOCA") or RATE, F["rate"].get("MENTE") or 0
 usd_m = (bal_m or 0) * r_m
 usd_e = (bal_e or 0) * r_e
-stale = f" ⚠️ <i>(live fetch failed — last known {stale_ts} UTC)</i>" if stale_ts else ""
+stale = f" ⚠️ <i>(live fetch failed — last known {hkt(stale_ts)})</i>" if stale_ts else ""
 health.append("")
 health.append("🔧 <b>Ops health</b>")
 health.append(f"<b>Wallet balance:</b> <b>${usd_m + usd_e:,.0f}</b> total{stale}")
@@ -197,8 +242,7 @@ if mode in ("daily", "weekly"):
     # alert_state.json's send_health (Actions cache) — digest-only, never a
     # public artifact. A stretch of failures also turns refresh.yml red via
     # alive_check.py; this line keeps the trend visible even below threshold.
-    import state as _st_health
-    _sh = _st_health.load().get("send_health") or {}
+    _sh = _ST.get("send_health") or {}
     _cut24 = (now - timedelta(hours=24)).isoformat(timespec="minutes")
     _n_sent = sum(1 for c in _sh.values() for t in c.get("sent", []) if t > _cut24)
     _n_fail = sum(1 for c in _sh.values() for t in c.get("failed", []) if t > _cut24)
@@ -221,7 +265,7 @@ if mode == "weekly":
     _n_runs = sum(1 for _h in hist if _h.get("ts", "") > _c7d_iso)
     _exp_runs = 4 * 24 * 7                      # refresh.yml fires 4x/hour
     _uptime = min(100.0, _n_runs / _exp_runs * 100)
-    _rr = [r for r in (_st_health.load().get("refresh_runs") or [])
+    _rr = [r for r in (_ST.get("refresh_runs") or [])
            if isinstance(r, dict) and r.get("ts", "") > _c7d_iso and r.get("dur_s") is not None]
     if _rr:
         _durs = sorted(r["dur_s"] for r in _rr)
@@ -245,8 +289,63 @@ if rw < 7:
     if mode != "hourly" or crossed or now.hour % 6 == 0:
         health.append(f"🔴 <b>Low float:</b> ${G['burn24']}/24h burn → ~{rw}d left")
 
+
+# ---- Creator Rewards v2 block (2026-09-15) ----
+# Counts/USD come from the same era-aware rows as every other line above.
+# Cap headroom comes from alert_state.json's cap_probe heartbeat (PRIVATE —
+# Actions cache, written by alerts.py every run). Po's private channel, so
+# the cap figure and per-hour headroom ARE printed here; the public page and
+# every public artifact carry no cap data at all.
+def v2_block(w, lab):
+    out = ["", f"🎯 <b>Creator rewards v2 ({lab})</b>",
+           f"  · <b>equips:</b> {w['v2_equip']:,} ≈ ${w['v2_usd_equip']:,.2f} · "
+           f"<b>invokes:</b> {w['v2_invoke']:,} ≈ ${w['v2_usd_invoke']:,.2f} · "
+           f"<b>creators paid:</b> {w['v2_creators']:,}"]
+    cp = _ST.get("cap_probe") or {}
+    fresh = bool(cp.get("ts")) and (now - datetime.fromisoformat(cp["ts"])).total_seconds() <= 2 * 3600
+    if fresh:
+        cap = cp.get("cap_usd") or 0
+        out.append(f"  · <b>Cap headroom (60m):</b> top creator ${cp.get('top_usd_1h', 0):,.2f} / ${cap:,.2f} cap · "
+                   f"{cp.get('creators_1h', 0)} creators paid · {cp.get('n_at_cap', 0)} ≥90%")
+        if mode == "daily":
+            out.append(f"  · <b>Peak creator-hour (24h):</b> ${cp.get('top_clock_usd_24h', 0):,.2f} / ${cap:,.2f} cap · "
+                       f"{cp.get('n_at_90pct_24h', 0)} creator(s) with a ≥90% hour")
+        if mode == "weekly":
+            _c7 = (now - timedelta(days=7)).isoformat(timespec="minutes")
+            _breaches = sum(1 for v in (_ST.get("cap_hits") or {}).values() if v > _c7)
+            _fan = sum(1 for v in ((_ST.get("cap_state") or {}).get("fanout") or {}).values() if v > _c7)
+            share = cp.get("top_creator_share_7d")
+            out.append(f"  · <b>Cap (7d):</b> max creator-hour ${cp.get('top_clock_usd_7d', 0):,.2f} / ${cap:,.2f} · "
+                       f"{_breaches} breach(es) · {_fan} fan-out hour(s)"
+                       + (f" · top creator share {share}% (24h)" if share is not None else ""))
+    else:
+        out.append(f"  · ⚠️ cap probe missing — detector did not run "
+                   f"(last {hkt(cp['ts']) if cp.get('ts') else 'never'})")
+    # legacy $1 top-ups: the window count from the rows, the running total
+    # from the SAME public aggregate the page shows (infer.legacy_public)
+    lp = next(iter(_D["infer"].get("legacy_public") or []), None)
+    if lp:
+        since = hkt_day(lp["since"]) if lp.get("since") else "?"
+        out.append(f"  · <b>Legacy $1 top-ups:</b> {w['legacy_n']:,} ({lab}) · {lp['n']:,} since {since}")
+    # pricing provenance (day_rates.json): last closed day + the open day
+    dr = _dr_state["day_rates"].get("MOCA") or {}
+    src = (_dr_state.get("day_rate_src") or {}).get("MOCA") or {}
+    od = (_dr_state.get("open_day_rate") or {}).get("MOCA")
+    parts = []
+    if dr:
+        last_d = max(dr)
+        parts.append(f"MOCA day rate {dr[last_d]:.6f} ({hkt_day(last_d)}, {src.get(last_d, '?')})")
+    parts.append(f"open day {od['rate']:.6f} (market-open)" if od else "open day carry-forward")
+    if mode != "hourly":
+        c30 = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+        cf = sum(1 for d, v in src.items() if c30 <= d < now.strftime("%Y-%m-%d") and v == "carry-forward")
+        parts.append(f"{cf} carry-forward day(s) in 30d")
+    out.append("  · <b>Pricing:</b> " + " · ".join(parts))
+    return out
+
+
 fresh = counts_line(w1)
-body_lines = [f"{head} — <i>Skill Payout Dashboard</i>", "", "📈 <b>Economy</b>"]
+body_lines = [f"{head} — <i>Skill Payout Dashboard</i> · {hkt(now, '%d %b %Y %H:%M')}", "", "📈 <b>Economy</b>"]
 if mode == "hourly":
     body_lines += [f"<b>New this hour:</b> {fresh}" if fresh
                    else "<b>New this hour:</b> <i>nothing new</i>", ""]
@@ -263,8 +362,8 @@ body_lines += [
 if W["other_n"]:
     body_lines.append(f"  · <i>excluded {W['other_n']:,} non-standard transfer(s) ≈ ${W['other_usd']:,.0f} "
                       f"— swaps/treasury moves, not user top-ups</i>")
-import state as _state
-_restated = _state.load().get("mente_restated_v1")
+body_lines += v2_block(W, WLAB)
+_restated = _ST.get("mente_restated_v1")
 if mode in ("daily", "weekly") and not _restated:
     body_lines += ["", "ℹ️ <i>All-time figures restated: the digest now includes the MENTE era "
                    "(the page always did) — cumulative lines move up once; windows are unaffected.</i>"]
@@ -273,12 +372,18 @@ if mode in ("daily", "weekly"):
                    f"  · {cum['invoke']:,} invokes · {cum['equip']:,} equips · {cum['creators']:,} creator wallets paid",
                    "  · " + usd_line("paid to creators", "qty_ce", cum)]
 msg = "\n".join(body_lines + health)
+assert len(msg) < 4000, f"digest message is {len(msg)} chars — Telegram's limit is 4096"
+
+if DRY_RUN:
+    print(msg)
+    print(f"--- dry run: {len(msg)} chars, nothing sent ---")
+    raise SystemExit(0)
 
 # Rate-limit the hourly digest: the cron now fires 4x/hour (scheduler
 # starvation workaround), but Po wants at most ~one digest per hour. State
 # rides in alert_state.json (Actions cache). Daily/weekly always send.
 if mode == "hourly":
-    _last = _state.load().get("last_hourly_digest")
+    _last = _ST.get("last_hourly_digest")
     if _last and (now - datetime.fromisoformat(_last)).total_seconds() < 50 * 60:
         print(f"hourly digest sent {_last} — under 50 min ago, skipping")
         raise SystemExit(0)

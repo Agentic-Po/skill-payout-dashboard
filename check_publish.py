@@ -92,7 +92,13 @@ def _key(k):
 DENIED = [_key("ent"), _key("acf"), _key("burst"), _key("flags"),
           r"retired_ledger", r"@gmail", r"@animoca",
           # schema v2: the CSV label column is gone and must stay gone.
-          r"counterparty_label"]
+          r"counterparty_label",
+          # Creator Rewards v2 (2026-09-15): the legacy top-up ledger, the
+          # per-wallet repeat rule and every cap-detector artifact are
+          # detector state — private file + Telegram only.
+          r"legacy_ledger", r"repeat_wallets", r"cap_table", r"cap_probe",
+          r"cap_hits", r"cap_state", r"fanout_hours", r"grid_agreement",
+          r"hours_at_90pct", r"max_h60_units", r"max_clock_units"]
 
 # Known-leaked person names (Cycle-3 Loop 1). Case-insensitive, assembled
 # from parts so this scanner file is never itself a grep hit for the names it
@@ -131,7 +137,11 @@ NEAR = 200      # chars, for non-object formats (CSV rows, HTML text)
 # "ent" is inside "top_recipients", "tol" is inside "total_mente", "flagged" is
 # inside the legitimate public aggregate "flagged_n" — a substring walk would
 # fail every clean build on data we deliberately publish.
-ORACLE_KEYS = {"ent", "acf", "burst", "tol", "flagged", "flags", "status"}
+ORACLE_KEYS = {"ent", "acf", "burst", "tol", "flagged", "flags", "status",
+               # Creator Rewards v2 cap detector / legacy-ledger keys, as EMITTED
+               "cap_table", "cap_hits", "cap_probe", "cap_state", "max_h60_units",
+               "max_clock_units", "hours_at_90pct", "fanout_hours", "grid_agreement",
+               "legacy_ledger", "repeat_wallets"}
 
 # Reviewed exact paths where one of the above names is NOT a monitoring
 # verdict. Each entry is a deliberate, human-reviewed exemption; a new path
@@ -244,9 +254,10 @@ def _label_leaks(obj, src, path="", hits=None):
 
 
 def _retired_leak(texts):
-    """Retired-straggler tx hashes / entries[] structure must never publish.
+    """Ledger tx hashes / entries[] structure must never publish — for BOTH
+    private ledgers (retired stragglers and legacy $1 top-ups).
 
-    Scoped per the 2026-08-30 QA finding: NOT a blanket address ban. Straggler
+    Scoped per the 2026-08-30 QA finding: NOT a blanket address ban. Ledger
     recipients are ordinary payout recipients that legitimately appear in
     top_recipients and the registry, so banning their bare addresses would
     false-positive on clean builds. What must not leak is the per-entry
@@ -254,17 +265,19 @@ def _retired_leak(texts):
     p = os.path.join(HERE, "guard_private.json")
     if not os.path.exists(p):
         return []
-    led = (json.load(open(p)) or {}).get("retired_ledger") or {}
-    hashes = {h.get("tx", "").lower() for v in led.values()
-              for h in v.get("entries", []) if h.get("tx")}
+    g = json.load(open(p)) or {}
+    hashes = set()
+    for ledger in ("retired_ledger", "legacy_ledger"):
+        for v in (g.get(ledger) or {}).values():
+            hashes |= {h.get("tx", "").lower() for h in v.get("entries", []) if h.get("tx")}
     hits = []
     for name, text in texts:
         low = text.lower()
         for h in hashes:
             if h and h in low:
-                hits.append(f"retired-straggler tx {h[:12]}… surfaced in {name}")
+                hits.append(f"private-ledger tx {h[:12]}… surfaced in {name}")
         if re.search(r'["\']?entries["\']?\s*:', text):
-            hits.append(f"retired_ledger entries[] structure surfaced in {name}")
+            hits.append(f"private ledger entries[] structure surfaced in {name}")
     return hits
 
 

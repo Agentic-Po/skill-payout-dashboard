@@ -61,7 +61,11 @@ PROBE = r"""
     strip_text: html("plainStrip"),
     exec_text: text("execSummary"),
     coupon_strip: text("couponStrip"),
-    top_rows: (html("topT").match(/<tr\b/g) || []).length
+    top_rows: (html("topT").match(/<tr\b/g) || []).length,
+    legend_chips: (html("bleg").match(/class="bandchip"/g) || []).length,
+    v2_tiles: (html("rtiles").match(/class="tile"/g) || []).length,
+    v2_foot: html("rfoot").replace(/<[^>]+>/g, ""),
+    legline: html("legline").replace(/<[^>]+>/g, "")
   };
   console.log("__RENDER_PROBE__" + JSON.stringify(out));
 })();
@@ -77,8 +81,24 @@ def _checks_index(p):
     assert p["exec_text"].strip(), "executive summary block (#execSummary) rendered empty"
     assert "$" in p["exec_text"], \
         f"executive summary has no $ figure: {p['exec_text'][:200]!r}"
+    # Creator Rewards v2 (2026-09-15): 13 legend chips (b0005 + b005 added,
+    # b010/b1 kept), the v2 tile row rendered with a $ figure and the HKT
+    # footer, the legacy top-up line rendered — and no cap figure anywhere.
+    assert p["legend_chips"] == 13, f"legend rendered {p['legend_chips']} chips, want 13"
+    assert p["v2_tiles"] == 3, f"rewards_v2 rendered {p['v2_tiles']} tiles, want 3"
+    assert "HKT" in p["v2_foot"] and "hourly cap applies" in p["v2_foot"], p["v2_foot"]
+    assert "$4" not in p["v2_foot"] and "4.00" not in p["v2_foot"], f"cap figure leaked: {p['v2_foot']!r}"
+    assert "legacy free top-ups" in p["legline"] and "$" in p["legline"], p["legline"]
+    # a day on/after the v2 resume carries both new bands; every day before
+    # it carries neither (the mix bar is unchanged for history)
+    D = json.load(open(os.path.join(ROOT, "data.json")))
+    new = [d for d in D["facts"]["daily"] if d["d"] >= "2026-09-14"]
+    old = [d for d in D["facts"]["daily"] if d["d"] < "2026-09-14"]
+    assert any("b005" in d["bands"] and "b0005" in d["bands"] for d in new), "no day since 2026-09-14 renders b005 + b0005"
+    assert not any("b005" in d["bands"] or "b0005" in d["bands"] for d in old), "a pre-v2 day carries a v2 band"
     return (f"{p['daily_rows']} daily rows · {p['band_divs']} band divs · hero strip "
-            f"carries a $ figure · exec block rendered non-empty")
+            f"carries a $ figure · exec block rendered non-empty · 13 legend chips · "
+            f"3 rewards_v2 tiles · legacy line · v2 bands only on days ≥ 2026-09-14")
 
 
 def _checks_coupon(p):
@@ -106,7 +126,8 @@ def run_page(page, data_rel, checks, shim):
 
     failures = 0
     probe = {"daily_rows": 0, "band_divs": 0, "strip_text": "", "exec_text": "",
-             "coupon_strip": "", "top_rows": 0}
+             "coupon_strip": "", "top_rows": 0, "legend_chips": 0, "v2_tiles": 0,
+             "v2_foot": "", "legline": ""}
     for i, script in enumerate(scripts):
         # the built page ships with the data already injected (no marker
         # left); the template still carries the slot — either way this runs
@@ -129,9 +150,9 @@ def run_page(page, data_rel, checks, shim):
         m = re.search(r"__RENDER_PROBE__(\{.*\})", r.stdout)
         assert m, f"{page} script[{i}] ran but the probe line is missing:\n{r.stdout[-500:]}"
         p = json.loads(m.group(1))
-        for k in ("daily_rows", "band_divs", "top_rows"):
+        for k in ("daily_rows", "band_divs", "top_rows", "legend_chips", "v2_tiles"):
             probe[k] = max(probe[k], p.get(k, 0))
-        for k in ("strip_text", "exec_text", "coupon_strip"):
+        for k in ("strip_text", "exec_text", "coupon_strip", "v2_foot", "legline"):
             probe[k] = probe[k] or p.get(k, "")
         print(f"ok {page} script[{i}] executed clean "
               f"(daily_rows={p['daily_rows']}, band_divs={p['band_divs']})")

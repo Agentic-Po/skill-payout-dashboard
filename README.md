@@ -26,6 +26,7 @@ GitHub Actions cron (3,18,33,48 * * * *  — 4x/hour, best-effort)
        ├─ writes transfers_export.csv (per-tx audit: tx_hash + log_index + class)
        └─ catalog.build() → catalog.json + DATASETS.md (measured, never typed)
   └─ alerts.py   reads data.json → anomaly / ≥$5k / rebate-swap / retired-payout
+  │              / creator-reward cap + sybil detectors (cap_detect.py)
   └─ notify.py   reads data.json → Telegram digest (hourly gate: ≥50 min apart)
 daily.yml  (01:30 UTC)  → staleness check (fails loud >3h) + daily digest
 weekly.yml (Mon 01:00)  → weekly digest · health alert (always()) · heartbeat
@@ -33,15 +34,33 @@ weekly.yml (Mon 01:00)  → weekly digest · health alert (always()) · heartbea
 
 ## The one-classifier rule
 
-**Every published figure comes from `classify.py`** — page, Telegram, CSV:
+**Every published figure comes from `classify.py`** — page, Telegram, CSV.
+The classifier is **era-aware** (`classify.ERAS`; the ROW timestamp selects
+the era, never the run date), so `classify_usd(usd, ts)` and `band(usd, ts)`
+both take the row's timestamp:
 
-- micro <$0.06 · invoke ≈$0.10 · equip ≈$1 · $3 credit / $5 referral (all ±8%)
+- **v1** (until 2026-08-21T13:55Z): micro <$0.06 · invoke ≈$0.10 · equip ≈$1 (±8%)
+- **pause** (to 2026-09-14T14:19Z): no reward sizes; a $1 is a **legacy free
+  top-up** (`growth`, fine `$1 top-up (legacy)`); a $0.10 is `invoke (retired)`
+- **v2** (from 2026-09-14T14:19Z, Creator Rewards v2): micro <$0.003 ·
+  invoke ≈$0.005 · equip ≈$0.05 (±12%); the $1 legacy top-up continues
+- $3 credit / $5 referral (±8%) in every era
 - Stripe packs $10/$20/$25/$50/$100 matched on the **fee-adjusted** value
   (÷0.94, ±15%) — deliveries land ~6% short of the pack price
 - everything else is **nonstandard** (swaps, treasury moves) and is *excluded*
   from economy figures, reported as the "ops" residual so totals always close
 - pricing is **day-pinned** via `pin_rate()` (carry-forward/back), never the
-  live rate — history cannot reprice with the market
+  live rate — history cannot reprice with the market. Since 2026-09-14 a
+  newly closed day is priced ONLY from its market close (the implied leg
+  back-solved 09-14 at 2.00x from the new $0.05 cluster and is retired as a
+  pricer; a refresh refuses to seal an implied-priced day after that date);
+  today is provisional from the running market candle (`market-open`) or
+  carried forward.
+
+Kerckhoffs is accepted deliberately: every `*.py` here is public, so the cap
+and sybil detector thresholds are readable. They are absolute unit-based
+rules — knowing the rule does not let a farmer earn more than the cap — and
+the per-creator state they produce stays private (Actions cache only).
 
 Facts (balances, flows, transfers) are Layer 1; anything inferred from size
 is Layer 2 and badged "AI-inferred" on the page. Pack-sized transfers are
@@ -86,8 +105,17 @@ is a broader surface than repo secrets — treat its contents accordingly.
 - **Large transfers** ≥$5k (live-priced deliberately), deduped 48h
 - **Rebate wallet**: weekly MENTE→MOCA swap overdue (>8d, ≥$500 unswapped)
 - **Retired payouts**: any transfer matching a retired category
-  (`classify.RETIRED`) after its cutoff — chain-recomputed ledger in
-  guard_private.json is the record; alert state is just dedup (30d window)
+  (`classify.RETIRED`, today the v1 $0.10 invoke after 2026-08-21T13:55Z) —
+  chain-recomputed ledger in guard_private.json is the record; alert state is
+  just dedup (30d window). The legacy $1 top-up (`classify.LEGACY`) is
+  legitimate but shape-constrained; a wallet receiving a second one fires
+  the same 🧟 class
+- **Creator-reward cap (v2)**: `cap_detect.py` — per-creator clock-hour and
+  rolling-60-min unit counters (equip 1, invoke 0.1) since the 14 Sep resume;
+  🔴 breach, 🟠 straddle / saturated / fan-out, 📈 pool fence, 🟠 oracle
+  disagreement (grid agreement < 0.5) — all edge-triggered with cooldowns,
+  Telegram + private state only; a heartbeat older than 2h turns the
+  workflow red via `alive_check.py`
 - **Degradation**: data-source incomplete flips, stale-page banners
   (client-side, works when the pipeline is fully dead), daily >3h staleness
   fail-loud, weekly dead-man health check
@@ -118,16 +146,22 @@ entry. **If you are about to quote a number in a deck, quote the safe sentence.*
 - **Safe to say**: "The rest was treasury logistics — swaps and internal moves, not user activity."
 
 ### `usd_ce` — paid to creators
-- **Formula**: `notify.py:win` — `sum(usd for rows classified invoke or equip)`; the page's parity check is `tests/test_parity.py`.
+- **Formula**: `notify.py:win` — `sum(usd for rows classified invoke or equip)` on the row's own era grid (`classify.ERAS`: $0.10 / $1 until 2026-08-21T13:55Z, $0.005 / $0.05 from 2026-09-14T14:19Z); the page's parity check is `tests/test_parity.py`.
 - **Source**: `transfers/` priced day-pinned. **Coverage**: 24h (hourly/daily digest) or 7d (weekly digest), plus all-time.
-- **Bias**: invoke ≈ $0.10 and equip ≈ $1 are matched at ±8% of the day-pinned USD. Equip was **retired 2026-08-21** (`classify.RETIRED`), so all-time and window figures are not the same mix.
+- **Bias**: matched at ±8% (v1) / ±12% (v2) of the day-pinned USD. **Excludes the $1 legacy free top-ups** paid after 2026-08-21T13:55Z (those are `growth`), so all-time and window figures are not the same mix; the 08-21 $1 rows before the v1 close stay creator earnings.
 - **Safe to say**: "$Z went to creator wallets for skill invokes and equips in the period."
 
 ### `usd_incent` — incentive spend
-- **Formula**: `notify.py:win` — `sum(usd)` over rows whose fine class is `$3 credit` or `referral $5` (`classify.INCENT`, ±8%).
+- **Formula**: `notify.py:win` — `sum(usd)` over rows whose fine class is `$3 credit`, `referral $5` or `$1 top-up (legacy)` (`classify.INCENT`, ±8%; the $1 fine only after 2026-08-21T13:55Z).
 - **Source**: `transfers/` priced day-pinned. **Coverage**: 24h / 7d.
 - **Bias**: size-inferred. A $3 payout that was not a credit is counted; a credit paid at an unusual size is not.
-- **Safe to say**: "$W of growth incentives were paid out — $3 credits and $5 referrals."
+- **Safe to say**: "$W of growth incentives were paid out — $3 credits, $5 referrals and $1 legacy free top-ups."
+
+### `rewards_v2` — Creator Rewards v2 (from 2026-09-14T14:19Z)
+- **Formula**: `refresh.py` — `data.json:facts.rewards_v2`: `usd_24h` / `usd_since_resume` = `sum(usd)` over rows since the resume whose fine class is `equip` or `invoke`; `n_equip_24h`, `n_invoke_24h`, `creators_24h` (distinct recipient wallets); `implied_user_spend_24h = 2 × usd_24h`.
+- **Source**: `transfers/` priced day-pinned. **Coverage**: 24h and since the resume.
+- **Bias**: size-inferred at ±12%. `implied_user_spend_24h` is **AI-inferred**: rewards are 50% of the $0.10 equip / $0.01 invoke user price, and the chain cannot tell whether the user's credit was paid or gifted — **users may spend gifted credits**, so it is never revenue and never "self-funded".
+- **Safe to say**: "Creators earned $Z, paid at half the user price — self-funding holds only to the extent those credits were paid, not gifted." The per-creator hourly cap is never quoted with a figure from the page.
 
 ### `usd_topup` — top-ups delivered
 - **Formula**: `notify.py:win` — `sum(usd)` over rows whose fine class starts `stripe $` (`classify.classify_usd`: value ÷ 0.94 within ±15% of $10/$20/$25/$50/$100).

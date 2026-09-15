@@ -163,7 +163,16 @@
 "pending_rate": {
 "MOCA": 0.00949834
 },
-"open_day_rate": {},
+"open_day_rate": {
+"MOCA": {
+"d": "2026-09-15",
+"rate": 0.00958373
+},
+"MENTE": {
+"d": "2026-09-15",
+"rate": 0.01689809
+}
+},
 "market_rates": {
 "MENTE": {
 "2026-06-01": 0.01491069,
@@ -325,8 +334,7 @@
 "2026-09-11": 0.01662453,
 "2026-09-13": 0.016887,
 "2026-09-12": 0.01688494,
-"2026-09-14": 0.01690794,
-"2026-09-15": 0.0168918
+"2026-09-14": 0.01690794
 },
 "MOCA": {
 "2026-07-19": 0.00837183,
@@ -448,7 +456,6 @@
 "2026-09-10": 0.0085781,
 "2026-09-13": 0.0088675,
 "2026-09-12": 0.00891032,
-"2026-09-15": 0.00929943,
 "2026-09-14": 0.00924424
 }
 },
@@ -519,7 +526,8 @@
 "2026-09-11": "market",
 "2026-09-12": "market",
 "2026-09-13": "market",
-"2026-09-14": "market"
+"2026-09-14": "market",
+"2026-09-15": "market-open"
 },
 "MENTE": {
 "2026-07-11": "implied",
@@ -602,7 +610,8 @@
 "2026-04-27": "market",
 "2026-04-26": "market",
 "2026-04-25": "market",
-"2026-04-24": "market"
+"2026-04-24": "market",
+"2026-09-15": "market-open"
 }
 },
 "market_refused": [],
@@ -617,11 +626,11 @@
 }
 },
 "xcheck": {
-"transfers": 51327956,
-"transfers_in": 51327971,
-"cognition_in": 51327987,
-"coupon_out": 51328013,
-"coupon_in": 51328013,
+"transfers": 51327935,
+"transfers_in": 51327969,
+"cognition_in": 51328010,
+"coupon_out": 51328039,
+"coupon_in": 51328039,
 "sink_to": 51088609,
 "sink_from": 51088609
 },
@@ -1500,5 +1509,21 @@
 }
 ]
 }
+},
+"market_open": {
+"MENTE": {
+"d": "2026-09-15",
+"close": 0.01689809,
+"fetched": "2026-09-15T04:09:18Z"
+},
+"MOCA": {
+"d": "2026-09-15",
+"close": 0.00958373,
+"fetched": "2026-09-15T04:09:20Z"
+}
+},
+"market_rates_note": {
+"open12_through": "2026-09-15",
+"note": "values for days through 2026-09-15 were banked by the first fetch after 00:00 UTC of the day they were first committed; a day first committed on its own date is an open+~12min print, not a close (alternating days \u2014 derive the list with git log -S). From 2026-09-16 a day is banked only after it closes; today's running candle is market_open and is never banked."
 }
 }

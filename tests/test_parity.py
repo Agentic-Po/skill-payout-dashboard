@@ -30,7 +30,8 @@ TOL = 0.01
 # key/name the glossary is required to carry.
 GLOSSARY_KEYS = ["economy_out_usd", "ops_out_usd", "out_usd", "usd_ce",
                  "usd_incent", "usd_topup", "wallet balance", "subsidy ratio",
-                 "user-funded cognition lower bound", "distribution float"]
+                 "user-funded cognition lower bound", "distribution float",
+                 "rewards_v2", "$1 top-up (legacy)", "implied_user_spend_24h"]
 
 
 def _load():
@@ -49,9 +50,36 @@ def _load():
         val = int(i["total"]["value"]) / 10 ** dec
         ts = i["timestamp"][:19]
         usd = val * pin_rate(rates.get(sym, {}), ts[:10], D["facts"]["rate"].get(sym) or 0)
-        coarse, fine, _ = classify_usd(usd)
+        coarse, fine, _ = classify_usd(usd, ts)
         rows.append({"ts": ts, "tok": sym, "usd": usd, "cat": coarse, "fine": fine})
     return D, rows
+
+
+def _one_classifier_guard():
+    """No file other than classify.py may know a reward size, and every
+    classify_usd()/band() call outside it must pass the row timestamp
+    (Creator Rewards v2: a day-blind copy of the grid is the failure that
+    priced 2026-09-14 at 2x). Root *.py only — tests/ legitimately carry
+    literals (test_eras.py) and one-argument fixtures."""
+    import glob
+    bad = []
+    lits = re.compile(r"< 0\.06|0\.05,|0\.005|(?<![\w.])_snap\(")
+    for p in sorted(glob.glob(os.path.join(ROOT, "*.py"))):
+        name = os.path.basename(p)
+        if name == "classify.py":
+            continue
+        src = open(p).read()
+        for m in lits.finditer(src):
+            line = src[:m.start()].count("\n") + 1
+            bad.append(f"{name}:{line}: reward-size literal {m.group(0)!r} outside classify.py")
+        for m in re.finditer(r"(?<![\w.])(classify_usd|band)\(([^()]*(?:\([^()]*\)[^()]*)*)\)", src):
+            args = [a for a in m.group(2).split(",") if a.strip()]
+            if len(args) != 2:
+                line = src[:m.start()].count("\n") + 1
+                bad.append(f"{name}:{line}: {m.group(1)}() called with {len(args)} arg(s), want (usd, ts)")
+    assert not bad, "one-classifier guard:\n  " + "\n  ".join(bad)
+    print("ok one-classifier guard: no reward-size literal and no day-blind classify_usd()/band() call outside classify.py")
+    return 1
 
 
 def _sums(rows, cut):
@@ -265,6 +293,7 @@ def main():
 
     checked += _exec_sentence_checks(D)
     checked += _coupon_checks()
+    checked += _one_classifier_guard()
 
     print(f"test_parity: PASS ({checked} figure checks)")
     return 0

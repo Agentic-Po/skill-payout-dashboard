@@ -45,7 +45,19 @@ CSV_HEADER = ("timestamp_utc", "direction", "token", "amount", "rate_usd",
               "rate_source", "usd", "size_band", "counterparty", "tx_hash",
               "log_index", "class_coarse", "class_fine")
 
-SIGNATURES = {"classify_usd": "(usd)", "pin_rate": "(day_rates, day, fallback)"}
+# classify_usd / band became era-aware on 2026-09-15 (Creator Rewards v2):
+# the row timestamp is a REQUIRED positional argument — CONSUMERS.md §3.
+SIGNATURES = {"classify_usd": "(usd, ts)", "band": "(usd, ts)",
+              "pin_rate": "(day_rates, day, fallback)"}
+
+# infer keys: exact. legacy_public added 2026-09-15 (CONSUMERS.md §5).
+INFER_KEYS = {"S", "creators", "ce_total", "fine_table", "guard", "retired_public", "legacy_public"}
+REWARDS_V2_KEYS = {"resumed_utc", "cap_on_utc", "usd_24h", "usd_since_resume", "n_equip_24h",
+                   "n_invoke_24h", "creators_24h", "creators_since_resume", "implied_user_spend_24h"}
+PROVENANCE_KEYS = {"by_token", "implied", "market", "refused", "carry_forward", "market_open",
+                   "restatement_usd", "restatement_date"}
+BAND_KEYS = ["micro", "b0005", "b005", "b010", "b1", "b3", "b5", "b10", "b20", "b25",
+             "b50", "b100", "other"]
 
 
 def main():
@@ -60,6 +72,23 @@ def main():
         assert set(w) == WINDOW_KEYS, \
             f"facts_window {w.get('label')!r} drifted: extra={sorted(set(w)-WINDOW_KEYS)} missing={sorted(WINDOW_KEYS-set(w))}"
     print(f"ok data.json: top-level exact, schema_version 2, {len(windows)} window entries exact")
+    assert set(D["infer"]) == INFER_KEYS, \
+        f"infer drifted: extra={sorted(set(D['infer'])-INFER_KEYS)} missing={sorted(INFER_KEYS-set(D['infer']))}"
+    rv = D["facts"]["rewards_v2"]
+    assert set(rv) == REWARDS_V2_KEYS, f"facts.rewards_v2 keys drifted: {sorted(rv)}"
+    assert rv["resumed_utc"] == "2026-09-14T14:19Z" and rv["cap_on_utc"] == "2026-09-14T19:12Z"
+    for lp in D["infer"]["legacy_public"]:
+        assert set(lp) == {"cat", "since", "n", "usd", "last_seen"}, f"legacy_public shape drifted: {lp}"
+    for rp in D["infer"]["retired_public"]:
+        assert set(rp) == {"cat", "cutoff", "n", "usd", "last_seen"}, f"retired_public shape drifted: {rp}"
+        assert rp["cat"] == "invoke_v1", f"retired_public cat {rp['cat']!r} != 'invoke_v1'"
+    assert set(D["facts"]["pricing_provenance"]) == PROVENANCE_KEYS, \
+        f"pricing_provenance keys drifted: {sorted(D['facts']['pricing_provenance'])}"
+    assert D["facts"]["band_keys"] == BAND_KEYS, f"band_keys drifted: {D['facts']['band_keys']}"
+    assert set(D["facts"]["band_labels"]) == set(BAND_KEYS)
+    assert D["facts"]["band_labels"]["micro"].startswith("< $0.003"), D["facts"]["band_labels"]["micro"]
+    print("ok data.json: infer keys exact, rewards_v2 / legacy_public / retired_public / "
+          "pricing_provenance shapes, 13 band keys incl. b0005/b005")
 
     # 2. transfers_export.csv
     with open(os.path.join(ROOT, "transfers_export.csv"), newline="") as fh:
