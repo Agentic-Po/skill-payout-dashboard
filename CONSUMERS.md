@@ -107,3 +107,13 @@ last count — the LIVE numbers are always each repo's machine-generated
 Known consumers today: the dashboard page + Telegram digest (this repo),
 minds-canvas-dashboard (candidate), PostHog warehouse (manual snapshots),
 treasury analyses in moca-ledger-private.
+
+## v4 (2026-09-18) — `in_recycled_usd` / `in_external_usd` semantics
+
+`in_recycled_usd` now counts every inflow that is **not new money**: collector recycling (as before) **plus returns from
+the treasury-controlled reserve** `0x5edea733…d49c`. `in_external_usd` (`in_usd - in_recycled_usd`) therefore counts only
+money entering from outside. Key names and shapes are unchanged; only the split moves.
+
+Why: the treasury moved $41,313 to that reserve on 2026-08-25 and it was returned on 2026-09-04/11/18. Counting the
+returns as external funding overstated lifetime money-in by ~$40K — caught while preparing the 2026-09-18 budget
+request, where the public dashboard would have contradicted the filing.

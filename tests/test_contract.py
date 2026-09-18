@@ -10,7 +10,7 @@ documents the new contract.
 
 Plain asserts, stdlib only, no network:
 
-  1. data.json: EXACT top-level key set, schema_version == 3, EXACT
+  1. data.json: EXACT top-level key set, schema_version == 4, EXACT
      facts_window key set on every windows/prev24/monthly entry, group sums
      closing on out_usd, facts.float / facts.creator_wallets shapes.
   2. transfers_export.csv: exact 13-column header tuple (and no
@@ -76,7 +76,7 @@ def main():
     D = json.load(open(os.path.join(ROOT, "data.json")))
     assert set(D) == TOP_KEYS, \
         f"data.json top-level drifted: extra={sorted(set(D)-TOP_KEYS)} missing={sorted(TOP_KEYS-set(D))}"
-    assert D["schema_version"] == 3, f"schema_version {D['schema_version']!r} != 3"
+    assert D["schema_version"] == 4, f"schema_version {D['schema_version']!r} != 4"
     windows = D["facts"]["windows"] + [D["facts"]["prev24"]] + D["facts"]["monthly"]
     assert len(D["facts"]["windows"]) == 4, "facts.windows is no longer the 24h/7d/30d/all quartet"
     for w in windows:
@@ -87,7 +87,7 @@ def main():
         assert abs(gsum - w["out_usd"]) <= 0.011, f"{w['label']}: group sums ${gsum:,.2f} != out_usd ${w['out_usd']:,.2f}"
         esum = sum(g["usd"] for k, g in w["groups"].items() if k != "ops")
         assert abs(esum - w["economy_out_usd"]) <= 0.011, f"{w['label']}: non-ops groups ${esum:,.2f} != economy ${w['economy_out_usd']:,.2f}"
-    print(f"ok data.json: top-level exact, schema_version 3, {len(windows)} window entries exact, group sums close on out_usd")
+    print(f"ok data.json: top-level exact, schema_version 4, {len(windows)} window entries exact, group sums close on out_usd")
     assert D["facts"]["group_keys"] == GROUP_KEYS and set(D["facts"]["group_labels"]) == set(GROUP_KEYS)
     fl = D["facts"]["float"]
     assert set(fl) == FLOAT_KEYS, f"facts.float keys drifted: {sorted(fl)}"

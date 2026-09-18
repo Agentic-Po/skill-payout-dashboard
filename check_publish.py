@@ -227,6 +227,8 @@ STRUCTURAL_LABELS = {
     "MOCA/MENTE pool — LP'd by treasury; price oracle",
     "EIP-7702 delegator implementation the treasury EOA delegates to",
     "Swap counterparty — took 72k MENTE, returned 112k MOCA; venue unconfirmed",
+    "Treasury reserve — internal; its inflows here are returns of treasury funds, not new money",
+    "Treasury reserve — funds moved out 2026-08-25 and returned 2026-09-04/11/18; inflows from here are returns, not external funding",
 }
 STRUCTURAL_LABEL_RES = [
     re.compile(r"^Funding wallet [A-Z]{1,2}$"),

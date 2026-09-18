@@ -66,8 +66,8 @@ def main():
     for rel in ("data.json", "index.html"):
         _clean(rel)
     D = json.load(open(os.path.join(ROOT, "data.json")))
-    assert D.get("schema_version") == 3, "data.json is not the v3 contract"
-    print("ok data.json schema_version == 3")
+    assert D.get("schema_version") == 4, "data.json is not the v4 contract"
+    print("ok data.json schema_version == 4")
     for rel in PUBLIC_ARTIFACTS:
         p = os.path.join(ROOT, rel)
         if not os.path.exists(p):

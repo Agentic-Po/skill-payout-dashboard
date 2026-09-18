@@ -87,6 +87,7 @@ ADDR2SYM = {v["addr"]: k for k, v in TOKENS.items()}
 # The four flow-chart wallets (treasury, collector, rebate, gas funder) are
 # deliberately public by owner decision and keep their names.
 KNOWN = {"0x9a95d76c41aa34093a0db5f26f97309fe734a07f": "creator wallet",
+         "0x5edea73327eaf586164233e288ba2a8775ccd49c": "Treasury reserve — internal; its inflows here are returns of treasury funds, not new money",
          "0xd85096faec1ac03075667b4c1a1661f5623bf111": "Cognition Credits collector — also the original SWARM-era treasury+collector hub (pre-Apr 2026)",
          "0xea87169699dabd028a78d4b91544b4298086baf6": "SWARM token contract (original Cognition Credit token, migrated to MENTE ~Apr 2026)",
          "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432": "AgentIdentity registry (historic, ERC-8004 era)",
@@ -1167,11 +1168,19 @@ cut7 = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
 cut30 = (now - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
 
 
+# Treasury-controlled reserve: the treasury moved funds here on 2026-08-25
+# and they were returned 2026-09-04/11/18. Its inflows are RETURNS of our
+# own money, not external funding — counting them as external overstated
+# money-in by ~$40K on the public page (found preparing the 2026-09-18
+# budget request).
+RESERVE = "0x5edea73327eaf586164233e288ba2a8775ccd49c"
 RECYCLE_SRC = "0xd85096faec1ac03075667b4c1a1661f5623bf111"
+# Inflows that are NOT new money: collector recycling + reserve returns.
+INTERNAL_SRC = {RECYCLE_SRC, RESERVE.lower()}
 def facts_window(rs, ins, label):
     out_usd = sum(r["usd"] for r in rs)
     in_usd = sum(f["usd"] for f in ins)
-    in_recycled = sum(f["usd"] for f in ins if f["from"].lower() == RECYCLE_SRC)
+    in_recycled = sum(f["usd"] for f in ins if f["from"].lower() in INTERNAL_SRC)
     # economy = classified payouts; ops = the residual (swaps/treasury moves),
     # computed as out - economy so the two ALWAYS sum to the total exactly
     economy_out = sum(r["usd"] for r in rs if r["cat"] != "nonstandard")
@@ -1181,9 +1190,16 @@ def facts_window(rs, ins, label):
     for r in rs:
         g = groups[r["grp"]]
         g["n"] += 1; g["usd"] += r["usd"]; g["w"].add(r["to"])
+    # round the groups so their sum CLOSES on out_usd exactly: rounding each
+    # independently drifted 1-2c on wide windows and tripped test_contract.
+    _go = {g: {"n": v["n"], "usd": round(v["usd"], 2), "wallets": len(v["w"])}
+           for g, v in groups.items()}
+    _resid = round(round(out_usd, 2) - sum(x["usd"] for x in _go.values()), 2)
+    if _resid and _go:
+        _big = max(_go, key=lambda k: _go[k]["usd"])
+        _go[_big]["usd"] = round(_go[_big]["usd"] + _resid, 2)
     return {"label": label,
-            "groups": {g: {"n": v["n"], "usd": round(v["usd"], 2), "wallets": len(v["w"])}
-                       for g, v in groups.items()},
+            "groups": _go,
             "out_usd": round(out_usd, 2), "in_usd": round(in_usd, 2),
             "economy_out_usd": round(economy_out, 2),
             "ops_out_usd": round(out_usd - economy_out, 2),
@@ -2135,6 +2151,7 @@ registry = [
     # private (moca-ledger-private:labels/). Mimic warnings name no victim.
     _reg("0x4d3021a52b31ffafde3c46450d02c72807c3a178", f"{in_label('0x4d3021a52b31ffafde3c46450d02c72807c3a178')[0] or 'Funding wallet'} — manual MOCA top-ups", "Funding sources"),
     _reg("0xf605dbb5626dfc1448cee33e2e1221103021468f", f"{in_label('0xf605dbb5626dfc1448cee33e2e1221103021468f')[0] or 'Funding wallet'} — primary MENTE funder", "Funding sources"),
+    _reg(RESERVE, "Treasury reserve — funds moved out 2026-08-25 and returned 2026-09-04/11/18; inflows from here are returns, not external funding", "Treasury"),
     _reg(SINK, "Minds Rebate wallet — receives the daily 40% MENTE sweep from the collector since 2026-06-19; DATops swaps its MENTE to MOCA on a weekly cadence", "Collector"),
     _reg("0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B", "EIP-7702 delegator implementation the treasury EOA delegates to", "Infrastructure"),
     _reg("0x45d0cEAd7c0a2E1a0528C4131A2d95DE9a394839", f"{in_label('0x45d0cEAd7c0a2E1a0528C4131A2d95DE9a394839')[0] or 'Funding wallet'} — early MENTE funder (Apr 2026)", "Funding sources"),
@@ -2227,7 +2244,7 @@ exec_summary = {"text": " ".join(_exec_sent), "degraded": _exec_degraded,
 # facts.cognition.funding_split / rewards_v2.cap_on_utc + implied_user_spend
 # / server.subsidy_ratio removed; facts.float, facts.creator_wallets,
 # facts_window.groups, hourly.g added. See CONSUMERS.md §5.
-data = {"schema_version": 3,
+data = {"schema_version": 4,
         "scope": scope, "facts": facts, "infer": infer, "server": server, "stripe_snap": stripe_snap,
         "insights": insights, "open_items": open_items, "gaps": gaps, "registry": registry, "sink": sink,
         "exec_summary": exec_summary}
