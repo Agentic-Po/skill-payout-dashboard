@@ -104,11 +104,5 @@ they feed.
 
 ## peer repo — Agentic-Po/moca-ledger
 
-Fetched from `catalog.json` at build time: **271,588 rows · 68.5 MB across 3 datasets**.
-
-| Dataset | Rows | Size | Coverage |
-|---|---:|---:|---|
-| `ledger` | 271,486 | 68.5 MB | 2026-07-06 → 2026-09-20 |
-| `labels` | 101 | 5.5 KB | 2026-08-22 → 2026-08-22 |
-| `heartbeat` | 1 | 511 B | 2026-09-20 → 2026-09-20 |
+_peer catalog unavailable this run_ (not fetched).
 

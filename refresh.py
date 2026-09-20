@@ -1190,16 +1190,14 @@ def facts_window(rs, ins, label):
     for r in rs:
         g = groups[r["grp"]]
         g["n"] += 1; g["usd"] += r["usd"]; g["w"].add(r["to"])
-    # round the groups so their sum CLOSES on out_usd exactly: rounding each
-    # independently drifted 1-2c on wide windows and tripped test_contract.
-    _go = {g: {"n": v["n"], "usd": round(v["usd"], 2), "wallets": len(v["w"])}
-           for g, v in groups.items()}
-    _resid = round(round(out_usd, 2) - sum(x["usd"] for x in _go.values()), 2)
-    if _resid and _go:
-        _big = max(_go, key=lambda k: _go[k]["usd"])
-        _go[_big]["usd"] = round(_go[_big]["usd"] + _resid, 2)
+    # Each group rounds its OWN sum — never nudged to force closure. Pushing
+    # the residual onto the largest group (tried 2026-09-18) made the published
+    # value differ by a cent from an honest recompute, and test_parity rightly
+    # failed ~1 run in 3 for two days, each one paging Po with a false alarm.
+    # Independent rounding cannot close exactly; test_contract allows the drift.
     return {"label": label,
-            "groups": _go,
+            "groups": {g: {"n": v["n"], "usd": round(v["usd"], 2), "wallets": len(v["w"])}
+                       for g, v in groups.items()},
             "out_usd": round(out_usd, 2), "in_usd": round(in_usd, 2),
             "economy_out_usd": round(economy_out, 2),
             "ops_out_usd": round(out_usd - economy_out, 2),

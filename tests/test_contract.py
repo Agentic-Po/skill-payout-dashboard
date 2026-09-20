@@ -83,10 +83,14 @@ def main():
         assert set(w) == WINDOW_KEYS, \
             f"facts_window {w.get('label')!r} drifted: extra={sorted(set(w)-WINDOW_KEYS)} missing={sorted(WINDOW_KEYS-set(w))}"
         assert list(w["groups"]) == GROUP_KEYS, f"{w['label']}: group keys {list(w['groups'])}"
+        # Six groups each round their own sum, so the total can drift up to
+        # 6 x 0.005. Published per-group values stay honest (an independent
+        # recompute matches them to the cent, which test_parity checks);
+        # forcing exact closure instead is what broke that on 2026-09-18.
         gsum = sum(g["usd"] for g in w["groups"].values())
-        assert abs(gsum - w["out_usd"]) <= 0.011, f"{w['label']}: group sums ${gsum:,.2f} != out_usd ${w['out_usd']:,.2f}"
+        assert abs(gsum - w["out_usd"]) <= 0.031, f"{w['label']}: group sums ${gsum:,.2f} != out_usd ${w['out_usd']:,.2f}"
         esum = sum(g["usd"] for k, g in w["groups"].items() if k != "ops")
-        assert abs(esum - w["economy_out_usd"]) <= 0.011, f"{w['label']}: non-ops groups ${esum:,.2f} != economy ${w['economy_out_usd']:,.2f}"
+        assert abs(esum - w["economy_out_usd"]) <= 0.031, f"{w['label']}: non-ops groups ${esum:,.2f} != economy ${w['economy_out_usd']:,.2f}"
     print(f"ok data.json: top-level exact, schema_version 4, {len(windows)} window entries exact, group sums close on out_usd")
     assert D["facts"]["group_keys"] == GROUP_KEYS and set(D["facts"]["group_labels"]) == set(GROUP_KEYS)
     fl = D["facts"]["float"]
