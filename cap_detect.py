@@ -28,6 +28,9 @@ Alerts (all edge-triggered, HKT in text):
   C6 ORACLE          grid agreement < 0.5 with n >= 30 on the open day or yesterday
 C1-C4 evaluate ONLY clock-hours starting >= CAP_ON hour and rolling windows
 ending after CAP_ON_UTC — before that no cap existed to breach.
+
+Also here (2026-09-21, council "funding cliff" finding): runway_check(), the
+treasury float edge alert — pure like the rest, fed by alerts.py.
 """
 from datetime import datetime, timedelta
 
@@ -284,6 +287,44 @@ def oracle_check(grid, state, now, today):
         secs.append(["", f"🟢 <b>Oracle agreement restored:</b> outflow rows land on a known price grid again "
                          f"as of {hkt(now)} — check that day_rates.json carries the corrected day rate"])
     state["oracle_ok"] = not bad
+    return secs, state
+
+
+# ---- treasury runway edge alert (item 4, 2026-09-21) ----
+# Float days at the 7d pace (facts.float.days_7d_pace) below 7, and again
+# below 3: edge-triggered per threshold, 24 h cooldown, re-armed once the
+# figure recovers ABOVE the threshold. ~9.7 d on the day this shipped, so
+# both stay silent today and fire before the wallet is empty. PAGE tier —
+# a funding cliff is money-relevant and goes to the funding owner at once.
+RUNWAY_THRESHOLDS = ((7, "lt7"), (3, "lt3"))
+RUNWAY_COOLDOWN_H = 24
+
+
+def runway_check(days_7d, bal_usd, driver, state, now):
+    """-> (sections, state). `driver` is facts.float.driver_24h (may be None)."""
+    secs = []
+    rw = state.setdefault("runway", {})
+    if days_7d is None:
+        return secs, state
+    for thr, key in RUNWAY_THRESHOLDS:
+        st = rw.get(key, {})
+        below = days_7d < thr
+        if not below:
+            rw[key] = {"below": False, "last_alert": st.get("last_alert")}     # re-arm
+        elif st.get("below"):
+            continue                                                            # already reported
+        elif not _cooled(st.get("last_alert"), now, RUNWAY_COOLDOWN_H):
+            # an edge inside the cooldown stays ARMED (below=False) so it fires
+            # the moment the cooldown expires if the float is still short —
+            # a funding cliff must never be swallowed by its own cooldown
+            rw[key] = {"below": False, "last_alert": st.get("last_alert")}
+        else:
+            rw[key] = {"below": True, "last_alert": _iso(now)}
+            drv = (f" · driver: {driver['label']} {driver.get('share_pct', 0):g}% of 24h outflow"
+                   if driver else "")
+            secs.append(["", f"🔴 <b>Float below {thr} days:</b> ~{days_7d:g} days at the 7d pace, "
+                             f"balance <b>${bal_usd:,.0f}</b> (as of {hkt(now)}){drv} — "
+                             f"funding request needed now; check the wallet before the float runs out"])
     return secs, state
 
 

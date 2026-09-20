@@ -22,6 +22,18 @@ cap_detect.py (pure functions); this file feeds them rows and state, writes
 the cap_probe heartbeat EVERY run, and merges the per-creator review table
 into guard_private.json (private). All times in Telegram text are HKT.
 Env vars: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID.
+
+Severity tiers (council 2026-09-21, the Sep 18-20 lesson) — every block
+below is tagged:
+  PAGE  money-relevant detector fired: its own Telegram message, now
+        (cap breach/straddle/saturated/fan-out, pool fence, oracle
+        disagreement, Tukey outflow, >= $5k transfers, retired category,
+        repeat system top-up, credit-grant spike, first-ever surge, runway)
+  WARN  degraded-but-published or housekeeping: queued via state.warn() and
+        carried by the NEXT digest, at most one per key per 6 h (rebate swap
+        reminder, ledger/state mismatches, data-source degraded/recovered,
+        oracle agreement restored)
+  LOG   stdout only
 """
 import json, os, statistics, urllib.request, urllib.parse
 from datetime import datetime, timezone, timedelta
@@ -113,7 +125,8 @@ seen = set(state.get("seen", []))
 # state["anomaly"], and on a cold cache a detached dict here would lose the
 # Tukey `out` edge recorded below.
 anom = state.setdefault("anomaly", {})
-lines = []
+lines = []          # PAGE-tier blocks ('' separated)
+warn_lines = []     # WARN-tier blocks — same shape, drained into the next digest
 
 # --- 1. hourly outflow anomaly vs median + 3*IQR (Tukey fence; decided with
 # Po 2026-08-05 after the spec'd median+3*sigma_iqr backtested at a 22% fire
@@ -167,7 +180,7 @@ if _rebate and _rebate.get("overdue"):
     if _last_rem is None or now - datetime.fromisoformat(_last_rem) >= timedelta(days=6):
         state["rebate_swap_reminded"] = now.isoformat(timespec="minutes")
         _sink_addr = (DATA.get("sink") or {}).get("addr", "")
-        lines += ["", "⏰ <b>Rebate wallet swap overdue</b> — remind DATops",
+        warn_lines += ["", "⏰ <b>Rebate wallet swap overdue</b> — remind DATops",
                   f"  · Minds Rebate wallet {_sink_addr[:8]}…{_sink_addr[-4:]} holds "
                   f"<b>{_rebate['bal_mente']:,.0f} MENTE</b> (≈${_rebate['bal_mente_usd']:,.0f}) unswapped",
                   f"  · last MENTE→MOCA swap: <b>{_rebate.get('last_swap') or 'never'}</b>"
@@ -225,7 +238,7 @@ if _ledger and not _new_retired:
     _led_recent = sum(1 for L in _ledger.values() for e in L.get("entries", [])
                       if e["ts"][:10] > _CANDIDATE_CUT.strftime("%Y-%m-%d"))
     if _led_recent != len(retired_seen):
-        lines += ["", f"⚠️ <b>Retired-ledger mismatch:</b> chain ledger has {_led_recent} straggler(s) in the last 30d, tripwire state has {len(retired_seen)} — check guard_private.json"]
+        warn_lines += ["", f"⚠️ <b>Retired-ledger mismatch:</b> chain ledger has {_led_recent} straggler(s) in the last 30d, tripwire state has {len(retired_seen)} — check guard_private.json"]
 
 # --- 4b. system free top-up (≈$1): one per wallet (private invariant) ---
 # The system free top-up is legitimate but shape-constrained. Count per wallet
@@ -265,7 +278,7 @@ _leg_rep = {a for L in _leg_ledger.values() for a in L.get("repeat_wallets", [])
 if _leg_ledger and not _new_legacy:
     _seen_rep = {v["to"].lower() for v in legacy_seen.values()}
     if _leg_rep - _seen_rep:
-        lines += ["", f"⚠️ <b>System-top-up ledger mismatch:</b> chain ledger lists {len(_leg_rep)} repeat wallet(s), "
+        warn_lines += ["", f"⚠️ <b>System-top-up ledger mismatch:</b> chain ledger lists {len(_leg_rep)} repeat wallet(s), "
                       f"tripwire state knows {len(_seen_rep)} — check guard_private.json"]
 
 # --- 4c. A5 edge alerts (2026-09-15): the one treasury event of the day,
@@ -325,10 +338,20 @@ print(f"edge: credit grants 24h ${_cg24:,.0f} vs prior ${_cgprev:,.0f} · first-
 _src_ok = bool(DATA["scope"].get("complete", True))
 _was_ok = state.get("source_ok", True)
 if _was_ok and not _src_ok:
-    lines += ["", "🟠 <b>Data source degraded:</b> this refresh rendered with incomplete chain data (cache fallback) — figures may lag until the source recovers"]
+    warn_lines += ["", "🟠 <b>Data source degraded:</b> this refresh rendered with incomplete chain data (cache fallback) — figures may lag until the source recovers"]
 elif _src_ok and not _was_ok:
-    lines += ["", "🟢 <b>Data source recovered:</b> chain fetch complete again"]
+    warn_lines += ["", "🟢 <b>Data source recovered:</b> chain fetch complete again"]
 state["source_ok"] = _src_ok
+
+# --- 5b. treasury runway edge alert (item 4, 2026-09-21: the council's
+# "funding cliff" finding). facts.float.days_7d_pace below 7, then below 3;
+# per-threshold edge, 24 h cooldown, re-armed on recovery. ~9.7 d on the
+# day this shipped -> silent today. PAGE tier: to the funding owner at once.
+_FL = DATA["facts"].get("float") or {}
+_rw_secs, state = cap_detect.runway_check(_FL.get("days_7d_pace"), _FL.get("bal_usd") or 0,
+                                          _FL.get("driver_24h"), state, now)
+print(f"runway: {_FL.get('days_7d_pace')} d at the 7d pace · thresholds {[t for t, _ in cap_detect.RUNWAY_THRESHOLDS]}"
+      + (" · FIRED" if _rw_secs else ""))
 
 # --- 6. creator-reward cap / sybil detectors C1-C6 (cap_detect.py) ---
 # Rows: outflow rows since the v2 resume, day-pinned USD, era-aware fine
@@ -342,7 +365,11 @@ _sw = cap_detect.sweep(_rrows, now)
 cap_sections, state = cap_detect.evaluate(_sw, state, now)
 _or_secs, state = cap_detect.oracle_check(_guard.get("grid_agreement"), state, now,
                                           now.strftime("%Y-%m-%d"))
-cap_sections += _or_secs
+cap_sections += _or_secs + _rw_secs
+# the oracle RECOVERY line is informational -> WARN tier (next digest); the
+# disagreement itself stays PAGE (a wrong day rate doubles every USD figure)
+_warn_secs = [sec for sec in cap_sections if any("Oracle agreement restored" in ln for ln in sec)]
+cap_sections = [sec for sec in cap_sections if sec not in _warn_secs]
 # Heartbeat: written NOW, unconditionally — a failed Telegram send below must
 # not erase the proof that the detector ran (alive_check.py's dead-man).
 cap_probe = cap_detect.probe(_sw, now)
@@ -370,8 +397,9 @@ def persist_state():
     st = {**state, "seen": sorted(seen & recent), "anomaly": anom}
     # send_health is owned by state.record_send (item 4): the copy loaded at
     # the top of this run is stale by send time — writing it back here would
-    # clobber the outcome just recorded.
+    # clobber the outcome just recorded. warn_queue likewise (state.warn).
     st.pop("send_health", None)
+    st.pop("warn_queue", None)
     _statemod.update(st, drop=("legacy_seen",))
 
 
@@ -387,6 +415,19 @@ def _sections(ls):
         out.append(cur)
     return out
 
+
+# ---- WARN tier: never its own message. Queued (one per key per 6 h) and
+# carried by the next hourly/daily digest (notify.py drains the queue).
+_WARN_KEY = (("Rebate wallet swap overdue", "rebate_swap"), ("Retired-ledger mismatch", "retired_mismatch"),
+             ("System-top-up ledger mismatch", "topup_mismatch"), ("Data source degraded", "source"),
+             ("Data source recovered", "source"), ("Oracle agreement restored", "oracle_restored"))
+for sec in _warn_secs + _sections(warn_lines):
+    text = " ".join(ln.strip() for ln in sec if ln.strip())
+    key = next((k for needle, k in _WARN_KEY if needle in text), "misc")
+    if _statemod.warn("alerts:" + key, text, now):
+        print(f"WARN queued [{key}] for the next digest")
+    else:
+        print(f"WARN [{key}] inside its 6 h cooldown — not re-queued")
 
 all_sections = cap_sections + _sections(lines)
 if all_sections:

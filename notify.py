@@ -266,6 +266,21 @@ if mode != "hourly":
     _n_sent = sum(1 for c in _sh.values() for t in c.get("sent", []) if t > _cut24)
     _n_fail = sum(1 for c in _sh.values() for t in c.get("failed", []) if t > _cut24)
     health.append(f"<b>alerts:</b> {_n_sent} sent / {_n_fail} failed (24h)")
+    # Item 3 (2026-09-21): ONE private line from sanity.py's anomaly pass
+    # (guard_private.json, Actions cache) — per-wallet grant counts never
+    # reach a public artifact; the chain shows wallets, not accounts.
+    if mode == "daily":
+        _gp = os.path.join(HERE, "guard_private.json")
+        try:
+            _rg = (json.load(open(_gp)).get("repeat_grants") or {}) if os.path.exists(_gp) else {}
+        except ValueError:
+            _rg = {}
+        if _rg:
+            health.append(f"<b>Repeat grants (private):</b> {_rg.get('repeat_wallets', 0):,} wallets took >1 "
+                          f"(${_rg.get('repeat_usd', 0):,.0f}, {_rg.get('repeat_share_pct', 0):g}% of grant spend); "
+                          f"heaviest {_rg.get('heaviest_grants', 0):,} grants")
+        else:
+            health.append("<b>Repeat grants (private):</b> <i>not banked yet (sanity.py has not run on this cache)</i>")
 if mode == "weekly":
     health.append("")
     _ss = _D.get("stripe_snap") or {}
@@ -313,7 +328,16 @@ cp = _ST.get("cap_probe") or {}
 cp_fresh = bool(cp.get("ts")) and (now - datetime.fromisoformat(cp["ts"])).total_seconds() <= 2 * 3600
 if not cp_fresh:
     alerts.append(f"⚠️ <b>Cap probe missing</b> — detector did not run (last {hkt(cp['ts']) if cp.get('ts') else 'never'})")
+# ---- WARN tier (severity tiering, 2026-09-21): degraded-but-published
+# notices queued by alerts.py / sanity.py / refresh.py ride alert_state.json
+# and are carried HERE, in the next digest, never as their own message.
+# Marked sent only after a successful send of a message that actually
+# carried them (the hourly budget may push some to the daily).
+_warns = _state.pending_warns(now)
+_warn_text = {f"🟠 {w['text']}": w["key"] for w in _warns}
+alerts += list(_warn_text)
 health += [""] + alerts if alerts else []
+_carried_warn_keys = [k for k in _warn_text.values()]
 
 
 # ---- Creator Rewards v2 block (daily/weekly only since 2026-09-15) ----
@@ -401,6 +425,7 @@ if mode == "hourly":
             kept.pop(-2)
     msg = "\n".join(body_lines + kept)
     assert len(msg) <= HOURLY_MAX, f"hourly digest is {len(msg)} chars — the phone-first budget is {HOURLY_MAX}"
+    _carried_warn_keys = [_warn_text[ln] for ln in kept if ln in _warn_text]
 else:
     body_lines = [f"{head} — <i>Skill Payout Dashboard</i> · {hkt(now, '%d %b %Y %H:%M')}", "", float_line(), "",
                   "📈 <b>Economy</b>",
@@ -465,6 +490,9 @@ except Exception:
 _state.record_send("digest", True, now)
 # stamp AFTER the successful send — stamping first would let one failed send
 # silence the digest for 50 min (same class as the alerts.py QA finding)
+if _carried_warn_keys:
+    _state.mark_warns_sent(_carried_warn_keys, now)
+    print(f"WARN tier: {len(_carried_warn_keys)} queued notice(s) carried by this digest")
 if mode == "hourly":
     _state.update({"last_hourly_digest": now.isoformat(timespec="minutes")})
 elif not _restated:

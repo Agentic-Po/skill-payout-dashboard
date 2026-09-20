@@ -139,6 +139,50 @@ is a broader surface than repo secrets — treat its contents accordingly.
   (client-side, works when the pipeline is fully dead), daily >3h staleness
   fail-loud, weekly dead-man health check
 
+## Sanity gate — monitor-of-the-monitor (`sanity.py`, 2026-09-21)
+
+Council verdict after three weeks live: six detectors never fired while four
+real incidents shipped (blank charts under green checks, a shadowed-import
+crash, a day rate at exactly 2x its market close, a rounding nudge that paged
+Po on 7 of ~22 runs). The pipeline could not tell "the treasury is fine" from
+"the monitor is wrong". `sanity.py` recomputes the headline facts from the RAW
+shards + `day_rates.json` by a path that never imports `refresh.py`, diffs them
+against the published `data.json`, and runs as a BLOCKING step immediately
+before the commit in `refresh.yml` (offline in `ci.yml`). Runtime ~1 s offline,
+~5 s with the live legs.
+
+| Tier | Check | Bound | On failure |
+|---|---|---|---|
+| EXACT | out row count · out wallet count · raw MOCA/MENTE totals per window (24h/7d/30d/all) · in row count · group `n` per window · closed-day count (`day_digests.json`) · `schema_version` present · every window's group keys | any difference | BLOCK — exit 1, nothing publishes, 🔴 Telegram names the gate |
+| BOUNDED | USD totals and group USD per window | max(0.5 %, $1) | BLOCK over the bound, LOG under it |
+| BOUNDED | `balance_usd` vs an independent `eth_call` × published live rate (online only) | 1.5 % | BLOCK / LOG |
+| BOUNDED | `float.days_7d_pace` (runway) | 5 % | BLOCK / LOG |
+| BOUNDED | day rate vs the day's market close, trailing 30 days; open-day rate vs the running candle (`MARKET_AGREE`) | 6 % | BLOCK / LOG |
+| BOUNDED | published live rate vs an independent DexScreener quote (online only) | 6 % | BLOCK / LOG |
+| LOG | any difference under its bound — including the cent-scale rounding drift of Sep 18-20 | — | one line in the run log, never pages |
+| WARN | a bounded check at ≥ 50 % of its bound; a live leg that could not run; a degraded peer catalog | — | queued via `state.warn()`, carried by the next digest |
+
+Every run prints `SANITY: N exact ok, M bounded ok, K logged drift` plus one
+detail line per non-clean check. `tests/test_sanity.py` proves the tiers on
+seeded copies of the real tree: clean passes, a 2x price blocks, a dropped
+row blocks, a one-cent drift only logs.
+
+### Severity tiers across the whole alert surface
+
+| Tier | Meaning | Delivery |
+|---|---|---|
+| 🔴 BLOCK / PAGE | publish blocked, or a money-relevant detector fired (cap C1–C6, Tukey outflow, ≥ $5k transfers, retired category, repeat system top-up, credit-grant spike, first-ever surge, **float below 7 d / 3 d** at the 7d pace) | its own Telegram message, immediately; the workflow failure notice names the gate and the tier |
+| 🟠 WARN | degraded but published (rebate swap overdue, ledger/state mismatch, data source degraded/recovered, oracle agreement restored, coupon leg > 120 s, sanity drift near a bound, peer catalog not fetched) | `state.warn(key, text)` → `alert_state.json` (private cache); the next hourly/daily digest carries it, at most one per key per 6 h, dropped after 24 h unsent |
+| LOG | everything else | run log only |
+
+The private anomaly pass (repeat credit grants bucketed 1 / 2–5 / 6–10 /
+11–50 / >50 with wallet and USD counts, the top-20 wallets by grant count,
+and the 60-day daily distinct-grant-wallet series) is banked by `sanity.py`
+into `guard_private.json` only; the daily digest carries ONE private line
+("Repeat grants: …"). No account identifiers anywhere — the chain shows
+wallets. `tools/replay_detectors.py` replays the current detector rules over
+the August farm and prints, plainly, whether they would have fired.
+
 ## Figures glossary
 
 Every exec-facing number, with the formula that produces it, what it is

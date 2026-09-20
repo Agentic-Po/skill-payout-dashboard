@@ -54,6 +54,14 @@ jobs:
       # red CI + a deliberate CONSUMERS.md / schema_version bump.
       - name: Consumer contract tests
         run: python3 tests/test_contract.py
+      # Monitor-of-the-monitor (2026-09-21): the COMMITTED data.json must
+      # recompute from the COMMITTED shards by an independent path. Offline
+      # here (no live balance/quote legs — those run in refresh.yml where the
+      # figure is minutes old); its own tier tests run just after.
+      - name: Sanity gate (independent recompute-and-diff, offline)
+        run: python3 sanity.py --offline
+      - name: Sanity gate tier tests
+        run: python3 tests/test_sanity.py
       # Coupon crawl vs the private coupon ledger. CI has no access to that
       # repo, so this SKIPS clean here (exit 0, loud message) and is run
       # locally with COUPON_LEDGER_PATH set; the step exists so the skip is

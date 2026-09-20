@@ -2774,6 +2774,15 @@ if not OFFLINE:
 # hide. Printed last so it is the final thing in the Actions log.
 _ph_total = time.time() - _T0
 _PHASES["other"] = _ph_total - sum(_PHASES.values())
+# WARN tier (severity tiering, 2026-09-21): a slow coupon leg is degraded-
+# but-published — queued for the next digest via state.warn (private,
+# Actions cache), never its own Telegram message and never a public field.
+COUPON_SLOW_S = 120
+_coupon_s = sum(v for k, v in _PHASES.items() if k.startswith("coupon"))
+if not OFFLINE and _coupon_s > COUPON_SLOW_S:
+    import state as _state
+    _state.warn("refresh:coupon_slow", f"refresh: coupon leg took {_coupon_s:.0f}s this run "
+                                       f"(warn floor {COUPON_SLOW_S}s) — check the coupon crawl before it drags the hourly")
 print("PHASE TIMING: total=%.1fs | %s" % (
     _ph_total, " ".join("%s=%.1fs" % (k, v) for k, v in
                         sorted(_PHASES.items(), key=lambda kv: -kv[1]))))

@@ -50,6 +50,7 @@ jobs:
       # does not justify its own schedule, and sharing the run keeps both
       # pages stamped with the same generated_iso.
       - name: Refresh data and rebuild page
+        id: refresh
         env:
           POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
           POSTHOG_PROJECT_ID: "459477"
@@ -61,23 +62,29 @@ jobs:
       # Leak tripwire (council 2026-08-30): per-wallet detector scores must
       # never reach a public artifact again — fail the run before commit.
       - name: Guard against detector-signal leaks
+        id: leakscan
         run: python3 check_publish.py --scan
       # refresh.py just rebuilt the catalog, so a disagreement here is proof
       # the build is not deterministic — not a stale commit.
       - name: Catalog check
+        id: catalog
         run: python3 catalog.py --check
       - name: Data contract tests
+        id: contract
         run: |
           python3 tests/test_parity.py
           python3 tests/test_reconcile.py
       - name: Render parse gate
+        id: render_parse
         run: python3 tests/test_render.py
       # Parse proves nothing about paint: this executes the freshly built
       # page's scripts on the real data.json under tests/domshim.js and
       # fails on any uncaught runtime error or an empty rendered structure.
       - name: Render execution gate
+        id: render_exec
         run: python3 tests/test_render_exec.py
       - name: Guard against oversized files
+        id: size
         run: |
           BIG=$(find . -path ./.git -prune -o -type f -size +50M -print)
           if [ -n "$BIG" ]; then
@@ -93,7 +100,20 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python3 alerts.py
+      # Monitor-of-the-monitor (council 2026-09-21): recompute the headline
+      # facts from the raw shards by a path that does not import refresh.py
+      # and diff them against data.json. BLOCKING, immediately before the
+      # commit: EXACT disagreement (row/wallet counts, raw token totals,
+      # closed-day count, group keys) or a BOUNDED check over its bound
+      # (USD 0.5%/$1, balance 1.5%, runway 5%, price 6%) exits 1 and nothing
+      # publishes; cent-scale drift is LOG only — the Sep 18-20 false-page
+      # storm must not come back through this door. It also banks the
+      # private anomaly pass into guard_private.json (cache, never committed).
+      - name: Sanity gate (independent recompute-and-diff)
+        id: sanity
+        run: python3 sanity.py
       - name: Commit and push
+        id: commit
         run: |
           # load-bearing: Actions runs `run:` under `bash -e`, not `-eo
           # pipefail`, so without this the pipe below reports xargs' status and
@@ -147,13 +167,37 @@ jobs:
       # Caveat: the counters live in the Actions cache; eviction resets them
       # (RUNBOOK-deadman.md).
       - name: Alert liveness check
+        id: alive
         run: python3 alive_check.py
+      # Severity-tiered failure notice (council 2026-09-21): names WHICH gate
+      # failed and its tier instead of a bare "refresh FAILED". Every gate
+      # before the commit is BLOCK (nothing published this run); the
+      # liveness check after it is PAGE (the data published, the alert path
+      # is dead). WARN-tier notices never come through here — they are
+      # queued by state.warn() and carried by the next digest. Stays
+      # continue-on-error-equivalent: a failed curl cannot change the outcome.
       - name: Alert Telegram on failure
         if: failure()
+        env:
+          SANITY_SUMMARY: ${{ steps.sanity.outputs.summary }}
         run: |
+          TIER="BLOCK"; GATE="an unnamed step"; DETAIL=""
+          case "failure" in
+            "${{ steps.refresh.outcome }}")      GATE="refresh.py (crawl/build)" ;;
+            "${{ steps.leakscan.outcome }}")     GATE="check_publish --scan (leak tripwire)" ;;
+            "${{ steps.catalog.outcome }}")      GATE="catalog.py --check (non-deterministic build)" ;;
+            "${{ steps.contract.outcome }}")     GATE="data contract tests (parity / reconcile)" ;;
+            "${{ steps.render_parse.outcome }}") GATE="render parse gate" ;;
+            "${{ steps.render_exec.outcome }}")  GATE="render execution gate (blank-page class)" ;;
+            "${{ steps.size.outcome }}")         GATE="oversized-file guard" ;;
+            "${{ steps.sanity.outcome }}")       GATE="sanity gate (independent recompute)"; DETAIL="$SANITY_SUMMARY" ;;
+            "${{ steps.commit.outcome }}")       GATE="commit and push" ;;
+            "${{ steps.alive.outcome }}")        GATE="alert liveness (send path dead)"; TIER="PAGE" ;;
+          esac
+          if [ "$TIER" = "BLOCK" ]; then WHAT="nothing published this run"; else WHAT="data published, alert delivery is failing"; fi
           curl -s -o /dev/null "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode text="🔴 Skill Payout Dashboard: hourly refresh FAILED. Check https://github.com/${{ github.repository }}/actions"
+            --data-urlencode text="🔴 ${TIER} · Skill Payout Dashboard: ${GATE} failed — ${WHAT}. ${DETAIL} Check https://github.com/${{ github.repository }}/actions" || true
       - name: Watch the ledger detector (cross-repo, non-blocking)
         if: always()
         continue-on-error: true

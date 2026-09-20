@@ -38,6 +38,63 @@ def update(mutation, drop=()):
     return st
 
 
+# ---- WARN tier queue (severity tiering, council 2026-09-21) ----
+# Three tiers across the whole alert surface: BLOCK/PAGE = its own Telegram
+# message, immediately; WARN = degraded-but-published, queued here and drained
+# into the NEXT digest by notify.py (never its own message, at most one per
+# key per WARN_COOLDOWN_H); LOG = run log only. Queue rides alert_state.json
+# (Actions cache, private). A WARN that no digest could carry within
+# WARN_TTL_H is dropped — it was never urgent by definition.
+WARN_COOLDOWN_H = 6
+WARN_TTL_H = 24
+
+
+def warn(key, text, now=None):
+    """Queue one WARN-tier line for the next digest. Same key inside the
+    cooldown (measured from the last queued OR sent entry) is dropped.
+    Returns True when queued."""
+    from datetime import datetime, timedelta, timezone
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    q = [w for w in (load().get("warn_queue") or []) if isinstance(w, dict)]
+    last = max((w.get("ts", "") for w in q if w.get("key") == key), default=None)
+    if last and now - datetime.fromisoformat(last) < timedelta(hours=WARN_COOLDOWN_H):
+        return False
+    q.append({"key": key, "text": text, "ts": now.isoformat(timespec="minutes"), "sent": None})
+    update({"warn_queue": q[-200:]})
+    return True
+
+
+def pending_warns(now=None):
+    """Unsent, unexpired WARN entries (one per key, newest text) in queue order."""
+    from datetime import datetime, timedelta, timezone
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    cut = (now - timedelta(hours=WARN_TTL_H)).isoformat(timespec="minutes")
+    seen, out = set(), []
+    for w in reversed(load().get("warn_queue") or []):
+        if not isinstance(w, dict) or w.get("sent") or w.get("ts", "") < cut or w.get("key") in seen:
+            continue
+        seen.add(w["key"])
+        out.append(w)
+    return list(reversed(out))
+
+
+def mark_warns_sent(keys, now=None):
+    """Stamp every unsent entry of the given keys as sent; trim entries older
+    than 2x the TTL so the queue stays bounded."""
+    from datetime import datetime, timedelta, timezone
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    stamp = now.isoformat(timespec="minutes")
+    keep = (now - timedelta(hours=2 * WARN_TTL_H)).isoformat(timespec="minutes")
+    q = []
+    for w in load().get("warn_queue") or []:
+        if not isinstance(w, dict) or w.get("ts", "") < keep:
+            continue
+        if w.get("key") in keys and not w.get("sent"):
+            w = {**w, "sent": stamp}
+        q.append(w)
+    return update({"warn_queue": q})
+
+
 def record_send(channel, ok, now=None):
     """Record one Telegram send attempt's outcome (Cycle-3 Loop 2, item 4).
 

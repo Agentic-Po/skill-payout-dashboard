@@ -78,6 +78,9 @@ PUBLISH_EXTRA = [
     "stripe_snapshot.json", "posthog_cache.json",
     "swarm_era.json", "swarm_prices.json",
     "transfers_export.csv", "publish_allow_addrs.txt",
+    # sanity.py (root *.py) is the monitor-of-the-monitor gate; tools/ holds
+    # evidence scripts (detector replay) — code only, they write nothing
+    "tools/*.py",
 ]
 
 # Field names that must never reach a public artifact. Per-wallet detector
@@ -109,7 +112,11 @@ DENIED = [_key("ent"), _key("acf"), _key("burst"), _key("flags"),
           _key("funding_split"), _key("swarm_split"), _key("subsidy_ratio"),
           _key("ratio_weeks"), _key("period_subsidy_ratio"),
           _key("period_unbacked_dist_usd"), _key("acct_map"), _key("steward"),
-          _key("mindset"), _key("pattern_monitor"), _key("burn24"), _key("burn_prev"), _key("topup_needed"), _key("promised_usd"), _key("fx_drift_pct"), _key("runway_days")]
+          _key("mindset"), _key("pattern_monitor"), _key("burn24"), _key("burn_prev"), _key("topup_needed"), _key("promised_usd"), _key("fx_drift_pct"), _key("runway_days"),
+          # Loop 1 (2026-09-21): the private anomaly pass (sanity.py) — per-
+          # wallet grant counts and the daily grant-wallet series are
+          # guard_private.json only; the WARN queue rides alert_state.json.
+          r"repeat_grants", r"daily_grant_wallets", _key("heaviest_grants"), r"warn_queue"]
 
 # Known-leaked person names (Cycle-3 Loop 1). Case-insensitive, assembled
 # from parts so this scanner file is never itself a grep hit for the names it
@@ -155,7 +162,9 @@ ORACLE_KEYS = {"ent", "acf", "burst", "tol", "flagged", "flags", "status",
                "system_topup_ledger", "repeat_wallets",
                # monitoring-status counts and the cap instant (private since 2026-09-15)
                "flagged_n", "monitored_n", "at_risk_usd", "cap_on_utc", "cap_usd",
-               "pattern_monitor", "acct_map", "steward", "mindset"}
+               "pattern_monitor", "acct_map", "steward", "mindset",
+               # sanity.py's private anomaly pass + the WARN queue (2026-09-21)
+               "repeat_grants", "daily_grant_wallets", "heaviest_grants", "warn_queue"}
 
 # Reviewed exact paths where one of the above names is NOT a monitoring
 # verdict. Each entry is a deliberate, human-reviewed exemption; a new path
