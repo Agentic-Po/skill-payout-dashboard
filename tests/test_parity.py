@@ -158,7 +158,21 @@ def _exec_sentence_checks(D):
     if m:
         got = float(m.group(1).replace(",", ""))
         assert abs(got - fl["days_7d_pace"]) < 0.05 + 1e-9, f"exec days {got} != float.days_7d_pace {fl['days_7d_pace']}"
-        assert abs(fl["days_7d_pace"] - want / fl["out_7d_avg_usd"]) < 0.05 + 1e-9, "float.days_7d_pace != balance / 7d total-outflow pace"
+        # The published pace is round(bal_usd / out7avg, 1), whose own error is
+        # at most 0.05 — so a `< 0.05` bound could never fail on rounding alone.
+        # What tips it over is that we divide a DIFFERENT numerator than the
+        # producer: refresh.py uses raw bal_usd, we use the sum of published
+        # facts.balance_usd, each token already round(x, 0). That adds up to
+        # $0.50/token, worst case ~0.0502 — over the bound in ~0.08% of runs,
+        # about one false "refresh FAILED" page a month (it fired 2026-09-20
+        # 20:37Z at 9.45; the next run on the SAME commit passed). Bound the
+        # numerator gap structurally instead of rounding the published value to
+        # make the check close (see the 2026-09-18 group-rounding note).
+        bal_slack = 0.5 * len(D["facts"]["balance_usd"]) / fl["out_7d_avg_usd"]
+        assert abs(fl["days_7d_pace"] - want / fl["out_7d_avg_usd"]) <= 0.05 + bal_slack + 1e-9, \
+            (f"float.days_7d_pace {fl['days_7d_pace']} != balance ${want:,.2f} / "
+             f"7d pace ${fl['out_7d_avg_usd']:,.2f} (= {want / fl['out_7d_avg_usd']:.4f}, "
+             f"slack {0.05 + bal_slack:.4f})")
         print(f"ok exec sentence: {got} days == facts.float.days_7d_pace == balance / 7d total outflow")
         checked += 1
     assert "weeks of payouts" not in text and "week" not in text, "old economy-pace runway sentence is back"
