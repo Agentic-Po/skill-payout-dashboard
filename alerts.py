@@ -24,18 +24,27 @@ into guard_private.json (private). All times in Telegram text are HKT.
 Env vars: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID.
 
 Severity tiers (council 2026-09-21, the Sep 18-20 lesson) — every block
-below is tagged:
-  PAGE  money-relevant detector fired: its own Telegram message, now
-        (cap breach/straddle/saturated/fan-out, pool fence, oracle
-        disagreement, Tukey outflow, >= $5k transfers, retired category,
-        repeat system top-up, credit-grant spike, first-ever surge, runway)
-  WARN  degraded-but-published or housekeeping: queued via state.warn() and
-        carried by the NEXT digest, at most one per key per 6 h (rebate swap
-        reminder, ledger/state mismatches, data-source degraded/recovered,
-        oracle agreement restored)
+below is tagged. Loop 2 (same day) re-tiered by MEASURED false-fire counts
+from a full-history replay (tools/replay_detectors.py), not by intent:
+  PAGE  its own Telegram message, now. TWO kinds, and the distinction is
+        load-bearing: (a) EVENT notices — a specific actionable thing
+        happened (>= $5k transfer in/out, retired-category payout, repeat
+        system top-up, float below 7d/3d). These are not anomaly detectors
+        and are NOT required to be quiet on ordinary days: the replay shows
+        >= $5k inflow firing on 12 ordinary days, every one a real funding
+        arrival worth seeing, and runway on 2. (b) ANOMALY detectors, which
+        reach PAGE only with zero ordinary-day fires in the full-history
+        replay — today NONE qualify, so every anomaly rule below is WARN.
+  WARN  queued via state.warn() and carried by the NEXT digest, at most one
+        per key per 6 h: the creator-reward rules C1-C6 (0.4% of outflow —
+        cap_detect.CREATOR_REWARD_TIER), the four per-group outflow fences
+        and the runaway payout rule (fences.FENCE_TIER / RUNAWAY_TIER: they
+        fire on ordinary days), first-ever surge (a creator-reward rule),
+        rebate swap reminder, ledger/state mismatches, data-source
+        degraded/recovered, oracle agreement restored
   LOG   stdout only
 """
-import json, os, statistics, urllib.request, urllib.parse
+import json, os, urllib.request, urllib.parse
 from datetime import datetime, timezone, timedelta
 
 import shards
@@ -95,29 +104,6 @@ def usd_rows(dir_name, counterparty_key):
 flows = {"out": usd_rows("transfers", "to"), "in": usd_rows("transfers_in", "from")}
 
 
-def baseline(rows):
-    """median / mean / IQR-trimmed std over zero-filled hourly USD buckets."""
-    if not rows:
-        return None
-    bucket = {}
-    for r in rows:
-        ts, usd = r[0], r[6]
-        bucket[ts.replace(minute=0, second=0, microsecond=0)] = \
-            bucket.get(ts.replace(minute=0, second=0, microsecond=0), 0) + usd
-    h0, h1 = min(bucket), now.replace(minute=0, second=0, microsecond=0)
-    series, h = [], h0
-    while h <= h1:
-        series.append(bucket.get(h, 0.0))
-        h += timedelta(hours=1)
-    series.sort()
-    n = len(series)
-    q1, q3 = series[n // 4], series[(3 * n) // 4]
-    mid = [v for v in series if q1 <= v <= q3]
-    return {"median": statistics.median(series), "mean": statistics.fmean(series),
-            "sigma_iqr": statistics.pstdev(mid) if len(mid) > 1 else 0.0,
-            "iqr": q3 - q1, "hours": n}
-
-
 import state as _statemod
 state = _statemod.load()
 seen = set(state.get("seen", []))
@@ -128,30 +114,39 @@ anom = state.setdefault("anomaly", {})
 lines = []          # PAGE-tier blocks ('' separated)
 warn_lines = []     # WARN-tier blocks — same shape, drained into the next digest
 
-# --- 1. hourly outflow anomaly vs median + 3*IQR (Tukey fence; decided with
-# Po 2026-08-05 after the spec'd median+3*sigma_iqr backtested at a 22% fire
-# rate). Edge-triggered with a 6h cooldown: a sustained event alerts once.
-# Inflow anomaly is deliberately skipped — inflows are so sparse the median
-# and sigma are $0; the $5,000 single-transfer rule below covers them.
-# This fence mixes credits, packs, swaps and rewards — it cannot express the
-# creator-cap question (C1-C5 below do), hence the "treasury" label.
-b = baseline(flows["out"])
-if b and b["iqr"] > 0:
-    threshold = b["median"] + 3 * b["iqr"]
-    last_h = sum(r[6] for r in flows["out"] if r[0] > now - timedelta(hours=1))
-    above = last_h > threshold
-    st = anom.get("out", {})
-    last_fire = datetime.fromisoformat(st["last_alert"]) if st.get("last_alert") else None
-    cooled = last_fire is None or now - last_fire >= timedelta(hours=6)
-    if above and not st.get("above") and cooled:
-        anom["out"] = {"above": True, "last_alert": now.isoformat(timespec="minutes")}
-        lines += ["", f"📈 <b>Abnormal hourly treasury outflow:</b> <b>${last_h:,.0f}</b> in the last hour (to {cap_detect.hkt(now)})",
-                  f"  · baseline median ${b['median']:,.2f}/h (mean ${b['mean']:,.2f}) · "
-                  f"σ(25–75%) ${b['sigma_iqr']:,.2f} · IQR ${b['iqr']:,.2f}",
-                  f"  · threshold median+3×IQR = ${threshold:,.2f} · {b['hours']:,}h history — check the daily table for the source"]
-    else:
-        # re-arms automatically once the hour drops back under the fence
-        anom["out"] = {"above": above, "last_alert": st.get("last_alert")}
+# --- 1. per-category outflow fences + runaway payout rule (fences.py) ---
+# Loop 2 (2026-09-21): the single "treasury outflow" Tukey fence (median +
+# 3 x IQR over FULL history, decided with Po 2026-08-05) is split by
+# classify.group_for — skill_rewards / credit_grants / topups_delivered /
+# ops — each learning its own baseline over the trailing 30 d with the
+# known-incident windows EXCLUDED (fences.INCIDENT_WINDOWS), so a farm can
+# never become the baseline that hides the next one. Replay over all history
+# (tools/replay_detectors.py): every fence that fires at all fires on
+# ordinary days (hourly flow is heavy-tailed), so all four are WARN. The
+# runaway rule replaces the $20K/3x credit-grant spike, which lifetime grant
+# spend (~$105K) meant could never fire: economy payouts accelerating 3x the
+# 14 d median, spread across the day — 26 h lead on the August farm, silent
+# on 15 Sep and 18-20 Sep, 2 ordinary fire-days in 149 -> WARN by item 2's
+# rule (fences.RUNAWAY_TIER is the one-word promotion switch).
+# Inflow fences are deliberately absent — inflows are so sparse the median
+# and IQR are $0; the $5,000 single-transfer rule below covers them.
+import fences
+_series = fences.build_series(((r[0], r[6], r[8]) for r in flows["out"]), fences.FENCE_GROUPS)
+_econ = fences.Series([(r[0], r[6]) for r in flows["out"] if r[8] in fences.RUNAWAY_GROUPS])
+anom.pop("out", None)                         # the retired single fence's edge state
+_fence_secs, state = fences.group_fences(_series, state, now)
+_run_secs, state, _rm = fences.runaway_check(_econ, state, now)
+tiered = []        # (tier, key, section) — routed once, below
+for sec in _fence_secs:
+    g = next((g for g in fences.FENCE_GROUPS if fences.GROUP_LABEL_OF(g) in sec[1]), "fence")
+    tiered.append((fences.FENCE_TIER.get(g, "WARN"), f"fence_{g}", sec))
+for sec in _run_secs:
+    tiered.append((fences.RUNAWAY_TIER, "runaway", sec))
+print("fences: " + " · ".join(f"{g} {'ABOVE' if (state.get('fences') or {}).get(g, {}).get('above') else 'ok'}"
+                              for g in fences.FENCE_GROUPS)
+      + (f" · runaway 24h ${_rm['cur24']:,.0f} vs {fences.RUNAWAY_MED_MULT:g}x median ${_rm['ref_median']:,.0f}"
+         f" · last12/prev12 ${_rm['last12']:,.0f}/${_rm['prev12']:,.0f} · top3 {_rm['top3_share']:.0%}"
+         + (" · FIRES" if _rm["fires"] else "") if _rm else " · runaway: reference too short"))
 
 # --- 2. single transfers >= $5,000 (last 24h, deduped) ---
 for d, rows in flows.items():
@@ -281,40 +276,21 @@ if _leg_ledger and not _new_legacy:
         warn_lines += ["", f"⚠️ <b>System-top-up ledger mismatch:</b> chain ledger lists {len(_leg_rep)} repeat wallet(s), "
                       f"tripwire state knows {len(_seen_rep)} — check guard_private.json"]
 
-# --- 4c. A5 edge alerts (2026-09-15): the one treasury event of the day,
-# edge-triggered with a 24 h cooldown, thresholds chosen against a replay of
-# the last 14 days of real shards (1-15 Sep) so routine batches stay silent:
-#   credit-grant spike   trailing-24h credit grants (credit_grants +
-#                        system_topups via group_for) >= $20,000 AND >= 3x
-#                        the prior 24 h. Replay max: $13,483 / 33x (11 Sep
-#                        batch); three batches of 10-33x in the window are
-#                        NORMAL, so a ratio rule alone can never be quiet —
-#                        the $ floor is what makes this a runaway-job alarm,
-#                        and routine batches show in the daily digest instead.
+# --- 4c. first-ever creator-wallet surge (2026-09-15 edge alert) ---
+# The credit-grant spike rule that lived here ($20,000 in 24 h AND 3x the
+# prior day) was retired in loop 2: lifetime grant spend is ~$105K, so it was
+# tuned never to fire. fences.runaway_check (section 1) is its replacement.
 #   first-ever surge     >= 10 wallets received their first-ever skill reward
 #                        in the trailing 24 h AND they are > 50% of the
 #                        wallets paid in that window. Replay max: 4 of 52.
-CREDIT_SPIKE_USD = 20000
-CREDIT_SPIKE_RATIO = 3.0
+#                        WARN tier (loop 2): a creator-reward rule, same
+#                        <2%-of-outflow demotion as C1-C6.
 NEW_WALLET_MIN = 10
 NEW_WALLET_SHARE = 0.5
 EDGE_COOLDOWN_H = 24
 _edge = state.setdefault("edge", {})
-_c24, _c48 = now - timedelta(hours=24), now - timedelta(hours=48)
-_cg = lambda lo, hi: sum(r[6] for r in flows["out"] if lo < r[0] <= hi and r[8] in ("credit_grants", "system_topups"))
-_cg24, _cgprev = _cg(_c24, now), _cg(_c48, _c24)
-_cgn24 = sum(1 for r in flows["out"] if _c24 < r[0] <= now and r[8] in ("credit_grants", "system_topups"))
-_spike = _cg24 >= CREDIT_SPIKE_USD and (_cgprev <= 0 or _cg24 / _cgprev >= CREDIT_SPIKE_RATIO)
-_st = _edge.get("credit_spike", {})
-_last = datetime.fromisoformat(_st["last_alert"]) if _st.get("last_alert") else None
-if _spike and not _st.get("above") and (_last is None or now - _last >= timedelta(hours=EDGE_COOLDOWN_H)):
-    _edge["credit_spike"] = {"above": True, "last_alert": now.isoformat(timespec="minutes")}
-    _ratio = f"{_cg24 / _cgprev:,.0f}x" if _cgprev > 0 else "∞"
-    lines += ["", f"⚠️ <b>Credit grants {_ratio} vs prior 24h:</b> ${_cg24:,.0f} ({_cgn24:,} grants) vs ${_cgprev:,.0f} — "
-                  f"above the ${CREDIT_SPIKE_USD:,} runaway floor (window to {cap_detect.hkt(now)}); "
-                  f"check the credit job is a scheduled campaign, not a loop"]
-else:
-    _edge["credit_spike"] = {"above": _spike, "last_alert": _st.get("last_alert")}
+_edge.pop("credit_spike", None)               # retired rule's state
+_c24 = now - timedelta(hours=24)
 _first = {}
 for r in sorted((r for r in flows["out"] if r[8] == "skill_rewards"), key=lambda r: r[0]):
     _first.setdefault(r[4].lower(), r[0])
@@ -325,12 +301,13 @@ _st = _edge.get("new_wallets", {})
 _last = datetime.fromisoformat(_st["last_alert"]) if _st.get("last_alert") else None
 if _surge and not _st.get("above") and (_last is None or now - _last >= timedelta(hours=EDGE_COOLDOWN_H)):
     _edge["new_wallets"] = {"above": True, "last_alert": now.isoformat(timespec="minutes")}
-    lines += ["", f"⚠️ <b>First-ever creator wallets {_new24} of {len(_paid24)} paid (24h):</b> "
-                  f"{_new24 / len(_paid24):.0%} of the wallets paid a skill reward in the window to {cap_detect.hkt(now)} "
-                  f"had never earned before — the 21-Aug farm pattern started this way; review the set in guard_private.json"]
+    tiered.append((cap_detect.CREATOR_REWARD_TIER, "new_wallets",
+                   ["", f"⚠️ <b>First-ever creator wallets {_new24} of {len(_paid24)} paid (24h):</b> "
+                        f"{_new24 / len(_paid24):.0%} of the wallets paid a skill reward in the window to {cap_detect.hkt(now)} "
+                        f"had never earned before — the 21-Aug farm pattern started this way; review the set in guard_private.json"]))
 else:
     _edge["new_wallets"] = {"above": bool(_surge), "last_alert": _st.get("last_alert")}
-print(f"edge: credit grants 24h ${_cg24:,.0f} vs prior ${_cgprev:,.0f} · first-ever wallets {_new24}/{len(_paid24)}")
+print(f"edge: first-ever wallets {_new24}/{len(_paid24)}")
 
 # --- 5. data-source degradation edge alert (council item 4b) ---
 # complete=False means the run rendered from a stale/partial cache. The page
@@ -354,8 +331,10 @@ print(f"runway: {_FL.get('days_7d_pace')} d at the 7d pace · thresholds {[t for
       + (" · FIRED" if _rw_secs else ""))
 
 # --- 6. creator-reward cap / sybil detectors C1-C6 (cap_detect.py) ---
-# Rows: outflow rows since the v2 resume, day-pinned USD, era-aware fine
-# class in {equip, invoke}. Units are the counter; USD is display only.
+# Rows: every outflow row, day-pinned USD, era-aware fine class in {equip,
+# invoke} on the row's OWN era grid (loop 2: no era gate — the live sweep
+# only looks back 7 d, so this costs nothing today and means a farm in any
+# future era is visible). Units are the counter; USD is display only.
 # wallets LOWERCASED: rows arrive EIP-55 from Blockscout and lowercase from
 # the eth_getLogs legs, and a per-wallet counter split by casing would
 # under-count exactly the wallet that matters (refresh.py canonicalises the
@@ -365,11 +344,28 @@ _sw = cap_detect.sweep(_rrows, now)
 cap_sections, state = cap_detect.evaluate(_sw, state, now)
 _or_secs, state = cap_detect.oracle_check(_guard.get("grid_agreement"), state, now,
                                           now.strftime("%Y-%m-%d"))
-cap_sections += _or_secs + _rw_secs
-# the oracle RECOVERY line is informational -> WARN tier (next digest); the
-# disagreement itself stays PAGE (a wrong day rate doubles every USD figure)
-_warn_secs = [sec for sec in cap_sections if any("Oracle agreement restored" in ln for ln in sec)]
-cap_sections = [sec for sec in cap_sections if sec not in _warn_secs]
+# TIER (loop 2): C1-C6 are cap_detect.CREATOR_REWARD_TIER (WARN while creator
+# rewards are < 2% of outflow — 0.4% today, measured and printed below).
+# The oracle disagreement rides the same tier: the Sep 15 shape (a day rate
+# at 2x its market close) is now BLOCKED before publish by sanity.py's
+# market-close check, so this line is corroboration, not the first alarm.
+# The runway alert stays PAGE (funding cliff).
+_CAP_KEY = (("CAP BREACH", "cap_breach"), ("Cap straddle", "cap_straddle"), ("Cap saturated", "cap_saturated"),
+            ("Cap fan-out", "cap_fanout"), ("Creator rewards $", "pool_fence"),
+            ("Oracle disagreement", "oracle"), ("Oracle agreement restored", "oracle_restored"))
+for sec in cap_sections + _or_secs:
+    key = next((k for needle, k in _CAP_KEY if needle in sec[1]), "cap_misc")
+    tiered.append(("WARN" if key == "oracle_restored" else cap_detect.CREATOR_REWARD_TIER, key, sec))
+cap_sections = list(_rw_secs)                 # PAGE: runway only
+_c30 = now - timedelta(days=30)
+_out30 = sum(r[6] for r in flows["out"] if r[0] > _c30)
+_rew30 = sum(r[6] for r in flows["out"] if r[0] > _c30 and r[8] == "skill_rewards")
+_rew_share = _rew30 / _out30 * 100 if _out30 else 0.0
+print(f"creator rewards {_rew_share:.2f}% of 30d outflow (${_rew30:,.0f} of ${_out30:,.0f}) · C1-C6 tier "
+      f"{cap_detect.CREATOR_REWARD_TIER} · promote at {cap_detect.CREATOR_REWARD_PROMOTE_PCT:g}%")
+if _rew_share >= cap_detect.CREATOR_REWARD_PROMOTE_PCT and cap_detect.CREATOR_REWARD_TIER != "PAGE":
+    print(f"::warning::creator rewards are {_rew_share:.1f}% of 30d outflow — the demotion rule says promote "
+          f"C1-C6 back to PAGE (cap_detect.CREATOR_REWARD_TIER)")
 # Heartbeat: written NOW, unconditionally — a failed Telegram send below must
 # not erase the proof that the detector ran (alive_check.py's dead-man).
 cap_probe = cap_detect.probe(_sw, now)
@@ -420,16 +416,24 @@ def _sections(ls):
 # carried by the next hourly/daily digest (notify.py drains the queue).
 _WARN_KEY = (("Rebate wallet swap overdue", "rebate_swap"), ("Retired-ledger mismatch", "retired_mismatch"),
              ("System-top-up ledger mismatch", "topup_mismatch"), ("Data source degraded", "source"),
-             ("Data source recovered", "source"), ("Oracle agreement restored", "oracle_restored"))
-for sec in _warn_secs + _sections(warn_lines):
+             ("Data source recovered", "source"))
+for sec in _sections(warn_lines):
     text = " ".join(ln.strip() for ln in sec if ln.strip())
-    key = next((k for needle, k in _WARN_KEY if needle in text), "misc")
+    tiered.append(("WARN", next((k for needle, k in _WARN_KEY if needle in text), "misc"), sec))
+# route every tiered section ONCE: PAGE joins this run's own message, WARN
+# goes to the queue (state.warn dedups per key for 6 h)
+page_sections = []
+for tier, key, sec in tiered:
+    if tier == "PAGE":
+        page_sections.append(sec)
+        continue
+    text = " ".join(ln.strip() for ln in sec if ln.strip())
     if _statemod.warn("alerts:" + key, text, now):
         print(f"WARN queued [{key}] for the next digest")
     else:
         print(f"WARN [{key}] inside its 6 h cooldown — not re-queued")
 
-all_sections = cap_sections + _sections(lines)
+all_sections = cap_sections + page_sections + _sections(lines)
 if all_sections:
     msg = cap_detect.compose("🚨 <b>Flow alert</b> — <i>Skill Payout Dashboard</i> · " + cap_detect.hkt(now),
                              all_sections)

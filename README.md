@@ -122,19 +122,31 @@ is a broader surface than repo secrets — treat its contents accordingly.
   ≈$1) is legitimate but shape-constrained — one per wallet; a wallet
   receiving a second one fires "Repeat system free top-up to one wallet"
 - **Edge alerts (2026-09-15, `alerts.py`, edge-triggered with a 24h
-  cooldown)**: *credit-grant spike* — trailing-24h credit grants ≥ $20,000
-  AND ≥ 3× the prior 24h (the 1–15 Sep replay peaked at $13,483 / 33× on the
-  11 Sep batch, so routine $3-credit batches stay silent and show in the
-  daily instead; only a runaway job fires); *first-ever creator-wallet
-  surge* — ≥ 10 wallets paid their first-ever skill reward in the trailing
-  24h AND > 50% of wallets paid in that window (replay max: 4 / 52)
+  cooldown)**: *first-ever creator-wallet surge* — ≥ 10 wallets paid their
+  first-ever skill reward in the trailing 24h AND > 50% of wallets paid in
+  that window (replay max: 4 / 52); WARN tier since loop 2 (a creator-reward
+  rule). The $20,000 / 3× credit-grant spike rule was retired in loop 2 —
+  lifetime grant spend is ~$105K, so it could never fire
+- **Per-category outflow fences + runaway rule (loop 2, 2026-09-21)**:
+  `fences.py` — the single treasury Tukey fence split by `classify.group_for`
+  (skill rewards / credit grants / top-ups delivered / ops), each median +
+  3×IQR over its own trailing 30 d with `fences.INCIDENT_WINDOWS` (August
+  farm, 15 Sep oracle, 18–20 Sep rounding) EXCLUDED from every baseline; and
+  a *runaway payouts* rate rule on economy payouts (≥ 3× the 14-day median,
+  last 12 h ≥ 2× the prior 12 h, spread across the day, ≥ $2,000) — 26 h
+  lead on the August farm in replay, silent on 15 Sep and 18–20 Sep. Every
+  tier is assigned from the MEASURED false-fire count of a full-history
+  replay (`tools/replay_detectors.py`): all WARN today
 - **Creator-reward cap (v2)**: `cap_detect.py` — per-WALLET clock-hour and
-  rolling-60-min unit counters (equip 1, invoke 0.1) since the 14 Sep resume
-  (a per-wallet check is a lower bound: the chain shows wallets, not accounts);
-  🔴 breach, 🟠 straddle / saturated / fan-out, 📈 pool fence, 🟠 oracle
-  disagreement (grid agreement < 0.5) — all edge-triggered with cooldowns,
-  Telegram + private state only; a heartbeat older than 2h turns the
-  workflow red via `alive_check.py`
+  rolling-60-min unit counters (equip 1, invoke 0.1) on each row's OWN era
+  grid (era-aware since loop 2: a v1 $1 equip counts exactly as a v2 $0.05
+  equip; a farm in any era is visible) — a per-wallet check is a lower
+  bound: the chain shows wallets, not accounts; 🟠 breach / straddle /
+  saturated / fan-out, 📈 pool fence, 🟠 oracle disagreement (grid agreement
+  < 0.5) — all edge-triggered with cooldowns, WARN tier while creator
+  rewards are < 2% of outflow (0.4% today; `cap_detect.CREATOR_REWARD_TIER`
+  is the deliberate switch), private state only; a heartbeat older than 2h
+  turns the workflow red via `alive_check.py`
 - **Degradation**: data-source incomplete flips, stale-page banners
   (client-side, works when the pipeline is fully dead), daily >3h staleness
   fail-loud, weekly dead-man health check
@@ -171,8 +183,8 @@ row blocks, a one-cent drift only logs.
 
 | Tier | Meaning | Delivery |
 |---|---|---|
-| 🔴 BLOCK / PAGE | publish blocked, or a money-relevant detector fired (cap C1–C6, Tukey outflow, ≥ $5k transfers, retired category, repeat system top-up, credit-grant spike, first-ever surge, **float below 7 d / 3 d** at the 7d pace) | its own Telegram message, immediately; the workflow failure notice names the gate and the tier |
-| 🟠 WARN | degraded but published (rebate swap overdue, ledger/state mismatch, data source degraded/recovered, oracle agreement restored, coupon leg > 120 s, sanity drift near a bound, peer catalog not fetched) | `state.warn(key, text)` → `alert_state.json` (private cache); the next hourly/daily digest carries it, at most one per key per 6 h, dropped after 24 h unsent |
+| 🔴 BLOCK / PAGE | publish blocked, or an **event notice** fired — a specific actionable event rather than an anomaly guess (≥ $5k transfers, retired category, repeat system top-up, **float below 7 d / 3 d** at the 7d pace). Event notices are expected on ordinary days (the replay shows ≥ $5k inflow on 12 of them, each a real funding arrival). An **anomaly detector** reaches this tier only with zero ordinary-day fires in the full-history replay; today none qualify, so all of them sit at WARN | its own Telegram message, immediately; the workflow failure notice names the gate and the tier; `RUNBOOK-deadman.md` §8 says what the recipient does and who can pause |
+| 🟠 WARN | a detector that fires on ordinary days in the replay, or watches < 2 % of outflow (cap C1–C6, the four per-category outflow fences, the runaway payouts rule, first-ever surge), plus degraded-but-published notices (rebate swap overdue, ledger/state mismatch, data source degraded/recovered, oracle agreement restored, coupon leg > 120 s, sanity drift near a bound, peer catalog not fetched, a new 30-day high of the private grant-bleed share) | `state.warn(key, text)` → `alert_state.json` (private cache); the next hourly/daily digest carries it, at most one per key per 6 h, dropped after 24 h unsent |
 | LOG | everything else | run log only |
 
 The private anomaly pass (repeat credit grants bucketed 1 / 2–5 / 6–10 /
@@ -180,8 +192,14 @@ The private anomaly pass (repeat credit grants bucketed 1 / 2–5 / 6–10 /
 and the 60-day daily distinct-grant-wallet series) is banked by `sanity.py`
 into `guard_private.json` only; the daily digest carries ONE private line
 ("Repeat grants: …"). No account identifiers anywhere — the chain shows
-wallets. `tools/replay_detectors.py` replays the current detector rules over
-the August farm and prints, plainly, whether they would have fired.
+wallets. Loop 2 adds the slow-bleed measurement (in `fences.py`: the
+rolling 7-day share of grant $ going to wallets that already held a grant,
+against its own trailing 30-day history, and the wallets crossing 5 / 20
+lifetime grants this week) — one more private daily line, never a page, not
+a sybil claim. `tools/replay_detectors.py` replays every current rule over
+ALL history, counts fires per day (a fire outside a known-incident window
+is a false fire, and those counts assign the tiers) and prints a T-minus
+table per incident with the ~30 min refresh-cadence bound.
 
 ## Figures glossary
 

@@ -26,16 +26,32 @@ Alerts (all edge-triggered, HKT in text):
                      >= 20 units, in the same clock-hour
   C5 POOL FENCE      > 400 units of rewards in the trailing 60 min (floor only)
   C6 ORACLE          grid agreement < 0.5 with n >= 30 on the open day or yesterday
-C1-C4 evaluate ONLY clock-hours starting >= CAP_ON hour and rolling windows
-ending after CAP_ON_UTC — before that no cap existed to breach.
+ERA-AWARE, not era-gated (loop 2, 2026-09-21). As shipped on 09-15 these
+rules dropped every row before RESUMED_UTC and every clock-hour before the
+cap instant, so a replay of the August farm admitted zero rows. That gate
+was deliberate for C1/C2 — their text claims "the engine cap is NOT
+enforcing", and no engine cap existed before 19:12Z on 14 Sep — but it also
+blinded the farm-shape rules (C3-C5) to any era but v2. Now every row counts
+on its OWN era's grid (classify.ERAS: a v1 $1.00 equip is 1 unit exactly as
+a v2 $0.05 equip is; the pause era has no reward size and admits nothing)
+and the cap instant only changes the WORDING: hours from CAP_HOUR0 say the
+engine cap failed, earlier hours say no cap existed and the shape alone is
+the signal, with the era's own cap-equivalent dollars (classify.cap_usd_for).
+Replay over all history: C1 fires on 1 ordinary day (18 Jul), C3/C5 on none.
+
+TIER (loop 2): C1-C6 are WARN — queued by state.warn() and carried by the
+next digest, never their own page — while creator rewards stay under 2% of
+outflow (0.4% on 2026-09-21; alerts.py prints the trailing-30d share every
+run). Promotion back to PAGE is deliberate, not automatic: flip
+CREATOR_REWARD_TIER when the share crosses 2% or the reward sizes change.
 
 Also here (2026-09-21, council "funding cliff" finding): runway_check(), the
-treasury float edge alert — pure like the rest, fed by alerts.py.
+treasury float edge alert — pure like the rest, fed by alerts.py. PAGE.
 """
 from datetime import datetime, timedelta
 
 from classify import (UNITS, CAP_UNITS, CAP_USD_PER_CREATOR_HOUR, CAP_ON_UTC,
-                      RESUMED_UTC, classify_usd)
+                      RESUMED_UTC, classify_usd, cap_usd_for, era_for)
 
 BREACH_UNITS = CAP_UNITS * 1.05          # 84
 SAT_UNITS = CAP_UNITS * 0.90             # 72
@@ -44,6 +60,11 @@ POOL_FLOOR_UNITS = 400.0                 # ≈ $20 at policy prices
 GRID_MIN_N = 30
 GRID_MIN_AGREE = 0.5
 COOLDOWN_H = {"straddle": 24, "saturated": 6, "fanout": 6, "rewards": 6}
+# WARN while creator rewards are < 2% of outflow (see module docstring).
+# Not automatic: alerts.py prints the measured share and a loud line when it
+# crosses 2%, and this constant is the one switch.
+CREATOR_REWARD_TIER = "WARN"
+CREATOR_REWARD_PROMOTE_PCT = 2.0
 HKT = timedelta(hours=8)
 CAP_ON = datetime.fromisoformat(CAP_ON_UTC)
 # first FULL clock-hour under the cap: the 19:00Z hour on 09-14 held 12
@@ -76,12 +97,13 @@ def _dt(s):
 
 
 def reward_rows(flow_rows):
-    """flow_rows: iterable of (ts_dt, usd_pinned, to_addr, ts_iso). Keeps rows
-    at/after RESUMED whose fine class is a live reward size."""
+    """flow_rows: iterable of (ts_dt, usd_pinned, to_addr, ts_iso). Keeps every
+    row whose fine class is a reward size ON ITS OWN ERA'S GRID (classify
+    sizes the row by its timestamp against classify.ERAS; the pause era has
+    no reward size, so nothing between 21 Aug and 14 Sep is admitted). No
+    era gate — see the module docstring."""
     out = []
     for ts, usd, to, ts_iso in flow_rows:
-        if ts < RESUMED:
-            continue
         _c, fine, _t = classify_usd(usd, ts_iso)
         u = UNITS.get(fine)
         if u is None:
@@ -119,8 +141,6 @@ def sweep(rrows, now):
             u, x = clock7.get(h, (0.0, 0.0))
             clock7[h] = (u + r["units"], x + r["usd"])
         for h, (u, x) in clock7.items():
-            if h < CAP_HOUR0:
-                continue
             if u > wk["max_clock_units"]:
                 wk.update(max_clock_units=u, max_clock_usd=x, max_clock_hour=_iso(h))
             if h < cut25 - timedelta(hours=1):
@@ -150,7 +170,7 @@ def sweep(rrows, now):
                 su -= rec[i]["units"]
                 sx -= rec[i]["usd"]
                 i += 1
-            if r["ts"] > CAP_ON and su > c["max_h60_units"]:
+            if su > c["max_h60_units"]:
                 c.update(max_h60_units=su, max_h60_usd=sx, max_h60_end=_iso(r["ts"]),
                          max_h60_start=_iso(rec[i]["ts"]))
             if r["ts"] > now - timedelta(hours=24):
@@ -181,7 +201,6 @@ def evaluate(sw, state, now):
     `state` is mutated in place: cap_hits / cap_straddle / cap_state /
     anomaly.rewards. Edge-triggered with per-alert cooldowns; a run that fires
     nothing still trims the dedup windows."""
-    cap = CAP_USD_PER_CREATOR_HOUR
     secs_c1, secs = [], []
     hits = state.setdefault("cap_hits", {})
     straddle = state.setdefault("cap_straddle", {})
@@ -210,20 +229,30 @@ def evaluate(sw, state, now):
                 if key in hits:
                     continue
                 hits[key] = _iso(now)
-                secs_c1.append(["", f"🔴 <b>CAP BREACH:</b> {short(addr)} earned <b>${x:,.2f}</b> "
-                                    f"({u:g} equip-units) in the {hour_window(_dt(h_iso))} hour "
-                                    f"(cap ${cap:.2f}/creator/h) — engine cap is NOT enforcing; "
-                                    f"pause rewards and check backend cap config"])
+                cap, era = cap_usd_for(h_iso), era_for(h_iso)["name"]
+                if _dt(h_iso) >= CAP_HOUR0:
+                    why = (f"(cap ${cap:.2f}/creator/h) — engine cap is NOT enforcing; "
+                           f"pause rewards and check backend cap config")
+                else:
+                    why = (f"— no engine cap existed in the {era} era (cap-equivalent ${cap:.2f}/creator/h); "
+                           f"the shape alone is the 21-Aug farm signal — review the wallet")
+                secs_c1.append(["", f"🟠 <b>CAP BREACH:</b> {short(addr)} earned <b>${x:,.2f}</b> "
+                                    f"({u:g} equip-units) in the {hour_window(_dt(h_iso))} hour {why}"])
         # C2 — rolling-60 only, never when the creator already has a C1
         if c["max_h60_units"] > BREACH_UNITS and addr not in breached \
                 and not any(k.startswith(addr + ":") for k in hits):
             if _cooled(straddle.get(addr), now, COOLDOWN_H["straddle"]):
                 straddle[addr] = _iso(now)
                 a, b = _dt(c["max_h60_start"]) + HKT, _dt(c["max_h60_end"]) + HKT
+                cap = cap_usd_for(c["max_h60_end"])
+                if _dt(c["max_h60_end"]) > CAP_ON:
+                    why = ("legal only if the backend cap is per clock-hour; check which cap semantics is live")
+                else:
+                    why = (f"no engine cap existed in the {era_for(c['max_h60_end'])['name']} era; "
+                           f"review the wallet")
                 secs.append(["", f"🟠 <b>Cap straddle:</b> {short(addr)} earned ${c['max_h60_usd']:,.2f} "
                                  f"({c['max_h60_units']:g} units) across the {a:%H:%M}-{b:%H:%M} HKT window "
-                                 f"with no single clock-hour over ${cap:.0f} — legal only if the backend "
-                                 f"cap is per clock-hour; check which cap semantics is live"])
+                                 f"with no single clock-hour over ${cap:.0f} — {why}"])
         # C3 — sustained ≥90% hours
         if c["hours_at_90pct"] >= 3 and _cooled(sat.get(addr), now, COOLDOWN_H["saturated"]):
             sat[addr] = _iso(now)
@@ -251,8 +280,11 @@ def evaluate(sw, state, now):
     above = p["units"] > POOL_FLOOR_UNITS
     if above and not st.get("above") and _cooled(st.get("last_alert"), now, COOLDOWN_H["rewards"]):
         anom["rewards"] = {"above": True, "last_alert": _iso(now)}
+        _cap_now = cap_usd_for(_iso(now))
+        _floor_usd = (f"≈ ${POOL_FLOOR_UNITS / CAP_UNITS * _cap_now:,.0f} on this era's grid"
+                      if _cap_now else "no reward size in this era")
         secs.append(["", f"📈 <b>Creator rewards ${p['usd']:,.2f} in 60 min</b> across {p['wallets']} wallets "
-                         f"({p['units']:g} units · floor {POOL_FLOOR_UNITS:g} units ≈ $20 at policy prices, "
+                         f"({p['units']:g} units · floor {POOL_FLOOR_UNITS:g} units {_floor_usd}, "
                          f"window to {hkt(now)}) — {p['units'] / CAP_UNITS:.1f} creators-at-cap equivalent; "
                          f"check the reward pool for a drain"])
     else:

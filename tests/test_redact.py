@@ -39,7 +39,9 @@ DETECTOR_KEYS = ["cap_table", "cap_hits", "cap_probe", "cap_state", "max_h60_uni
                  # instant and every paid-vs-free basis left the public contract
                  "flagged_n", "monitored_n", "at_risk_usd", "cap_on_utc", "implied_user_spend",
                  "funding_split", "swarm_split", "subsidy_ratio", "ratio_weeks",
-                 "pattern_monitor", "acct_map", "steward_", "mindset"]
+                 "pattern_monitor", "acct_map", "steward_", "mindset",
+                 # loop 2 (2026-09-21): the private grant-bleed measurement
+                 "grant_bleed", "crossed_5", "crossed_20"]
 # Word-level checks on ASSEMBLED prose (adversary X9): substrings that only
 # ever appeared next to a monitoring status, a cap figure or a paid-vs-free
 # claim. Assembled from parts so this file is never a hit for what it polices.

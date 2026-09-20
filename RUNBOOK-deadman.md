@@ -189,3 +189,56 @@ concurrency group dedupes overlap.
   "dispatched" and a run appears within ~30 s.
 - If the PAT expires/revokes the Worker logs 401s and cadence falls back to
   GitHub's own crons — the healthchecks.io dead-man is still the alerting leg.
+
+## 8. RESPONSE — what the recipient does when a PAGE-tier alert lands (loop 2, 2026-09-21)
+
+The council was explicit: a page two days early saves money only if someone
+can act. This section is the honest inventory of what a page recipient
+(Po, via the private Telegram channel) can actually do, per alert, and how
+fast. **Plainly: nobody on the dashboard side can pause credit-grant or
+reward issuance.** Both jobs run on the Minds platform; pausing either
+needs the platform/engineering team. The treasury-side lever we do hold is
+the funding decision — the distribution wallet only pays out what has been
+topped up into it (float ≈ 10 days at the current pace), and a top-up is a
+manual, human-signed transfer. So for every money alert below the value of
+the page is (a) evidence capture, (b) getting the pause request to the
+platform team with the numbers already in hand, and (c) a faster, better
+informed *do we top up* decision — not an in-house kill switch. Fill the
+two contact placeholders before relying on any of this.
+
+> **Contacts to fill (Po):** platform/engineering on-call who can pause the
+> reward job and the credit-grant job — `<name / channel>`; the funding
+> approver for treasury top-ups — `<name / channel>`. Until these are
+> written here, the response to any money alert is the evidence capture
+> below plus a message to the DevRel/platform channel.
+
+| PAGE alert | What it means | Recipient does, in order | Who can pause / act | How fast | Evidence to capture |
+|---|---|---|---|---|---|
+| 🔴 **Float below 7 d / 3 d** (runway) | The distribution wallet runs dry within the window at the 7d pace; the driver group is named in the text | 1. Open the dashboard: 24h/7d group split — is the driver a campaign (grants/top-ups) or rewards? 2. If rewards or an unexplained grant surge dominate, treat as a possible runaway and follow the row below BEFORE topping up. 3. Otherwise raise the funding request with the balance, pace and driver share from the alert. | **Top-up:** funding approver (manual signed transfer). **Nobody on the dashboard side can slow the outflow.** | Alert lands ≤ 30 min after the rule turns true; a top-up is human-paced (hours to a day). | Screenshot of the alert; `data.json:facts.float` (balance, pace, driver); the 24h group table; the run URL. |
+| 📤 **Large outflow ≥ $5,000** | One transfer ≥ $5k left the treasury (swap / treasury move / batch) | 1. Match it to a scheduled cognition distribution, a known swap or a reserve move (README flow chart). 2. If unmatched within the hour, treat as unauthorised movement: escalate to the funding approver and the platform team, and do NOT top up. | Platform team (key custody, job config); funding approver (stop further top-ups). | ≤ 30 min to land; matching is minutes if scheduled, escalation is immediate if not. | tx hash + counterparty from the alert; BaseScan link; the schedule/approval it was matched to (or the fact that none exists). |
+| 💰 **Large inflow ≥ $5,000** | Funding arrived (or a reserve return) | Confirm it is the requested arrival; update the funding thread. If unexpected, ask the sender before it is spent. | Funding approver. | Same hour. | tx hash, sender label, the funding request it settles. |
+| 🧟 **Retired payout category fired** ($0.10 v1 invoke after 21 Aug) | A payout size that was switched off is being paid again — a reward-job config regression | 1. Read the count and running total in the alert. 2. Ask the platform team to check the reward job config and pause it if the count is growing run over run. 3. Do not top up until answered. | **Platform team only** (reward job). | ≤ 30 min to land; the pause is theirs. | tx hashes from `guard_private.json:retired_ledger` (never public); the running total; first/last timestamps. |
+| 🧟 **Repeat system free top-up to one wallet** | The one-per-wallet $1 grant rule leaked | Same as above but for the free-credit job; a handful is a bug, hundreds is a farm — the count is in the alert. | **Platform team only** (free-credit job). | ≤ 30 min to land. | `guard_private.json:system_topup_ledger` entries for the wallet; count per wallet. |
+| 🔴 **BLOCK** (workflow failure notice naming a gate) | Nothing published this run — the monitor is wrong, not the treasury | Open the run; the notice names the gate (sanity summary included). Fix or hand off. The public page shows its stale banner meanwhile. | Whoever maintains this repo (Po). | Next run (≤ 30 min) republishes once fixed. | The gate's detail line; the run URL. |
+
+### WARN-tier detectors that used to page (C1–C6, the four outflow fences, the runaway rule, first-ever surge)
+
+These now ride the next hourly/daily digest (≤ ~1 h more latency) because
+the replay showed they fire on ordinary days, or — for C1–C6 — because
+creator rewards are 0.4 % of outflow. The response is the same as the
+retired-category row: evidence from `guard_private.json` (`cap_table`,
+`fanout_hours`, the fence/runaway numbers in the digest line), then a pause
+request to the platform team. A **🚀 Runaway payouts** line is the one to
+act on immediately: on the August replay it appears 26 h before the peak,
+and the 60 h farm cost $22.9K — a same-day pause would have saved most of
+it. **Promote it to PAGE** (`fences.RUNAWAY_TIER`) once a pause path exists;
+until then a page for it would only reach someone who cannot act faster
+than the digest already allows.
+
+### The slow-bleed grant measurement (private digest line) is not an alert
+
+`Grant bleed (private, 7d)` is a number to watch, never a page. A repeat
+grant to a wallet is legal until the platform answers whether one account
+maps to many wallets; the response to a new 30-day high is to raise that
+question with the platform team with the week's numbers, not to pause
+anything.

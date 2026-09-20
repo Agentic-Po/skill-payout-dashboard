@@ -43,13 +43,18 @@ plus a detail line per non-clean check. Blocks additionally print ::error::.
   python3 sanity.py --root DIR      gate a tree other than this checkout
 
 The same raw-row pass also banks the PRIVATE anomaly classification (item 3:
-repeat credit grants + daily grant-wallet series) into guard_private.json
-when that file exists — Actions cache only, never published.
+repeat credit grants + daily grant-wallet series, and — loop 2 — the
+slow-bleed grant measurement, fences.grant_bleed) into guard_private.json
+when that file exists — Actions cache only, never published. The bleed
+measurement is WARN-batched on a new 30-day high and NEVER paged: it is a
+number to watch until the platform answers the account-to-wallet question,
+not a sybil claim (see fences.py).
 """
 import json, os, sys, time, urllib.request
 from datetime import datetime, timedelta
 
 import shards
+import fences
 from classify import classify_usd, pin_rate, group_for, GROUP_KEYS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -388,7 +393,7 @@ def anomaly_pass(rows, gen):
     return repeat, series
 
 
-def bank_private(root, repeat, series):
+def bank_private(root, repeat, series, bleed=None):
     """Merge into guard_private.json if it exists (refresh.py creates it each
     run; alerts.py merges the same way). Atomic, never creates a public file."""
     gp = os.path.join(root, "guard_private.json")
@@ -400,6 +405,8 @@ def bank_private(root, repeat, series):
         g = {}
     g["repeat_grants"] = repeat
     g["daily_grant_wallets"] = series
+    if bleed is not None:
+        g["grant_bleed"] = bleed
     tmp = gp + ".tmp"
     json.dump(g, open(tmp, "w"))
     os.replace(tmp, gp)
@@ -419,14 +426,20 @@ def run(root=HERE, offline=False, bank=True, queue_warns=True):
     check_runway(rep, D, rows, syms, gen, live_bal)
     check_peer(rep, root)
     repeat, series = anomaly_pass(rows, gen)
-    banked = bank_private(root, repeat, series) if bank else False
+    # loop 2, item 3: the slow-bleed measurement — private, WARN on a new
+    # 30-day high of the 7 d repeat-grant share, never a page
+    bleed = fences.grant_bleed(((datetime.fromisoformat(r["ts"]), r["usd"], r["to"])
+                                for r in rows if r["grp"] == "credit_grants"), gen)
+    if bleed["new_high"]:
+        rep.warns.append(("grant_bleed", fences.bleed_line(bleed)))
+    banked = bank_private(root, repeat, series, bleed) if bank else False
     if queue_warns and rep.warns and not rep.blocked():
         # a BLOCK is its own page; WARNs only matter on a run that publishes
         import state as _state
         for key, text in rep.warns:
             _state.warn(f"sanity:{key}", text)
     return rep, {"rows": len(rows), "gen": gen, "secs": time.time() - t0, "banked": banked,
-                 "repeat": repeat}
+                 "repeat": repeat, "bleed": bleed}
 
 
 def main(argv):
@@ -445,6 +458,11 @@ def main(argv):
         print(f"  WARN queued [{key}]: {text}")
     print(f"  rows {meta['rows']:,} · clock {meta['gen']:%Y-%m-%dT%H:%M:%S}Z · "
           f"{meta['secs']:.1f}s · private anomaly pass {'banked' if meta['banked'] else 'not banked (no guard_private.json)'}")
+    b = meta["bleed"]
+    print(f"  grant bleed (private): 7d repeat share {b['share_7d_pct']:g}% of ${b['grant_usd_7d']:,.0f} · "
+          f"30d ref median {b['ref_median_pct']} / max {b['ref_max_pct']} ({b['ref_days']} d) · "
+          f"crossed 5/20 lifetime grants this week {b['crossed_5']}/{b['crossed_20']}"
+          + (" · NEW 30d HIGH (WARN queued)" if b["new_high"] else ""))
     # refresh.yml's failure notice reads this to name the gate and its tier
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a") as fh:

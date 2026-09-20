@@ -116,7 +116,12 @@ DENIED = [_key("ent"), _key("acf"), _key("burst"), _key("flags"),
           # Loop 1 (2026-09-21): the private anomaly pass (sanity.py) — per-
           # wallet grant counts and the daily grant-wallet series are
           # guard_private.json only; the WARN queue rides alert_state.json.
-          r"repeat_grants", r"daily_grant_wallets", _key("heaviest_grants"), r"warn_queue"]
+          r"repeat_grants", r"daily_grant_wallets", _key("heaviest_grants"), r"warn_queue",
+          # Loop 2 (2026-09-21): the slow-bleed grant measurement
+          # (guard_private.json) and the fence / runaway edge state
+          # (alert_state.json) — exact keys as emitted.
+          r"grant_bleed", _key("crossed_5"), _key("crossed_20"), _key("share_7d_pct"),
+          _key("fences"), _key("runaway")]
 
 # Known-leaked person names (Cycle-3 Loop 1). Case-insensitive, assembled
 # from parts so this scanner file is never itself a grep hit for the names it
@@ -164,7 +169,9 @@ ORACLE_KEYS = {"ent", "acf", "burst", "tol", "flagged", "flags", "status",
                "flagged_n", "monitored_n", "at_risk_usd", "cap_on_utc", "cap_usd",
                "pattern_monitor", "acct_map", "steward", "mindset",
                # sanity.py's private anomaly pass + the WARN queue (2026-09-21)
-               "repeat_grants", "daily_grant_wallets", "heaviest_grants", "warn_queue"}
+               "repeat_grants", "daily_grant_wallets", "heaviest_grants", "warn_queue",
+               # loop 2: grant-bleed measurement + fence / runaway edge state
+               "grant_bleed", "crossed_5", "crossed_20", "share_7d_pct", "fences", "runaway"}
 
 # Reviewed exact paths where one of the above names is NOT a monitoring
 # verdict. Each entry is a deliberate, human-reviewed exemption; a new path

@@ -10,7 +10,9 @@ shards prove it quiet:
   4. one creator >= 72 units in 3 hours -> C3 (once, 6 h cooldown)
   5. 450 units across 20 wallets in 60 min -> C5, re-arms after the drop
   6. grid agreement 0.2 / n=600 -> C6 on the flip, one line on recovery
-  7. rows before the cap instant never trigger C1-C4
+  7. rows before the cap instant DO count (loop 2: era-aware, not gated) —
+     C1 fires with the "no engine cap existed" wording, never the
+     "engine cap is NOT enforcing" claim
   8. the REAL shards: nothing fires; the probe carries rows and top_units_1h
   9. message hygiene: every template carries a $ value, a window, HKT and an
      action clause; 25 fan-out hours compose to < 4000 chars with a 🔴 kept
@@ -66,7 +68,8 @@ def main():
     # 1. C1 — 85 equips in one clock-hour
     secs, st, sw = run(burst(A, h + timedelta(minutes=2), 85))
     c1 = [s for s in secs if "CAP BREACH" in s[1]]
-    assert len(c1) == 1 and "🔴" in c1[0][1] and "85 equip-units" in c1[0][1], secs
+    assert len(c1) == 1 and "🟠" in c1[0][1] and "85 equip-units" in c1[0][1], secs
+    assert "NOT enforcing" in c1[0][1], "a cap-era breach must claim the engine cap failed"
     assert f"${85 * EQ:,.2f}" in c1[0][1] and f"cap ${CAP_USD_PER_CREATOR_HOUR:.2f}" in c1[0][1]
     assert not [s for s in secs if "straddle" in s[1]], "C2 must not fire alongside a C1 for the same creator"
     _lines_ok(secs)
@@ -145,12 +148,16 @@ def main():
     assert not secs, "C6 fired below n>=30"
     print("ok C6: flips at agree<0.5 with n>=30, one recovery line, silent below n")
 
-    # 7. pre-cap rows never trigger C1-C4
+    # 7. pre-cap rows COUNT (loop 2): the shape is the signal, the wording changes
     pre = datetime(2026, 9, 14, 15, 0)
     spec = burst(A, pre, 90) + [x for i in range(7) for x in burst("0x" + f"{i:040x}", pre, 41)]
     secs, st, sw = run(spec, now=datetime(2026, 9, 14, 18, 0))
-    assert not [s for s in secs if "CAP" in s[1] or "Cap" in s[1]], f"pre-cap rows fired: {secs}"
-    print("ok pre-cap window (14:19Z-19:12Z) never triggers C1-C4")
+    c1 = [s for s in secs if "CAP BREACH" in s[1]]
+    assert len(c1) == 1 and "no engine cap existed in the v2 era" in c1[0][1], secs
+    assert "NOT enforcing" not in c1[0][1] and f"${CAP_USD_PER_CREATOR_HOUR:.2f}" in c1[0][1], c1
+    assert [s for s in secs if "Cap fan-out" in s[1]], "fan-out did not fire on pre-cap rows"
+    _lines_ok(secs)
+    print("ok pre-cap window (14:19Z-19:12Z) fires C1/C4 with the 'no engine cap existed' wording")
 
     # 8. real shards: quiet, probe populated
     D = json.load(open(os.path.join(ROOT, "data.json")))
@@ -181,23 +188,18 @@ def main():
     print(f"ok real shards: nothing fires · probe rows {pr['rows']} · top clock-hour {pr['top_clock_units_24h']} units "
           f"(${pr['top_clock_usd_24h']}) · {len(tbl)} creators in the private table")
 
-    # 9. message hygiene: 25 fan-out hours + one C1 compose under 4000 chars
-    spec = burst(A, h + timedelta(minutes=2), 85)
-    for k in range(25):
-        spec += [x for i in range(7) for x in burst("0x" + f"{i:040x}", NOW - timedelta(hours=k + 1, minutes=59), 41)]
-    st = {"cap_state": {"fanout_last": None}}
-    secs, st, sw = run(spec, st)
-    # cooldown lets one fan-out through per run; force the worst case by
-    # composing every hour's line as its own section
+    # 9. message hygiene: 25 fan-out sections + one 🔴 runway section compose
+    # under 4000 chars with the 🔴 kept first (C1 is 🟠 since loop 2 — WARN)
     fan = [["", f"🟠 <b>Cap fan-out:</b> 7 creators each earned ≥50% of the hourly cap in the "
                 f"{cd.hour_window(NOW - timedelta(hours=k + 1))} hour ($14.35 combined) — sybil spread across wallets; "
                 f"review the set in guard_private.json"] for k in range(25)]
-    c1 = [s for s in secs if "CAP BREACH" in s[1]]
-    assert len(c1) == 1
-    msg = cd.compose("🚨 <b>Flow alert</b>", fan + c1)
+    rw, _ = cd.runway_check(6.9, 21000.0, None, {}, NOW)
+    assert len(rw) == 1 and "🔴" in rw[0][1]
+    msg = cd.compose("🚨 <b>Flow alert</b>", fan + rw)
     assert len(msg) < 4000, len(msg)
-    assert "CAP BREACH" in msg and msg.count("Cap fan-out") == 7 and "+18 more" in msg, msg[-200:]
-    print(f"ok compose: 25 fan-out sections + 1 breach -> {len(msg)} chars, 🔴 kept first, 7 sections + '+18 more'")
+    assert "Float below" in msg and msg.count("Cap fan-out") == 7 and "+18 more" in msg, msg[-200:]
+    assert msg.index("Float below") < msg.index("Cap fan-out"), "🔴 section not first"
+    print(f"ok compose: 25 fan-out sections + 1 runway -> {len(msg)} chars, 🔴 kept first, 7 sections + '+18 more'")
 
     # 10. no reward-size literal in the detector
     src = open(os.path.join(ROOT, "cap_detect.py")).read()

@@ -91,6 +91,16 @@ def era_for(ts):
     return ERAS[0]
 
 
+def cap_usd_for(ts):
+    """USD value of CAP_UNITS on the row's OWN era grid: $4.00 in v2, $80.00
+    in v1, None in the pause (no reward size exists to count). The unit
+    counter is era-proof; this is only the display figure next to it, so the
+    era-aware detectors (cap_detect.py, loop 2) never print a v2 dollar cap
+    against a v1 hour."""
+    p = era_for(ts)["rewards"].get("equip")
+    return None if p is None else CAP_UNITS * p
+
+
 # size-band keys for the page's daily mix bar (superset of the old set,
 # adding b20/b100 so recognised packs are never lumped into "other", and
 # b0005/b005 for the v2 reward sizes). b010/b1 stay forever — history.
