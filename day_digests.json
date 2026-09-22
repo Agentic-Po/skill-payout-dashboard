@@ -594,5 +594,9 @@
  "2026-09-19": {
   "first_written_iso": "2026-09-21T00:07:58Z",
   "sha": "5a6226f3114b73943358e434748b2c696891ad0f531b0a5093349429e1b8aceb"
+ },
+ "2026-09-20": {
+  "first_written_iso": "2026-09-22T00:07:56Z",
+  "sha": "ee33eb2fe1a8a84fff91aedf7cfdfa708b3cc6738e2ae4cb9c8b405c09992d2b"
  }
 }
