@@ -9,6 +9,10 @@ last count — the LIVE numbers are always each repo's machine-generated
    - `https://raw.githubusercontent.com/Agentic-Po/skill-payout-dashboard/main/catalog.json`
    - `https://raw.githubusercontent.com/Agentic-Po/moca-ledger/main/catalog.json`
    - moca-ledger-private: clone with repo access.
+   - vip-metrics (private, `vip_in`: inbound MOCA+MENTE to VIP mind wallets —
+     rows name VIP wallets, so the dataset is never published here; it is
+     listed by name in this repo's catalog and read through
+     `rows.canonical_rows("vip_in", path=<clone>/vip_in)`).
 2. **Read rows ONLY through `rows.py`** (`canonical_rows(source)` — one row
    shape over every ledger layout; addresses lowercased, `value_wei` int).
    Copy the module or vendor it; the two source schemas are frozen contracts,
