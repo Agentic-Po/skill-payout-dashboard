@@ -50,10 +50,11 @@ def canonical_rows(source, path=None):
     """Yield canonical rows for one source.
 
     source: "treasury_out" | "treasury_in" | "coupon_out" | "coupon_in"
-            | "cognition_in" | "moca_ledger"
-    path:   required for "moca_ledger" (the clone's data/ directory) and
-            accepted for "coupon_ledger" (the private coupon jsonl dir);
-            ignored otherwise.
+            | "cognition_in" | "moca_ledger" | "coupon_ledger" | "vip_in"
+    path:   required for "moca_ledger" (the clone's data/ directory),
+            "coupon_ledger" (the private coupon jsonl dir) and "vip_in"
+            (Agentic-Po/vip-metrics' vip_in/ dir — private: rows name VIP
+            wallets, so the data never lives in this repo); ignored otherwise.
 
     PRECISION CAVEAT (cognition_in): those rows are pre-slimmed and carry
     `val` as a FLOAT token amount, not the on-chain integer — the wei value is
@@ -64,7 +65,7 @@ def canonical_rows(source, path=None):
     cognition_in wei for an equality reconciliation; use it for sums only.
     """
     import shards
-    if source in ("moca_ledger", "coupon_ledger"):
+    if source in ("moca_ledger", "coupon_ledger", "vip_in"):
         if not path:
             raise ValueError(f"{source} needs the clone's data directory path")
         yield from _jsonl_ledger(path, source)
@@ -92,9 +93,11 @@ def canonical_rows(source, path=None):
 
 def _jsonl_ledger(data_dir, source):
     """The private crawlers' daily jsonl: block, ts (epoch), tx, li, from, to,
-    value (wei string), token. MOCA-only by construction — each crawler
-    watches one contract. Used by both moca_ledger (treasury cross-check) and
-    coupon_ledger (coupon cross-check)."""
+    value (wei string), token. moca_ledger / coupon_ledger are MOCA-only by
+    construction (each crawler watches one contract) and carry no `token`
+    field; wallet-scoped ledgers (moca-ledger-private:data_wallets/,
+    vip-metrics:vip_in/) carry `token` as the symbol and are read by the same
+    adapter — a row without the field is MOCA."""
     for fn in sorted(os.listdir(data_dir)):
         if not fn.endswith(".jsonl"):
             continue
@@ -104,7 +107,7 @@ def _jsonl_ledger(data_dir, source):
                 if not line:
                     continue
                 r = json.loads(line)
-                yield _row("MOCA", r["block"], r["ts"], r["tx"], r["li"],
+                yield _row(r.get("token") or "MOCA", r["block"], r["ts"], r["tx"], r["li"],
                            r["from"], r["to"], r["value"], source)
 
 

@@ -184,6 +184,12 @@ PRIVATE = [
          note="private — see companion doc"),
     dict(name="alert_state.json", kind="derived",
          note="private — see companion doc"),
+    # Inbound MOCA+MENTE transfers to VIP mind wallets (VIP Management metrics,
+    # 2026-09-26). Every row names a VIP wallet — an identity label — so the
+    # dataset is banked and catalogued in the private companion repo
+    # Agentic-Po/vip-metrics, not here. Listed so the absence is deliberate.
+    dict(name="vip_in", kind="ledger",
+         note="private — banked in Agentic-Po/vip-metrics (rows name VIP wallets)"),
 ]
 
 
