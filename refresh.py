@@ -1942,16 +1942,17 @@ insights = {
     "cognition": "Demand side: MENTE that mind wallets spent on cognition requests. It is a separate flow from the treasury's outflow above — compare the two, but it is not traced token by token.",
     "recipients": "10,000+ wallets hold verifiable on-chain earnings history — the property layer. (This table counts only transfers FROM this treasury wallet.)",
     "sources": "All inflow is deliberate ops — treasury refills, reserve returns of parked treasury funds and (until it stopped) collector recycling. Every source wallet should carry a label; unlabeled = ask treasury ops.",
-    "server": "The off-chain shadow (Stripe checkout events only): where it disagrees with the chain is exactly where our data gaps live — revenue figures are floors until the Stripe export lands.",
+    "server": "Stripe payments as PostHog records them — PostHog is the source of truth for payments; where it disagrees with the chain is where a data gap lives.",
     "aizone": f"Best-guess triage, never fact: every payout type below is inferred from transfer size on the row's own era grid (±8% v1 · ±12% v2); pattern signals are reviewed privately and never published. Float: ~{float_facts['days_7d_pace'] or '?'} days at the 7-day pace on total outflow.",
 }
-open_items = [
-    {"item": "Confirm MENTE burn mechanism (event-less balance changes, ~$1,250 lifetime; sample txs 0x0080584a…, 0xc9f7afc5… in block 45862329)", "type": "clarify", "owner": "Po → MENTE team", "opened": "2026-07-19", "anchor": "scope"},
-    {"item": "Reconcile Stripe-sized outflow vs recorded top-ups — the data platform team holds Stripe API access (feeds PostHog) and can close this end-to-end", "type": "follow-up", "owner": "Po → data platform team (Stripe API access confirmed)", "opened": "2026-07-18", "anchor": "serverCard"} if server else None,
-    {"item": "Identify owner of 0xf605dBb5…1468f — the primary MENTE funder; three small early funders also remain unattributed", "type": "clarify", "owner": "Po + treasury ops", "opened": "2026-07-19", "anchor": "srcT"},
-    {"item": "Formalize the recycle policy: collector→treasury flows are informal ops habit today — defining the rule defines who owns the economy's cash flow", "type": "clarify", "owner": "Po → platform lead", "opened": "2026-07-19", "anchor": "srcT"},
-    {"item": "Manual heartbeat: wallet stays solvent only by hand-refills — standing replenishment policy pending platform lead", "type": "follow-up", "owner": "Po → platform lead", "opened": "2026-07-19", "anchor": "plainStrip"},
-]
+# All five items open since July were answered by the owner on 2026-09-27
+# (council follow-up): no MENTE burn exists (MENTE is collected after use);
+# PostHog is the source of truth for Stripe payments (no separate
+# reconciliation); the primary MENTE funder is identified (treasury ops —
+# never named here); swept MENTE goes Rebate wallet -> treasury reserve and is
+# used as reserve; replenishment is a manual budget request by the owner, not
+# an automatic rule. New items go here as they open.
+open_items = []
 open_items = [o for o in open_items if o]
 # each gap carries the date it was opened (C11, 2026-09-15) so the page can
 # age it — a promise older than 60 days gets a chip, not a "landing next"
@@ -1959,11 +1960,9 @@ gaps = [
     # "SWARM era not yet integrated" retired 2026-09-27: the Generation-1
     # SWARM archive section has shipped (swarm_era.json) — a closed gap left
     # open reads as an unmaintained page
-    {"missing": "Recycle policy (constitutional)", "opened": "2026-07-19", "effect": "collector→treasury flows are informal; ownership of the economy's cash flow undefined", "unlocks": "closed-loop rule, creator revenue-share, or burn discipline — a protocol instead of a babysat wallet"},
-    {"missing": "Complete Stripe data feed — the data platform team has Stripe API access (pulls for PostHog today, but only client-side events land)", "opened": "2026-07-18", "effect": "live revenue still client-side only; an interim VERIFIED snapshot (Stripe CSV, May 13–Jul 15: net $6,455) now anchors the true numbers — live feed needed for ongoing days", "unlocks": "live top-up revenue instead of a dated snapshot"},
     {"missing": "Per-transfer memo/event from the payout contract", "opened": "2026-07-19", "effect": "classification is size-inference (±8%); amber zone larger than it needs to be", "unlocks": "exact payout types — most of the amber zone becomes fact"},
     {"missing": "Creator figures are per wallet, not per creator", "opened": "2026-09-15", "effect": "the chain shows wallets only: a creator may hold several wallets, so creator-wallet counts on this page are an upper bound on creators and every per-wallet check is a lower bound", "unlocks": "per-creator economics (platform-side grouping) — retires the farming debate with data"},
-    {"missing": "MENTE burn-mechanism confirmation (platform)", "opened": "2026-07-19", "effect": "~1.2% of MENTE flow explained forensically but unconfirmed", "unlocks": "complete, auditable MENTE accounting; event emission restores full verifiability"},
+    {"missing": "Explanation for a small MENTE balance gap", "opened": "2026-07-19", "effect": "the treasury's on-chain MENTE balance differs from its recorded transfers by ~88K MENTE (~1.2% of MENTE-era flow, ~$1,250); it is NOT a burn (owner, 2026-09-27)", "unlocks": "fully reconciled MENTE accounting"},
     {"missing": "Manual-support wallet scope", "opened": "2026-07-19", "effect": "the $50K manual-support wallet (separate custody) is invisible to this dashboard", "unlocks": "whole-treasury view; no separate manual attestation needed"},
 ]
 guard["dist_pace"] = dist_pace
@@ -2192,7 +2191,7 @@ def _reg(addr, role, group, warn=False):
 
 registry = [
     _reg(WALLET, "Treasury Distribution wallet — the subject of this dashboard", "Treasury"),
-    _reg(COLLECTOR, "Cognition Credits collector — minds pay MENTE here per request; recycled to treasury until 2026-06-18, now swept to the holding wallet below", "Collector"),
+    _reg(COLLECTOR, "Cognition Credits collector — minds pay MENTE here per request; recycled to treasury until 2026-06-18, now swept to the Rebate wallet below, which returns it to the treasury reserve", "Collector"),
     _reg(TOKENS["MENTE"]["addr"], "MENTE token contract — the current cognition credit", "Token contracts"),
     _reg(TOKENS["MOCA"]["addr"], "MOCA token contract — counted by USD value, auto-swaps to MENTE", "Token contracts"),
     _reg("0xea87169699dabd028a78d4b91544b4298086baf6", "SWARM token contract — generation-1 credit (Ethoswarm), migrated ~Apr 2026", "Token contracts"),

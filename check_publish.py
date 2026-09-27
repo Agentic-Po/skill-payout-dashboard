@@ -227,7 +227,7 @@ def _oracle_keys(obj, path="", hits=None):
 # address; that is the point.
 FLOWCHART_WALLET_LABELS = {
     "Treasury Distribution wallet — the subject of this dashboard",
-    "Cognition Credits collector — minds pay MENTE here per request; recycled to treasury until 2026-06-18, now swept to the holding wallet below",
+    "Cognition Credits collector — minds pay MENTE here per request; recycled to treasury until 2026-06-18, now swept to the Rebate wallet below, which returns it to the treasury reserve",
     "Cognition Credits collector — also the original SWARM-era treasury+collector hub (pre-Apr 2026)",
     "Minds Rebate wallet — receives the daily 40% MENTE sweep from the collector since 2026-06-19; DATops swaps its MENTE to MOCA on a weekly cadence",
     "Gas funder — sends ETH slivers so cognition spends are gasless for users",

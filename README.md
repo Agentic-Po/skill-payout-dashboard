@@ -406,16 +406,13 @@ check cannot tell you which pipeline died. Full detail in
 
 | Check name | Pipeline | Period | Grace | Secret |
 |---|---|---|---|---|
-| `moca-ledger detection floor` | moca-ledger `crawl.yml` / `selftest.yml` | 1 h | **2 h (INTERIM — revisit 2026-09-13)** | `HC_PING_URL` (moca-ledger) |
+| `moca-ledger detection floor` | moca-ledger `crawl.yml` / `selftest.yml` | 1 h | 2 h | `HC_PING_URL` (moca-ledger) |
 | `skill-payout-dashboard refresh` | this repo's `refresh.yml` | 1 h | 3 h | `HEALTHCHECK_URL` (this repo) |
 
 - `moca-ledger detection floor` was previously named "My First Check"; period
   and ping URL are unchanged.
-- **The 2 h detection-floor grace is interim, not a target.** It accommodates
-  GitHub cron starvation rather than fixing it; the real fix is an external
-  trigger on the `workflow_dispatch` endpoint, after which grace returns to
-  ~45 min. **Revisit 2026-09-13** — recorded here, not only in the decision
-  notes, so "temporary" does not become permanent.
+- The moca-ledger check's 2 h grace is that repo's setting (its own runbook
+  owns it); this table only records it.
 - **The dashboard's 1 h/3 h numbers are dashboard-only.** They tolerate ~4 h of
   silence, which is fine for a refresh pipeline and must **never** be copied to
   the detection floor check.
@@ -432,11 +429,14 @@ check cannot tell you which pipeline died. Full detail in
 
 ## Open items owned by Po
 
-1. `HEALTHCHECK_URL` secret for the `skill-payout-dashboard refresh` check
-   (external dead-man; weekly digest nags until set) — ingest via the dotfile,
-   see the table above
-2. Whether to rewrite public git history (pre-2026-08-29 commits contain old
-   state files; content is stale but recoverable)
-3. ~~transfers_export.csv monthly sharding~~ — done 2026-09-27: full history in
-   `exports/transfers-YYYY-MM.csv` (≤ 9 MB/month today, closed months byte-stable);
-   `transfers_export.csv` is the trailing 7 days
+Resolved 2026-09-27: `HEALTHCHECK_URL` set (dead-man live); CSV sharded
+monthly; the five July page open items answered by the owner (no MENTE burn;
+PostHog is the payments source of truth; funder identified; swept MENTE goes
+Rebate wallet -> treasury reserve; refills are a manual owner budget request).
+
+1. Public git history rewrite — approved 2026-09-27, being prepared (purges
+   pre-2026-08-29 state files and identity strings; needs a one-off pause of
+   the refresh bot and of the force-push rule).
+2. Pricing unification across the five loaders — approved; next cycle, behind
+   `tests/test_pricing_parity.py`.
+3. Unexplained ~88K MENTE balance-vs-transfers gap (~$1,250) — not a burn.

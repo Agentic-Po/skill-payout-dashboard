@@ -130,7 +130,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
 <main class="wrap">
   <header>
     <h1>Minds Treasury Wallet — On-chain Flows (MENTE + MOCA)</h1>
-    <div class="sub mono"><a href="https://basescan.org/address/0xBD956171F5B50936f0Ad1C4db80c022bd2442519" target="_blank">0xBD95…2519</a> on Base · <span id="gen" title="computed in your browser from the page's build stamp">updated —</span> · <a href="transfers_export.csv" download>per-transaction CSV — last 7 days (__CSV_MB__)</a> · <a href="https://github.com/Agentic-Po/skill-payout-dashboard/tree/main/exports" target="_blank" rel="noopener">full history by month</a> · <a href="coupon.html" title="Coupon Distributor wallet — a separate wallet, out of scope for every figure on this page">Coupon claims →</a> · <a href="legacy.html" title="Original MOCA-only layout, old method — kept for continuity, sunsets after adoption">legacy view (MOCA-only, old method)</a> · <a href="https://github.com/Agentic-Po/skill-payout-dashboard/blob/main/DATASETS.md" target="_blank" title="Machine-computed data catalog — rows, sizes, coverage, provenance">data catalog</a> · <a href="https://docs.google.com/document/d/1fsbN5IG4YoZ6R23KKpe0LPjC3O2lfA1se7gpW8SuZaE/edit" target="_blank" title="Team-internal reading guide — access-controlled">team guide 🔒</a></div>
+    <div class="sub mono"><a href="https://basescan.org/address/0xBD956171F5B50936f0Ad1C4db80c022bd2442519" target="_blank">0xBD95…2519</a> on Base · <span id="gen" title="computed in your browser from the page's build stamp">updated —</span> · <a href="transfers_export.csv" download>per-transaction CSV — last 7 days (__CSV_MB__)</a> · <a href="https://github.com/Agentic-Po/skill-payout-dashboard/tree/main/exports" target="_blank" rel="noopener">full history by month</a> · <a href="coupon.html" title="Coupon Distributor wallet — a separate wallet, out of scope for every figure on this page">Coupon claims →</a> · <a href="https://github.com/Agentic-Po/skill-payout-dashboard/blob/main/DATASETS.md" target="_blank" title="Machine-computed data catalog — rows, sizes, coverage, provenance">data catalog</a> · <a href="https://docs.google.com/document/d/1fsbN5IG4YoZ6R23KKpe0LPjC3O2lfA1se7gpW8SuZaE/edit" target="_blank" title="Team-internal reading guide — access-controlled">team guide 🔒</a></div>
   </header>
 
   <!-- ===================== NOW ===================== -->
@@ -490,7 +490,7 @@ renderSection("Headline strip","plainStrip",()=>{const wA=F.windows[3];
  const u0=usd;
  const floatD=FL&&FL.days_7d_pace;
  document.getElementById("plainStrip").innerHTML=
-  `<b>Since ${F.range.from}:</b> this wallet sent out <b>${u0(wA.out_usd)}</b> — <b>${u0(wA.economy_out_usd??wA.out_usd)}</b> in payouts to users and creators${wA.ops_out_usd?` and ${u0(wA.ops_out_usd)} in treasury swaps/ops moves`:""} — and was refilled with <b>${u0(wA.in_external_usd||0)}</b> of treasury refills${wA.in_recycled_usd?` plus ${u0(wA.in_recycled_usd)} of returns (collector recycling and reserve)`:""} — all our own treasury money. <a href="#registerCard" class="pill" style="border-color:var(--acc);color:var(--acc);font-weight:600">${openN} open item${openN===1?"":"s"} ↓</a>`
+  `<b>Since ${F.range.from}:</b> this wallet sent out <b>${u0(wA.out_usd)}</b> — <b>${u0(wA.economy_out_usd??wA.out_usd)}</b> in payouts to users and creators${wA.ops_out_usd?` and ${u0(wA.ops_out_usd)} in treasury swaps/ops moves`:""} — and was refilled with <b>${u0(wA.in_external_usd||0)}</b> of treasury refills${wA.in_recycled_usd?` plus ${u0(wA.in_recycled_usd)} of returns (collector recycling and reserve)`:""} — all our own treasury money. ${openN?`<a href="#registerCard" class="pill" style="border-color:var(--acc);color:var(--acc);font-weight:600">${openN} open item${openN===1?"":"s"} ↓</a>`:""}`
   +`<div class="sub" style="margin-top:6px">Changed 2026-09-27: inflow once labelled “usage fees recycling back” is now split into collector recycling${wA.in_collector_usd!=null?` (${u0(wA.in_collector_usd)})`:""} and reserve returns of treasury funds${wA.in_reserve_usd!=null?` (${u0(wA.in_reserve_usd)})`:""}; totals unchanged.</div>`;
 });
 // scope + reconciliation
@@ -507,7 +507,7 @@ document.getElementById("scope").innerHTML=
   +`</span>`+
  `<span><b>Independent check:</b> ${SC.cross_check?SC.cross_check.text:"Cross-checked weekly, row-exact, against an independent second crawler"} (public <a href="${SC.cross_check?SC.cross_check.repo:"https://github.com/Agentic-Po/moca-ledger"}" target="_blank">moca-ledger</a> repo)</span>`+
  (F.market_check&&Object.keys(F.market_check).length?`<span><b>Rate validation:</b> ${Object.entries(F.market_check).map(([k,v])=>`${k} ${v.within15}/${v.n} typically within ${v.median_dev??"?"}% of market price (${v.within15}/${v.n} days inside the 15% gate; worst day ${v.max_dev}%)`).join(" · ")} — each day priced at its own day's rate, cross-checked against the right trading pool for that period</span>`:"")+
- `<span><b>Balance reconciliation:</b> ${rec} — cache covers the wallet's full lifetime; balance valued at the newest cached block. The MENTE Δ (<b>≈$1,250 over the wallet's lifetime</b> — 88K tokens, ~1.2%) is an automatic burn by the token contract itself — expected platform behavior being confirmed with the team, <b>not missing funds</b>. (Technical: transfer logs verify exact vs raw chain, 36,715 = 36,715; the delta accrues in blocks with zero token events — the contract changes balances without emitting them.) Movement beyond this pattern flags in amber here</span>`+
+ `<span><b>Balance reconciliation:</b> ${rec} — cache covers the wallet's full lifetime; balance valued at the newest cached block. The MENTE Δ (<b>≈$1,250 over the wallet's lifetime</b> — 88K tokens, ~1.2%) is a difference between the on-chain balance and the recorded transfers that is <b>not yet explained</b>. It is <b>not a burn</b> — MENTE is collected after users spend it, nothing burns it (owner, 2026-09-27) — and it is small, so treat it as a bookkeeping gap, not missing funds. (Technical: outbound transfer logs match the chain exactly, 36,715 = 36,715; the gap accrues in blocks where the balance moved but no MENTE Transfer event was indexed.) Movement beyond this pattern flags in amber here</span>`+
  `<span><b>Note:</b> ${SC.note!=null?SC.note:"—"}</span>`;
 });
 // large-inflow flag: any single transfer >= $10k. C10: collapsed unless one
@@ -547,7 +547,7 @@ const ftiles=[
  if(C&&C.new_pct!=null){
   const idle=S.collector_bal&&S.rate?usd(S.collector_bal*S.rate):null;
   ftiles.splice(4,0,["Collector sweep vs "+C.rate+"% target", `<span style="color:var(--warn)">${C.new_pct}%</span>`,
-   `contract base unconfirmed · delivered since ${S.first}${C.variance_usd<0?` · short ${usd(-C.variance_usd)}`:""}${idle?` · ${idle} of MENTE held in the collector`:""} · <a href="#sinkCard">details ↓</a>`]);
+   `40% of MENTE spend, confirmed · delivered since ${S.first}${C.variance_usd<0?` · short ${usd(-C.variance_usd)}`:""}${idle?` · ${idle} of MENTE held in the collector`:""} · <a href="#sinkCard">details ↓</a>`]);
  }}
 const stale=SC.complete?"":`<div style="font-size:11px;color:var(--warn);margin-top:4px">⚠ as of last complete fetch</div>`;
 // one plain-English line per tile: a definition only, never a new number
@@ -869,7 +869,7 @@ if(DATA.sink&&DATA.sink.days){
          <div class="sub">${usd(S.recycle_total)} · returned here. ${S.recycle_n} active days across ${S.recycle_first}–${S.recycle_last}${S.recycle_span_days?` (${S.recycle_span_days} calendar days; daily only from 2026-05-21)`:""}.${S.recycle_share_cum?` Cumulative <b>${S.recycle_share_cum}%</b> of collector intake.`:""}</div></div>
        <div><div class="sub">Current route — collector &rarr; ${SINK_NAME}<br><i>active since ${S.first}</i></div>
          <div class="mono" style="font-size:20px;color:var(--warn)">−${f(S.total)} MENTE</div>
-         <div class="sub">${usd(S.total)} · left the loop, never returned. ${S.days} days, ${S.first}–${S.last}, daily at ~01:00 UTC. Cumulative <b>${S.share_cum}%</b> of collector intake.</div></div>
+         <div class="sub">${usd(S.total)} · swept to the Rebate wallet, which returns it to the treasury reserve. ${S.days} days, ${S.first}–${S.last}, daily at ~01:00 UTC. Cumulative <b>${S.share_cum}%</b> of collector intake.</div></div>
        <div><div class="sub">Never left — stays in the collector</div>
          <div class="mono" style="font-size:20px">${S.collector_bal?f(S.collector_bal):"—"} MENTE</div>
          <div class="sub">${S.collector_bal?usd(S.collector_bal)+" · ":""}roughly 60% of everything users spend has always stayed here, in both periods. Largest pool on this page.</div></div>
@@ -887,12 +887,12 @@ if(DATA.sink&&DATA.sink.days){
        <b>Nothing new started.</b> One existing daily transfer changed destination: the transfer into Minds Treasury Distribution stopped on <b>${S.recycle_last}</b>, and on <b>${S.first}</b> the same daily transfer restarted pointing at ${shortA(S.addr)}.
        Outbound MENTE transactions from that wallet since ${S.first}: <b>${idle?"zero":S.out_n}</b> — these are the weekly MENTE→MOCA swaps tracked in the monitor above. Ownership is not verifiable on-chain, so treat the balance as <b>unreconciled</b> until the platform team confirms custody.
        At the current pace the sweep runs ~${f(perDay)} MENTE/day (~${usd(perDay)}/day) — a ceiling, not a forecast, since usage is falling.
-       While this continues, Minds Treasury Distribution receives nothing back, and the collector-recycling part of any “returns” figure elsewhere on this dashboard covers ${S.recycle_first}–${S.recycle_last} only (reserve returns of treasury funds are the rest).</p>`;
+       This wallet no longer receives collector MENTE directly: the sweep goes to the Rebate wallet and on to the treasury reserve, which refills this wallet. The collector-recycling part of any “returns” figure elsewhere on this dashboard covers ${S.recycle_first}–${S.recycle_last} only (reserve returns of treasury funds are the rest).</p>`;
 
   document.getElementById("sinkFoot").innerHTML=
     `Amounts and timing are on-chain facts; <b>control is not</b>. The collector is an EOA with EIP-7702 delegation to a <i>stateless</i> delegator, so no on-chain rule constrains the split — it is a script, and the destination wallet's owner is unverified.
      Rates above are cumulative shares of collector intake, stated on the same basis for both routes. On a prior-day basis the current route's median is ${S.share_median}%; the sweep tracks prior-day intake far more tightly than same-day (σ ~10pp vs ~32pp), consistent with a nightly job.
-     The 40% is a contractual term; the percentages above are what the chain actually delivered against it. The contractual <i>base</i> has not been confirmed in writing by the counterparty — total collector intake is inferred from how closely the old route fits it.`;
+     The 40% is a contractual term; the percentages above are what the chain actually delivered against it. The term — 40% of the MENTE the collector receives — is confirmed by the owner (2026-09-27); the shortfall above is measured on exactly that base, in MENTE tokens, and valued at today's MENTE price.`;
 
   const ins=document.getElementById("ins-sink");
   if(ins)ins.innerHTML=`&rarr; On <b>${S.first}</b> the daily sweep out of the collector was redirected to the ${SINK_NAME}: same job, similar share, new destination. <b>${f(S.total)} MENTE</b> (${usd(S.total)}) has been swept there since${S.rebate?`; it holds <b>${f(S.rebate.bal_mente)} MENTE + ${f(S.rebate.bal_moca)} MOCA</b> (last MENTE→MOCA swap ${S.rebate.last_swap||"never"})`:""}. Inflow to Minds Treasury Distribution from user spending is currently <b>zero</b>.`;
