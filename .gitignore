@@ -9,3 +9,8 @@ alert_state.json
 guard_private.json
 data.json.tmp
 *.tmp
+
+# Actions-cache state is stored ENCRYPTED (tools/state_crypt.py, STATE_KEY);
+# neither the .enc blobs nor the private run log may ever be committed
+*.enc
+private_log.json

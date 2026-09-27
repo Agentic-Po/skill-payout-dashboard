@@ -97,6 +97,14 @@ jobs:
         run: python3 tests/test_util.py
       - name: rpc_batch skips counted and logged
         run: python3 tests/test_rpc_batch.py
+      # Privacy hardening (2026-09-27): public Actions logs carry no
+      # monitoring detail (detector entry points run with GITHUB_ACTIONS=true
+      # against a deny list, plus a local self-test proving it is a switch),
+      # and the Actions-cache state is STATE_KEY-encrypted end to end.
+      - name: Quiet public logs (no monitoring detail in Actions)
+        run: python3 tests/test_quiet_logs.py
+      - name: Encrypted Actions-cache state (state_crypt)
+        run: python3 tests/test_state_crypt.py
       # Coupon crawl vs the private coupon ledger. CI has no access to that
       # repo, so this SKIPS clean here (exit 0, loud message) and is run
       # locally with COUPON_LEDGER_PATH set; the step exists so the skip is

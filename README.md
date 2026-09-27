@@ -25,7 +25,7 @@ best-effort backup, delivers only a few % of slots under starvation)
        ├─ renders index.html (+ legacy.html: old MOCA-only layout and method, still
        │  recomputed each run; ships only the 40 rows it lists + pre-aggregated totals)
        ├─ writes data.json           ← THE versioned contract (schema_version 4)
-       ├─ writes guard_private.json  ← private (gitignored, Actions cache only)
+       ├─ writes guard_private.json  ← private (gitignored, encrypted Actions cache only)
        ├─ writes exports/transfers-YYYY-MM.csv (per-tx audit, one file per UTC month,
        │  sorted; closed months byte-stable) + transfers_export.csv (trailing 7 days)
        └─ catalog.build() → catalog.json + DATASETS.md (measured, never typed)
@@ -86,8 +86,9 @@ in `stripe_snapshot.json`).
 | Where | What | Why |
 |---|---|---|
 | committed | data.json, index.html, legacy.html, coupon.html, coupon_data.json, shards, CSV, day_rates.json, stats_history.json | public by design — strict subset of the page |
-| Actions cache (`alert-state-*`) | alert_state.json (via `state.py`, atomic single-writer), guard_private.json | detector state & per-wallet signal rows are **never** committed — publishing them hands abusers a calibration oracle. Worst case on cache loss: one duplicate alert, never silence. |
-| repo secrets | TELEGRAM_*, LEDGER_*, HEALTHCHECK_URL, POSTHOG_API_KEY | never in code or artifacts |
+| Actions cache (`alert-state-enc-*`) | **encrypted only** (since 2026-09-27): alert_state.json.enc (via `state.py`, atomic single-writer), guard_private.json.enc, private_log.json.enc | detector state & per-wallet signal rows are **never** committed — publishing them hands abusers a calibration oracle. Any workflow in the repo can restore this cache, so it holds only `tools/state_crypt.py` blobs (AES-256-CBC/PBKDF2 via `openssl` + HMAC-SHA256, key = `STATE_KEY`). Worst case on cache loss: one duplicate alert, never silence. |
+| public Actions logs | number-free status only ("alerts: detectors ran", "SANITY: N exact ok …", "alert liveness: ok") | anyone can read a public repo's run logs (retention **7 days** as of 2026-09-27). Inside Actions every detector/monitoring detail line goes through `privlog.private_print` — withheld from the log, banked to private_log.json (encrypted cache, last 5,000 lines); locally it prints as before |
+| repo secrets | TELEGRAM_*, LEDGER_*, HEALTHCHECK_URL, POSTHOG_API_KEY, **STATE_KEY** | never in code or artifacts |
 
 CI enforces this in `check_publish.py`. `--scan` fails the run if per-wallet
 detector fields, **monitoring-status counts** (`flagged_n`, `monitored_n`,
@@ -107,11 +108,45 @@ nor listed gets a loud warning in the log — so a new state file is *noticed*
 rather than silently published (the `add -A` risk) or silently dropped (the
 2026-07-19 outage class).
 
+**Encrypted cache (2026-09-27).** refresh/daily/weekly each run
+`actions/cache/restore` (only the `.enc` files) → `state_crypt.py decrypt` →
+the job → `state_crypt.py encrypt` → `actions/cache/save` (only the `.enc`
+files). Encrypt and save run `always()` but only after a SUCCESSFUL decrypt —
+the old implicit `actions/cache` post-step saved on job success only, so a
+failed gate used to discard that run's state; now it is kept, and a missing
+or wrong `STATE_KEY` fails the job loudly (`::error::state_crypt …`) without
+writing or saving anything (all-or-nothing: state is never replaced by empty
+data, never saved in plaintext). A one-time migration step restores the old
+plaintext `alert-state-*` entry only while no encrypted entry exists; the
+first save re-stores it encrypted. `.enc` files and private_log.json are
+gitignored and asserted never staged (`tests/test_state_crypt.py`, which
+also holds all three workflows' cache path lists to `state_crypt.FILES`).
+Rotating `STATE_KEY` = one cold cache (one duplicate alert). Generate with
+`openssl rand -base64 48`.
+
+**Quiet public logs (2026-09-27).** `privlog.private_print` is the ONE switch
+(no other module reads `GITHUB_ACTIONS`): fence/runaway metrics, first-ever
+wallet counts, creator-reward share, cap probe, WARN-queue keys, sanity's
+grant-bleed / anomaly-pass lines, liveness counters and heartbeat age, ledger
+peer age, digest cadence and dry-run bodies, run-duration banking. The
+digest / `state.warn` / guard_private.json still carry what they always
+carried; lines that used to live only in the log go to private_log.json. The
+C1–C6 promotion `::warning::` (it printed the share) now queues a WARN for the
+digest instead. `::error::` annotations carry no monitoring numbers.
+`tests/test_quiet_logs.py` (CI) runs sanity / alerts / notify / alive_check
+with `GITHUB_ACTIONS=true` against a deny list, and again without it to prove
+the detail still prints locally. Run logs from before 2026-09-27 age out
+under the 7-day retention.
+
 Residual exposure, stated honestly: (a) pre-2026-08-29 git history still
 contains old committed state files (stale, but retrievable) — removing them
-needs a history rewrite, open item 2 below; (b) the Actions cache holding
-guard_private.json is branch-scoped and not downloadable by outsiders, but it
-is a broader surface than repo secrets — treat its contents accordingly.
+needs a history rewrite, open item 2 below; (b) the Actions cache is
+branch-scoped and not downloadable by outsiders, and its contents are now
+ciphertext — the key is a repo secret, so the residual surface is whoever can
+read secrets (a workflow change that echoes `STATE_KEY` would still expose it;
+review workflow diffs accordingly); (c) the legacy plaintext cache entries
+remain until evicted (7 days unused) unless deleted by hand
+(`gh cache list --key alert-state-` / `gh cache delete`).
 
 ## Alerting
 
@@ -189,7 +224,7 @@ row blocks, a one-cent drift only logs.
 |---|---|---|
 | 🔴 BLOCK / PAGE | publish blocked, or an **event notice** fired — a specific actionable event rather than an anomaly guess (≥ $5k transfers, retired category, repeat system top-up, **float below 7 d / 3 d** at the 7d pace). Event notices are expected on ordinary days (the replay shows ≥ $5k inflow on 12 of them, each a real funding arrival). An **anomaly detector** reaches this tier only with zero ordinary-day fires in the full-history replay; today none qualify, so all of them sit at WARN | its own Telegram message, immediately; the workflow failure notice names the gate and the tier; `RUNBOOK-deadman.md` §8 says what the recipient does and who can pause |
 | 🟠 WARN | a detector that fires on ordinary days in the replay, or watches < 2 % of outflow (cap C1–C6, the four per-category outflow fences, the runaway payouts rule, first-ever surge), plus degraded-but-published notices (rebate swap overdue, ledger/state mismatch, data source degraded/recovered, oracle agreement restored, coupon leg > 120 s, sanity drift near a bound, peer catalog not fetched, a new 30-day high of the private grant-bleed share) | `state.warn(key, text)` → `alert_state.json` (private cache); the next hourly/daily digest carries it, at most one per key per 6 h, dropped after 24 h unsent |
-| LOG | everything else | run log only |
+| LOG | everything else | run log locally; inside Actions detector/monitoring LOG lines go to private_log.json (encrypted cache) and the public log gets a number-free status line (`privlog.private_print`) |
 
 The private anomaly pass (repeat credit grants bucketed 1 / 2–5 / 6–10 /
 11–50 / >50 with wallet and USD counts, the top-20 wallets by grant count,

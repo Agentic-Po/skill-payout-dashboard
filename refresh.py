@@ -17,6 +17,7 @@ import posthog_source
 import shards
 import freshness
 import state as _state   # alert_state.json single writer (no import side effects)
+from privlog import private_print   # quiet public Actions logs (2026-09-27)
 # taxonomy lives in classify.py — the ONE classifier shared with notify/alerts
 from classify import (band, classify_usd, pin_rate, era_for, BAND_LABEL, BAND_KEYS, STRIPE_FINE,
                       RETIRED, SYSTEM_TOPUP, RESUMED_UTC, PAUSED_UTC,
@@ -107,7 +108,8 @@ KNOWN = {"0x9a95d76c41aa34093a0db5f26f97309fe734a07f": "creator wallet",
 _plbl_path = os.path.join(HERE, "private_labels.json")
 PRIVATE_LABELS = json.load(open(_plbl_path)) if os.path.exists(_plbl_path) else {}
 if PRIVATE_LABELS:
-    print(f"private_labels.json: {len(PRIVATE_LABELS)} private labels loaded (private surfaces only)")
+    private_print(f"private_labels.json: {len(PRIVATE_LABELS)} private labels loaded (private surfaces only)",
+                  src="refresh")
 # Optional wallet↔mind map (drop wallet_mind_map.csv beside this script —
 # gitignored, from the platform's wallet-mind-map export). Public surfaces get
 # the structural "creator wallet" tag only; the mind NAME is an identity and
@@ -128,7 +130,7 @@ if os.path.exists(_map_path):
                     KNOWN[_w] = "creator wallet"
                     PRIVATE_LABELS.setdefault(_w, {}).setdefault("label", _nm + " (mind)")
                     n_loaded += 1
-        print(f"wallet_mind_map.csv: {n_loaded} mind wallets tagged (names stay private)")
+        private_print(f"wallet_mind_map.csv: {n_loaded} mind wallets tagged (names stay private)", src="refresh")
 
 def private_label(addr):
     """Identity label for PRIVATE artifacts only — never a public field."""
@@ -2866,7 +2868,7 @@ if not OFFLINE:
     _rr.append({"ts": _rr_now.isoformat(timespec="minutes"),
                 "dur_s": round(time.time() - _T0, 1)})
     _state.update({"refresh_runs": _rr[-800:]})   # 4/h * 24 * 7 = 672 max + slack
-    print(f"refresh run duration: {_rr[-1]['dur_s']}s ({len(_rr)} run(s) banked, private)")
+    private_print(f"refresh run duration: {_rr[-1]['dur_s']}s ({len(_rr)} run(s) banked, private)", src="refresh")
 
 # ONE timing line, always (offline included — an offline rebuild is the cheap
 # baseline to compare a network run against). `other` is the unaccounted

@@ -28,6 +28,7 @@ import sys
 from datetime import datetime, timezone
 
 import state
+from privlog import private_print
 
 THRESH = 3
 PROBE_MAX_AGE_H = 2
@@ -42,24 +43,30 @@ def main():
     for channel, c in sorted(health.items()):
         n = int(c.get("consec_fail", 0))
         last_ok = (c.get("sent") or ["never"])[-1]
-        print(f"channel {channel!r}: {n} consecutive failure(s) · last success {last_ok}")
+        private_print(f"channel {channel!r}: {n} consecutive failure(s) · last success {last_ok}",
+                      src="alive_check")
         if n >= THRESH:
             bad.append((channel, n))
     for channel, n in bad:
-        print(f"::error::alert channel {channel!r} has failed {n} sends in a row "
-              f"(threshold {THRESH}) — the send path is dead: check "
-              f"TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID and the Telegram API status")
+        # annotation stays number-free (public log); the counts are private
+        private_print(f"alert channel {channel!r} has failed {n} sends in a row (threshold {THRESH})",
+                      src="alive_check")
+        print(f"::error::alert channel {channel!r} is at its consecutive-failure limit — the send "
+              f"path is dead: check TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID and the Telegram API status")
     # --- cap detector heartbeat ---
     probe = st.get("cap_probe") or {}
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     probe_bad = False
     if probe.get("ts"):
         age_h = (now - datetime.fromisoformat(probe["ts"])).total_seconds() / 3600
-        print(f"cap detector heartbeat: {probe['ts']} ({age_h:.1f}h old, rows {probe.get('rows')})")
+        private_print(f"cap detector heartbeat: {probe['ts']} ({age_h:.1f}h old, rows {probe.get('rows')})",
+                      src="alive_check")
         if age_h > PROBE_MAX_AGE_H:
             probe_bad = True
-            print(f"::error::cap detector heartbeat is {age_h:.1f}h old (limit {PROBE_MAX_AGE_H}h) — "
-                  f"alerts.py has not completed a run: the creator-reward cap is unwatched")
+            private_print(f"cap detector heartbeat is {age_h:.1f}h old (limit {PROBE_MAX_AGE_H}h)",
+                          src="alive_check")
+            print("::error::cap detector heartbeat is past its age limit — "
+                  "alerts.py has not completed a run: the creator-reward cap is unwatched")
     elif health:
         probe_bad = True
         print("::error::cap detector heartbeat missing while send_health exists — alerts.py "

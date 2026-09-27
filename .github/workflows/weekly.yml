@@ -13,18 +13,46 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # Same cache as refresh.yml (path list kept identical so restore-keys
-      # prefix hits share entries cleanly): without it, notify.py's state
-      # (one-time restatement stamp, hourly-digest gate) resets to {} here
-      # and one-time notices would fire in EVERY daily/weekly digest.
-      - name: Restore alert state
-        uses: actions/cache@v4
+      # Detector state lives in the Actions cache, NOT the public repo, and
+      # the cache holds it ENCRYPTED with the STATE_KEY secret (2026-09-27):
+      # any workflow in the repo can restore this cache, so plaintext there
+      # would hand the per-wallet guard table to any workflow change. Only
+      # the .enc files are cached (tools/state_crypt.py FILES; the path list
+      # is held identical in refresh/daily/weekly by tests/test_state_crypt.py).
+      # Worst case on cache miss: one duplicate Telegram alert, never silence.
+      # Needed here too: without it notify.py's state (one-time restatement
+      # stamp, hourly-digest gate, WARN queue) resets to {} in every digest.
+      - name: Restore alert state (encrypted)
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            alert_state.json.enc
+            guard_private.json.enc
+            private_log.json.enc
+          key: alert-state-enc-${{ github.run_id }}
+          restore-keys: alert-state-enc-
+      # One-time migration: until the first encrypted entry exists, fall back
+      # to the pre-2026-09-27 PLAINTEXT entry (old path list = old cache
+      # version, so it can only ever match legacy entries). state_crypt
+      # decrypt uses those files as-is; the save below stores them encrypted.
+      # Removable once no plaintext `alert-state-<run_id>` entry remains.
+      - name: Restore legacy plaintext state (one-time migration)
+        if: steps.restore.outputs.cache-matched-key == ''
+        uses: actions/cache/restore@v4
         with:
           path: |
             alert_state.json
             guard_private.json
           key: alert-state-${{ github.run_id }}
           restore-keys: alert-state-
+      # FAILS the job (and so skips the save) if STATE_KEY is missing or
+      # wrong — never proceeds on empty state, never saves plaintext.
+      - name: Decrypt alert state
+        id: decrypt
+        env:
+          STATE_KEY: ${{ secrets.STATE_KEY }}
+        run: python3 tools/state_crypt.py decrypt
       - name: Health check on last refresh
         id: health
         env:
@@ -82,3 +110,23 @@ jobs:
             [ "$i" = 3 ] && exit 1
             sleep $((i*10))
           done
+      # Explicit save (replaces actions/cache's implicit post-step, which only
+      # ran on job SUCCESS): runs whatever the job outcome, as long as the
+      # decrypt succeeded — so a failed gate no longer discards this run's
+      # state, and a missing/wrong key can never overwrite good state with
+      # empty data. Only the encrypted files enter the cache.
+      - name: Encrypt alert state
+        id: encrypt
+        if: always() && steps.decrypt.outcome == 'success'
+        env:
+          STATE_KEY: ${{ secrets.STATE_KEY }}
+        run: python3 tools/state_crypt.py encrypt
+      - name: Save alert state (encrypted only)
+        if: always() && steps.encrypt.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            alert_state.json.enc
+            guard_private.json.enc
+            private_log.json.enc
+          key: alert-state-enc-${{ github.run_id }}

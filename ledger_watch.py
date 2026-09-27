@@ -14,6 +14,7 @@ import urllib.parse
 import urllib.request
 
 import state
+from privlog import private_print
 
 RAW = "https://raw.githubusercontent.com/Agentic-Po/moca-ledger/main/heartbeat.json"
 
@@ -40,9 +41,9 @@ def main():
         if time.time() - last > 6 * 3600:      # dedupe: at most one every 6 h
             tg(f"⏳ <b>ledger detector stale</b>\nlast run {age:.0f} min ago · {lag} blocks behind tip\n(reported by the dashboard hourly job)")
             state.update({"ledger_stale_last": time.time()})
-        print(f"ledger STALE: {age:.0f} min old, lag {lag}")
+        private_print(f"ledger STALE: {age:.0f} min old, lag {lag}", public="ledger watch: ran", src="ledger_watch")
     else:
-        print(f"ledger ok: {age:.0f} min old, lag {lag}")
+        private_print(f"ledger ok: {age:.0f} min old, lag {lag}", public="ledger watch: ran", src="ledger_watch")
 
 
 if __name__ == "__main__":
@@ -50,4 +51,5 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         tg(f"⏳ <b>ledger heartbeat unreadable</b>\n{str(e)[:100]}")
-        print("peer unreadable ->", e)
+        private_print(f"peer unreadable -> {e}", public="ledger watch: peer heartbeat unreadable",
+                      src="ledger_watch")

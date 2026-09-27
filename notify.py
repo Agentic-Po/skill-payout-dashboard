@@ -11,6 +11,7 @@ Env vars: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID.
 """
 import json, os, sys, urllib.request, urllib.parse
 import shards
+from privlog import private_print
 from datetime import datetime, timezone, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -463,8 +464,9 @@ else:
 _restated = _ST.get("mente_restated_v1")
 
 if DRY_RUN:
-    print(msg)
-    print(f"--- dry run: {len(msg)} chars, nothing sent ---")
+    # the digest IS the private channel — its body never reaches a public log
+    private_print(msg + f"\n--- dry run: {len(msg)} chars, nothing sent ---",
+                  public="notify: dry run composed, nothing sent", src="notify")
     raise SystemExit(0)
 
 # Rate-limit the hourly digest: the cron now fires 4x/hour (scheduler
@@ -473,7 +475,8 @@ if DRY_RUN:
 if mode == "hourly":
     _last = _ST.get("last_hourly_digest")
     if _last and (now - datetime.fromisoformat(_last)).total_seconds() < 50 * 60:
-        print(f"hourly digest sent {_last} — under 50 min ago, skipping")
+        private_print(f"hourly digest sent {_last} — under 50 min ago, skipping",
+                      public="notify: hourly digest rate-limited, skipping", src="notify")
         raise SystemExit(0)
 
 body = urllib.parse.urlencode({
@@ -501,7 +504,7 @@ _state.record_send("digest", True, now)
 # silence the digest for 50 min (same class as the alerts.py QA finding)
 if _carried_warn_keys:
     _state.mark_warns_sent(_carried_warn_keys, now)
-    print(f"WARN tier: {len(_carried_warn_keys)} queued notice(s) carried by this digest")
+    private_print(f"WARN tier: {len(_carried_warn_keys)} queued notice(s) carried by this digest", src="notify")
 if mode == "hourly":
     _state.update({"last_hourly_digest": now.isoformat(timespec="minutes")})
 elif not _restated:

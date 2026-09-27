@@ -42,12 +42,18 @@ from a full-history replay (tools/replay_detectors.py), not by intent:
         fire on ordinary days), first-ever surge (a creator-reward rule),
         rebate swap reminder, ledger/state mismatches, data-source
         degraded/recovered, oracle agreement restored
-  LOG   stdout only
+  LOG   stdout locally; in Actions private_log.json via privlog.private_print
+        (public Actions logs get only "alerts: detectors ran")
 """
-import json, os, urllib.request, urllib.parse
+import json, os, sys, urllib.request, urllib.parse
 from datetime import datetime, timezone, timedelta
 
 import shards
+from privlog import private_print, in_actions
+
+# --dry-run: evaluate every detector and route every tier exactly as a live
+# run would, but send nothing and record no send outcome (tests, local debug)
+DRY_RUN = "--dry-run" in sys.argv[1:]
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 URL = "https://agentic-po.github.io/skill-payout-dashboard/"
@@ -142,11 +148,12 @@ for sec in _fence_secs:
     tiered.append((fences.FENCE_TIER.get(g, "WARN"), f"fence_{g}", sec))
 for sec in _run_secs:
     tiered.append((fences.RUNAWAY_TIER, "runaway", sec))
-print("fences: " + " · ".join(f"{g} {'ABOVE' if (state.get('fences') or {}).get(g, {}).get('above') else 'ok'}"
+private_print("fences: " + " · ".join(f"{g} {'ABOVE' if (state.get('fences') or {}).get(g, {}).get('above') else 'ok'}"
                               for g in fences.FENCE_GROUPS)
       + (f" · runaway 24h ${_rm['cur24']:,.0f} vs {fences.RUNAWAY_MED_MULT:g}x median ${_rm['ref_median']:,.0f}"
          f" · last12/prev12 ${_rm['last12']:,.0f}/${_rm['prev12']:,.0f} · top3 {_rm['top3_share']:.0%}"
-         + (" · FIRES" if _rm["fires"] else "") if _rm else " · runaway: reference too short"))
+         + (" · FIRES" if _rm["fires"] else "") if _rm else " · runaway: reference too short"),
+              src="alerts")
 
 # --- 2. single transfers >= $5,000 (last 24h, deduped) ---
 for d, rows in flows.items():
@@ -307,7 +314,7 @@ if _surge and not _st.get("above") and (_last is None or now - _last >= timedelt
                         f"had never earned before — the 21-Aug farm pattern started this way; review the set in guard_private.json"]))
 else:
     _edge["new_wallets"] = {"above": bool(_surge), "last_alert": _st.get("last_alert")}
-print(f"edge: first-ever wallets {_new24}/{len(_paid24)}")
+private_print(f"edge: first-ever wallets {_new24}/{len(_paid24)}", src="alerts")
 
 # --- 5. data-source degradation edge alert (council item 4b) ---
 # complete=False means the run rendered from a stale/partial cache. The page
@@ -327,8 +334,8 @@ state["source_ok"] = _src_ok
 _FL = DATA["facts"].get("float") or {}
 _rw_secs, state = cap_detect.runway_check(_FL.get("days_7d_pace"), _FL.get("bal_usd") or 0,
                                           _FL.get("driver_24h"), state, now)
-print(f"runway: {_FL.get('days_7d_pace')} d at the 7d pace · thresholds {[t for t, _ in cap_detect.RUNWAY_THRESHOLDS]}"
-      + (" · FIRED" if _rw_secs else ""))
+private_print(f"runway: {_FL.get('days_7d_pace')} d at the 7d pace · thresholds {[t for t, _ in cap_detect.RUNWAY_THRESHOLDS]}"
+              + (" · FIRED" if _rw_secs else ""), src="alerts")
 
 # --- 6. creator-reward cap / sybil detectors C1-C6 (cap_detect.py) ---
 # Rows: every outflow row, day-pinned USD, era-aware fine class in {equip,
@@ -361,11 +368,17 @@ _c30 = now - timedelta(days=30)
 _out30 = sum(r[6] for r in flows["out"] if r[0] > _c30)
 _rew30 = sum(r[6] for r in flows["out"] if r[0] > _c30 and r[8] == "skill_rewards")
 _rew_share = _rew30 / _out30 * 100 if _out30 else 0.0
-print(f"creator rewards {_rew_share:.2f}% of 30d outflow (${_rew30:,.0f} of ${_out30:,.0f}) · C1-C6 tier "
-      f"{cap_detect.CREATOR_REWARD_TIER} · promote at {cap_detect.CREATOR_REWARD_PROMOTE_PCT:g}%")
+private_print(f"creator rewards {_rew_share:.2f}% of 30d outflow (${_rew30:,.0f} of ${_out30:,.0f}) · C1-C6 tier "
+              f"{cap_detect.CREATOR_REWARD_TIER} · promote at {cap_detect.CREATOR_REWARD_PROMOTE_PCT:g}%", src="alerts")
 if _rew_share >= cap_detect.CREATOR_REWARD_PROMOTE_PCT and cap_detect.CREATOR_REWARD_TIER != "PAGE":
-    print(f"::warning::creator rewards are {_rew_share:.1f}% of 30d outflow — the demotion rule says promote "
-          f"C1-C6 back to PAGE (cap_detect.CREATOR_REWARD_TIER)")
+    # was a public ::warning:: annotation carrying the share (2026-09-27: the
+    # logs are public) — now the log line stays private and the promotion
+    # nudge rides the digest as a WARN
+    _promote = (f"creator rewards are {_rew_share:.1f}% of 30d outflow — the demotion rule says promote "
+                f"C1-C6 back to PAGE (cap_detect.CREATOR_REWARD_TIER)")
+    private_print("::warning::" + _promote, src="alerts")
+    if not DRY_RUN:
+        _statemod.warn("alerts:promote_c1c6", "alerts: " + _promote, now)
 # Heartbeat: written NOW, unconditionally — a failed Telegram send below must
 # not erase the proof that the detector ran (alive_check.py's dead-man).
 cap_probe = cap_detect.probe(_sw, now)
@@ -379,8 +392,9 @@ if os.path.exists(_gp):
     _tmp = _gp + ".tmp"
     json.dump(_guard, open(_tmp, "w"))
     os.replace(_tmp, _gp)
-print(f"cap probe: rows {cap_probe['rows']} · creators 1h {cap_probe['creators_1h']} · "
-      f"top {cap_probe['top_units_1h']} units (${cap_probe['top_usd_1h']}) · at cap {cap_probe['n_at_cap']}")
+private_print(f"cap probe: rows {cap_probe['rows']} · creators 1h {cap_probe['creators_1h']} · "
+              f"top {cap_probe['top_units_1h']} units (${cap_probe['top_usd_1h']}) · at cap {cap_probe['n_at_cap']}",
+              src="alerts")
 
 # Persist state only AFTER a successful send (QA finding, 2026-08-29):
 # persisting first meant a failed Telegram call permanently suppressed every
@@ -428,15 +442,20 @@ for tier, key, sec in tiered:
         page_sections.append(sec)
         continue
     text = " ".join(ln.strip() for ln in sec if ln.strip())
-    if _statemod.warn("alerts:" + key, text, now):
-        print(f"WARN queued [{key}] for the next digest")
+    if DRY_RUN:
+        private_print(f"WARN [{key}] (dry run, not queued): {text}", src="alerts")
+    elif _statemod.warn("alerts:" + key, text, now):
+        private_print(f"WARN queued [{key}] for the next digest", src="alerts")
     else:
-        print(f"WARN [{key}] inside its 6 h cooldown — not re-queued")
+        private_print(f"WARN [{key}] inside its 6 h cooldown — not re-queued", src="alerts")
 
 all_sections = cap_sections + page_sections + _sections(lines)
 if all_sections:
     msg = cap_detect.compose("🚨 <b>Flow alert</b> — <i>Skill Payout Dashboard</i> · " + cap_detect.hkt(now),
                              all_sections)
+if all_sections and DRY_RUN:
+    private_print(msg + "\n--- dry run: page alert composed, nothing sent ---", src="alerts")
+elif all_sections:
     body = urllib.parse.urlencode({
         "chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": msg, "parse_mode": "HTML",
         "disable_web_page_preview": "true",
@@ -450,7 +469,7 @@ if all_sections:
     # (redline) — record-then-reraise preserves that behaviour exactly.
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            print("alert sent:", r.status)
+            private_print(f"alert sent: {r.status}", src="alerts")
     except Exception:
         _statemod.record_send("alerts", False, now)
         raise
@@ -458,4 +477,8 @@ if all_sections:
     persist_state()
 else:
     persist_state()
-    print("no alerts")
+    private_print("no alerts", src="alerts")
+# the ONLY line alerts.py puts in a public Actions log: number-free, and the
+# same whether or not anything fired (whether a detector fired IS the status)
+if in_actions():
+    print("alerts: detectors ran" + (" (dry run)" if DRY_RUN else ""))

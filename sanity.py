@@ -55,6 +55,7 @@ from datetime import datetime, timedelta
 
 import shards
 import fences
+from privlog import private_print
 from classify import classify_usd, pin_rate, group_for, GROUP_KEYS
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -486,15 +487,22 @@ def main(argv):
         print("::error::" + ln)
     for ln in rep.logs + rep.skipped:
         print("  " + ln)
+    # Everything above is a pass/fail of PUBLIC data and stays in the log.
+    # Everything below is private (WARN queue incl. grant bleed, the private
+    # anomaly pass): printed locally, withheld from the public Actions log
+    # (privlog) — the WARNs reach Po via the digest, the bleed/anomaly
+    # figures via guard_private.json.
     for key, text in rep.warns:
-        print(f"  WARN queued [{key}]: {text}")
-    print(f"  rows {meta['rows']:,} · clock {meta['gen']:%Y-%m-%dT%H:%M:%S}Z · "
-          f"{meta['secs']:.1f}s · private anomaly pass {'banked' if meta['banked'] else 'not banked (no guard_private.json)'}")
+        private_print(f"  WARN queued [{key}]: {text}", src="sanity")
+    private_print(f"  rows {meta['rows']:,} · clock {meta['gen']:%Y-%m-%dT%H:%M:%S}Z · "
+                  f"{meta['secs']:.1f}s · private anomaly pass "
+                  f"{'banked' if meta['banked'] else 'not banked (no guard_private.json)'}", src="sanity")
     b = meta["bleed"]
-    print(f"  grant bleed (private): 7d repeat share {b['share_7d_pct']:g}% of ${b['grant_usd_7d']:,.0f} · "
-          f"30d ref median {b['ref_median_pct']} / max {b['ref_max_pct']} ({b['ref_days']} d) · "
-          f"crossed 5/20 lifetime grants this week {b['crossed_5']}/{b['crossed_20']}"
-          + (" · NEW 30d HIGH (WARN queued)" if b["new_high"] else ""))
+    private_print(f"  grant bleed (private): 7d repeat share {b['share_7d_pct']:g}% of ${b['grant_usd_7d']:,.0f} · "
+                  f"30d ref median {b['ref_median_pct']} / max {b['ref_max_pct']} ({b['ref_days']} d) · "
+                  f"crossed 5/20 lifetime grants this week {b['crossed_5']}/{b['crossed_20']}"
+                  + (" · NEW 30d HIGH (WARN queued)" if b["new_high"] else ""),
+                  public="  sanity: private detail withheld from the public log (digest-only)", src="sanity")
     # refresh.yml's failure notice reads this to name the gate and its tier
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a") as fh:

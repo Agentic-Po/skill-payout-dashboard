@@ -32,18 +32,44 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Detector state lives in the Actions cache, NOT the public repo —
-      # committing alert_state.json published armed/cooling detector state
-      # hourly (timing oracle; same class as the Q3 flagged-wallets leak).
+      # Detector state lives in the Actions cache, NOT the public repo, and
+      # the cache holds it ENCRYPTED with the STATE_KEY secret (2026-09-27):
+      # any workflow in the repo can restore this cache, so plaintext there
+      # would hand the per-wallet guard table to any workflow change. Only
+      # the .enc files are cached (tools/state_crypt.py FILES; the path list
+      # is held identical in refresh/daily/weekly by tests/test_state_crypt.py).
       # Worst case on cache miss: one duplicate Telegram alert, never silence.
-      - name: Restore alert state
-        uses: actions/cache@v4
+      - name: Restore alert state (encrypted)
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            alert_state.json.enc
+            guard_private.json.enc
+            private_log.json.enc
+          key: alert-state-enc-${{ github.run_id }}
+          restore-keys: alert-state-enc-
+      # One-time migration: until the first encrypted entry exists, fall back
+      # to the pre-2026-09-27 PLAINTEXT entry (old path list = old cache
+      # version, so it can only ever match legacy entries). state_crypt
+      # decrypt uses those files as-is; the save below stores them encrypted.
+      # Removable once no plaintext `alert-state-<run_id>` entry remains.
+      - name: Restore legacy plaintext state (one-time migration)
+        if: steps.restore.outputs.cache-matched-key == ''
+        uses: actions/cache/restore@v4
         with:
           path: |
             alert_state.json
             guard_private.json
           key: alert-state-${{ github.run_id }}
           restore-keys: alert-state-
+      # FAILS the job (and so skips the save) if STATE_KEY is missing or
+      # wrong — never proceeds on empty state, never saves plaintext.
+      - name: Decrypt alert state
+        id: decrypt
+        env:
+          STATE_KEY: ${{ secrets.STATE_KEY }}
+        run: python3 tools/state_crypt.py decrypt
       # One invocation builds BOTH pages: the treasury crawl + index.html and
       # the coupon-distributor crawl + coupon.html. Deliberately no second
       # workflow and no second cron — the coupon wallet is ~1 claim/hour and
@@ -91,9 +117,11 @@ jobs:
             echo "::error::File(s) over 50 MB — shard or slim them before they hit GitHub's 100 MB push limit: $BIG"
             exit 1
           fi
-      # State (alert_state.json) persists via the Actions cache post-step, not
-      # commits; ordering here just keeps a Telegram hiccup from killing the
-      # refresh (continue-on-error) while the data still publishes.
+      # State (alert_state.json) persists via the encrypted cache save at the
+      # end of the job, not commits; ordering here just keeps a Telegram
+      # hiccup from killing the refresh (continue-on-error) while the data
+      # still publishes. Detector detail stays out of this PUBLIC log
+      # (privlog.private_print: number-free status only inside Actions).
       - name: Anomaly & large-flow alerts
         continue-on-error: true
         env:
@@ -153,8 +181,8 @@ jobs:
           if [ -n "$HC_URL" ]; then curl -fsS -m 10 --retry 3 "$HC_URL" >/dev/null && echo "ping ok"; else echo "HEALTHCHECK_URL not set — skipping"; fi
       - name: Hourly Telegram update
         continue-on-error: true   # keep the job green through a Telegram
-                                  # outage (cache post-save runs regardless
-                                  # of job outcome)
+                                  # outage (the encrypted cache save at the
+                                  # end runs regardless of job outcome)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -183,6 +211,7 @@ jobs:
         run: |
           TIER="BLOCK"; GATE="an unnamed step"; DETAIL=""
           case "failure" in
+            "${{ steps.decrypt.outcome }}")      GATE="state decrypt (STATE_KEY secret missing or wrong — state NOT saved)" ;;
             "${{ steps.refresh.outcome }}")      GATE="refresh.py (crawl/build)" ;;
             "${{ steps.leakscan.outcome }}")     GATE="check_publish --scan (leak tripwire)" ;;
             "${{ steps.catalog.outcome }}")      GATE="catalog.py --check (non-deterministic build)" ;;
@@ -205,3 +234,23 @@ jobs:
           LEDGER_BOT_TOKEN: ${{ secrets.LEDGER_BOT_TOKEN }}
           LEDGER_CHAT_ID:   ${{ secrets.LEDGER_CHAT_ID }}
         run: python3 ledger_watch.py
+      # Explicit save (replaces actions/cache's implicit post-step, which only
+      # ran on job SUCCESS): runs whatever the job outcome, as long as the
+      # decrypt succeeded — so a failed gate no longer discards this run's
+      # state, and a missing/wrong key can never overwrite good state with
+      # empty data. Only the encrypted files enter the cache.
+      - name: Encrypt alert state
+        id: encrypt
+        if: always() && steps.decrypt.outcome == 'success'
+        env:
+          STATE_KEY: ${{ secrets.STATE_KEY }}
+        run: python3 tools/state_crypt.py encrypt
+      - name: Save alert state (encrypted only)
+        if: always() && steps.encrypt.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            alert_state.json.enc
+            guard_private.json.enc
+            private_log.json.enc
+          key: alert-state-enc-${{ github.run_id }}
