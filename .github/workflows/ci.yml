@@ -62,6 +62,14 @@ jobs:
         run: python3 sanity.py --offline
       - name: Sanity gate tier tests
         run: python3 tests/test_sanity.py
+      # these three had no workflow at all until 2026-09-27 (audit A6) —
+      # the era table, the cap detector and the per-category fences
+      - name: Era classifier tests
+        run: python3 tests/test_eras.py
+      - name: Creator-reward cap detector tests
+        run: python3 tests/test_cap.py
+      - name: Per-category outflow fence tests
+        run: python3 tests/test_fences.py
       # Coupon crawl vs the private coupon ledger. CI has no access to that
       # repo, so this SKIPS clean here (exit 0, loud message) and is run
       # locally with COUPON_LEDGER_PATH set; the step exists so the skip is

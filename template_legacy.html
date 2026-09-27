@@ -199,9 +199,11 @@ if(T){
 }
 // other payouts — summary by type + collapsed full list
 const oth=DATA.other;
-document.getElementById("othN").textContent=oth.length+" tx · "+fmt(oth.reduce((a,b)=>a+b.val,0))+" MOCA";
-const agg={};
-oth.forEach(o=>{(agg[o.cat]??={n:0,moca:0}).n++;agg[o.cat].moca+=o.val;});
+// count/sum/by-type arrive pre-aggregated; only the 40 listed rows ship
+const othN=DATA.other_n??oth.length, othMoca=DATA.other_moca??oth.reduce((a,b)=>a+b.val,0);
+document.getElementById("othN").textContent=othN+" tx · "+fmt(othMoca)+" MOCA";
+let agg=DATA.other_agg;
+if(!agg){agg={};oth.forEach(o=>{(agg[o.cat]??={n:0,moca:0}).n++;agg[o.cat].moca+=o.val;});}
 const aggMoca=Object.values(agg).reduce((a,b)=>a+b.moca,0)||1;
 document.getElementById("othSum").innerHTML=`<thead><tr><th>Type</th><th class="r">Count</th><th class="r">MOCA</th><th class="r">≈ USD</th><th class="r">Share</th></tr></thead><tbody>`+
  Object.entries(agg).sort((a,b)=>b[1].moca-a[1].moca).map(([k,v])=>`<tr><td><span class="sw" style="background:${CC[k]||(k==='test'?CC.micro:CC.growth)};margin-right:6px"></span>${k}</td><td class="r">${v.n}</td><td class="r mono">${fmt(v.moca)}</td><td class="r mono">$${(v.moca*S.rate).toFixed(2)}</td><td class="r mono">${(v.moca/aggMoca*100).toFixed(1)}%</td></tr>`).join("")+`</tbody>`;

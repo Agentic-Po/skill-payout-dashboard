@@ -1181,6 +1181,10 @@ def facts_window(rs, ins, label):
     out_usd = sum(r["usd"] for r in rs)
     in_usd = sum(f["usd"] for f in ins)
     in_recycled = sum(f["usd"] for f in ins if f["from"].lower() in INTERNAL_SRC)
+    # the two INTERNAL legs published separately (2026-09-27): the headline
+    # once called all of in_recycled "usage fees recycling back", but over
+    # half of it is the reserve RETURNING treasury money — not usage fees
+    in_collector = sum(f["usd"] for f in ins if f["from"].lower() == RECYCLE_SRC)
     # economy = classified payouts; ops = the residual (swaps/treasury moves),
     # computed as out - economy so the two ALWAYS sum to the total exactly
     economy_out = sum(r["usd"] for r in rs if r["cat"] != "nonstandard")
@@ -1202,6 +1206,8 @@ def facts_window(rs, ins, label):
             "economy_out_usd": round(economy_out, 2),
             "ops_out_usd": round(out_usd - economy_out, 2),
             "in_recycled_usd": round(in_recycled, 2),
+            "in_collector_usd": round(in_collector, 2),
+            "in_reserve_usd": round(in_recycled - in_collector, 2),
             "in_external_usd": round(in_usd - in_recycled, 2),
             "net_usd": round(in_usd - out_usd, 2),
             "out_tx": len(rs), "in_tx": len(ins),
@@ -1879,15 +1885,20 @@ phase("posthog")
 # out_di already covers every category — the old formula re-added
 # nonstandard/micro on top and published an inflated pace (QA, loop 3)
 dist_pace = round(out_di(cut7) / span_days, 2)
-_cons_ratio = round(cognition["total_usd"] / facts["windows"][3]["out_usd"] * 100) if cognition else None
+# the date comes from the inflow rows themselves (the sink block that also
+# knows it runs later) — never a hand-typed date that can drift
+_rec_last = max((f["ts"][:10] for f in inflows if f["from"].lower() == RECYCLE_SRC), default=None)
 _rec_share = round(facts["windows"][3]["in_recycled_usd"] / facts["windows"][3]["in_usd"] * 100) if facts["windows"][3]["in_usd"] else 0
 insights = {
     "diagram": "Every token here is a unit of cognition — this diagram is the economy; the rest of the page is its measurements.",
-    "flows": f"Outflow is the signal: ~${round(facts['windows'][1]['out_usd']/7):,}/day of distribution IS the ecosystem's activity. Inflow is manual treasury logistics keeping the wallet alive — {_rec_share}% of lifetime inflow is usage fees recycling back.",
+    "flows": f"Outflow is the signal: ~${round(facts['windows'][1]['out_usd']/7):,}/day of distribution IS the ecosystem's activity. Inflow is manual treasury logistics keeping the wallet alive — {_rec_share}% of lifetime inflow was internal (usage fees recycled from the collector{f' until {_rec_last}' if _rec_last else ''}, plus reserve returns of treasury funds), not new money.",
     "daily": f"Watch the pulse, not the balance: distribution spikes mark campaigns and growth pushes; the current pace is ~${round(facts['windows'][1]['out_usd']/7):,}/day.",
-    "cognition": (f"{_cons_ratio}% of everything ever distributed has been spent on real cognition — demand matches supply; this is the number that makes every other number mean something." if _cons_ratio else "Demand-side data loading."),
+    # no ratio here (2026-09-27): cognition spend and treasury outflow are two
+    # different flows (different tokens, different start dates) — dividing one
+    # by the other read as a traced share it is not
+    "cognition": "Demand side: MENTE that mind wallets spent on cognition requests. It is a separate flow from the treasury's outflow above — compare the two, but it is not traced token by token.",
     "recipients": "10,000+ wallets hold verifiable on-chain earnings history — the property layer. (This table counts only transfers FROM this treasury wallet.)",
-    "sources": "All inflow is deliberate ops — treasury refills and collector recycling. Every source wallet should carry a label; unlabeled = ask treasury ops.",
+    "sources": "All inflow is deliberate ops — treasury refills, reserve returns of parked treasury funds and (until it stopped) collector recycling. Every source wallet should carry a label; unlabeled = ask treasury ops.",
     "server": "The off-chain shadow (Stripe checkout events only): where it disagrees with the chain is exactly where our data gaps live — revenue figures are floors until the Stripe export lands.",
     "aizone": f"Best-guess triage, never fact: every payout type below is inferred from transfer size on the row's own era grid (±8% v1 · ±12% v2); pattern signals are reviewed privately and never published. Float: ~{float_facts['days_7d_pace'] or '?'} days at the 7-day pace on total outflow.",
 }
@@ -2297,6 +2308,12 @@ if not OFFLINE:
 
 
 phase("stats_history")
+def _inline_json(obj):
+    """JSON for a <script> body: a "</" inside any string (a token name, a
+    label) would otherwise close the script tag early. JS reads "<\\/" as "</"."""
+    return json.dumps(obj).replace("</", "<\\/")
+
+
 # ==================== LEGACY VIEW (continuity for execs) ====================
 # Renders legacy.html with the original MOCA-only layout + method (live-rate
 # USD, old category folding, heuristic organic share). Kept while stakeholders
@@ -2348,6 +2365,18 @@ if mrows:
     lother = [{"ts": r["ts"], "val": round(r["val"], 2), "to": r["to"], "tx": r["tx"],
                "cat": r["fine"] if r["cat"] != "nonstandard" else "nonstandard"}
               for r in mrows if r["lcat"] in ("growth", "micro")]
+    def _lsum(vals):
+        t = 0
+        for v in vals:
+            t += v
+        return t
+    def _lagg(os_):
+        agg = {}
+        for o in os_:
+            e = agg.setdefault(o["cat"], {"n": 0, "moca": 0})
+            e["n"] += 1
+            e["moca"] += o["val"]
+        return agg
     lgrows = [dict(g, moca=round(g["usd"] / LRATE, 1)) for g in grows]
     lce = sum(g["moca"] for g in lgrows) or sum(c["moca"] for c in lcreators) or 1
     lce_all = sum(c["moca"] for c in lcreators) or 1
@@ -2406,18 +2435,27 @@ if mrows:
               "burn7_usd": round(sum(lu_d[d] for d in lfull[-7:]) / max(len(lfull[-7:]), 1), 2),
               "daily": lt_daily}
     ldata = {"S": LS, "hourly": lhourly, "daily": ldaily, "creators": lcreators,
-             "other": lother, "treasury": ltreas,
+             # only the 40 rows the page lists ship; count/sum/by-type are
+             # pre-aggregated in the page's own order (same float sums). The
+             # full list was 7.0 MB of a 7.3 MB page, rewritten every run —
+             # the top driver of repo growth (audit 2026-09-27)
+             "other": lother[:40], "other_n": len(lother),
+             "other_moca": _lsum(o["val"] for o in lother),
+             "other_agg": _lagg(lother), "treasury": ltreas,
              # same server-computed executive summary as the main page (item 1)
              "exec_summary": data["exec_summary"]}
     ltpl = open(os.path.join(HERE, "template_legacy.html")).read()
     ltpl = ltpl.replace("MOCA rate used $0.008912", f"MOCA rate used ${LRATE:.6f}")
     open(os.path.join(HERE, "legacy.html"), "w").write(
-        "<!doctype html>\n<html lang=\"en\">\n" + ltpl.replace("/*__DATA__*/", json.dumps(ldata)) + "\n</html>")
+        "<!doctype html>\n<html lang=\"en\">\n" + ltpl.replace("/*__DATA__*/", _inline_json(ldata)) + "\n</html>")
     print("wrote legacy.html |", len(mrows), "MOCA rows")
 
 tpl = open(os.path.join(HERE, "template.html")).read()
+# the header CSV link states its size — it is a 30+ MB download (audit F1)
+_csv_mb = os.path.getsize(os.path.join(HERE, "transfers_export.csv")) / 1e6
+tpl = tpl.replace("__CSV_MB__", f"{_csv_mb:.0f} MB")
 out = os.path.join(HERE, "index.html")
-open(out, "w").write("<!doctype html>\n<html lang=\"en\">\n" + tpl.replace("/*__DATA__*/", json.dumps(data)) + "\n</html>")
+open(out, "w").write("<!doctype html>\n<html lang=\"en\">\n" + tpl.replace("/*__DATA__*/", _inline_json(data)) + "\n</html>")
 print("wrote", out, "| rows:", len(rows), "| range:", facts["range"], "| recon:", recon)
 
 phase("render_index+legacy")
@@ -2727,7 +2765,7 @@ json.dump(coupon_data, open(os.path.join(HERE, "coupon_data.json"), "w"), defaul
 cp_tpl = open(os.path.join(HERE, "template_coupon.html")).read()
 open(os.path.join(HERE, "coupon.html"), "w").write(
     "<!doctype html>\n<html lang=\"en\">\n"
-    + cp_tpl.replace("/*__DATA__*/", json.dumps(coupon_data)) + "\n</html>")
+    + cp_tpl.replace("/*__DATA__*/", _inline_json(coupon_data)) + "\n</html>")
 print(f"wrote coupon.html | {cp_totals['claims']} claims · {cp_totals['moca_out']:,.0f} MOCA "
       f"· {cp_totals['claimants']} claimants · balance {cp_totals['balance_moca']}")
 

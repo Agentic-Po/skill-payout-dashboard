@@ -28,7 +28,7 @@ last count — the LIVE numbers are always each repo's machine-generated
    `ops` · `micro` — the six partition every row and close on `out_usd`.
 4. **Respect freshness**: call `rows.require_fresh(catalog, dataset, max_age_h)`
    before publishing anything derived; it raises on stale data.
-5. **Snapshot feeds**: `data.json` (schema_version 3) is the dashboard's full
+5. **Snapshot feeds**: `data.json` (schema_version 4 — see §v4 below) is the dashboard's full
    rendered dataset — same URL pattern as catalog.json. `transfers_export.csv`
    is the per-tx audit surface (tx_hash + log_index + canonical class).
    **schema_version 1 → 2 (2026-08-30)**: `transfers_export.csv` dropped the
@@ -117,3 +117,10 @@ money entering from outside. Key names and shapes are unchanged; only the split 
 Why: the treasury moved $41,313 to that reserve on 2026-08-25 and it was returned on 2026-09-04/11/18. Counting the
 returns as external funding overstated lifetime money-in by ~$40K — caught while preparing the 2026-09-18 budget
 request, where the public dashboard would have contradicted the filing.
+
+**Additive (2026-09-27, still schema_version 4)**: every `facts_window` entry (windows, `prev24`, `monthly`)
+gains the two legs of `in_recycled_usd`, published apart — `in_collector_usd` (collector recycling, which stopped
+2026-06-18) and `in_reserve_usd` (reserve returns of treasury funds). `in_collector_usd + in_reserve_usd ==
+in_recycled_usd` and `in_external_usd + in_recycled_usd == in_usd`, each to the cent — `tests/test_contract.py` holds
+both. Why: the page headline still called all of `in_recycled_usd` "usage fees recycling back" after the v4 change, so
+$40,828 of reserve returns read as usage fees. No existing value changed.

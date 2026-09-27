@@ -38,9 +38,12 @@ sys.path.insert(0, ROOT)
 TOP_KEYS = {"schema_version", "scope", "facts", "infer", "server", "stripe_snap",
             "insights", "open_items", "gaps", "registry", "sink", "exec_summary"}
 
-# `groups` added 2026-09-15 (schema_version 3): the one grouping layer's sums
+# `groups` added 2026-09-15 (schema_version 3): the one grouping layer's sums.
+# in_collector_usd / in_reserve_usd added 2026-09-27 (additive): the two legs
+# of in_recycled_usd, published apart — see the inflow-split check below
 WINDOW_KEYS = {"label", "groups", "out_usd", "in_usd", "economy_out_usd", "ops_out_usd",
-               "in_recycled_usd", "in_external_usd", "net_usd", "out_tx", "in_tx",
+               "in_recycled_usd", "in_collector_usd", "in_reserve_usd",
+               "in_external_usd", "net_usd", "out_tx", "in_tx",
                "out_wallets", "in_sources", "out_usd_tok", "out_raw", "in_raw"}
 GROUP_KEYS = ["skill_rewards", "credit_grants", "system_topups", "topups_delivered", "ops", "micro"]
 FLOAT_KEYS = {"basis", "bal_usd", "out_24h_usd", "out_prev24_usd", "out_7d_avg_usd",
@@ -153,6 +156,19 @@ def main():
                 f"PRIVATE catalog entry {e['name']!r} carries a path — the stage door depends on it not"
     assert n_pub, "catalog.json lists no public datasets"
     print(f"ok catalog.json: {n_pub} public entries carry name/path/rows/coverage/generated_iso")
+
+    # 3b. inflow split closes (2026-09-27): internal returns = collector
+    # recycling + reserve returns, and new funding + internal = total inflow,
+    # in every window, to the cent (independent rounding of each leg)
+    for w in D["facts"]["windows"]:
+        legs = w["in_collector_usd"] + w["in_reserve_usd"]
+        assert abs(legs - w["in_recycled_usd"]) <= 0.011, \
+            f"{w['label']}: collector {w['in_collector_usd']} + reserve {w['in_reserve_usd']} != internal {w['in_recycled_usd']}"
+        tot = w["in_external_usd"] + w["in_recycled_usd"]
+        assert abs(tot - w["in_usd"]) <= 0.011, \
+            f"{w['label']}: new {w['in_external_usd']} + internal {w['in_recycled_usd']} != inflow {w['in_usd']}"
+        assert min(w["in_collector_usd"], w["in_reserve_usd"]) >= 0, f"{w['label']}: negative inflow leg"
+    print("ok inflow split closes: collector + reserve == internal, new + internal == inflow (every window)")
 
     # 4. classify API
     import classify
