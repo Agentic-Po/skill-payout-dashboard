@@ -154,6 +154,30 @@ if P.have_node():
 elif os.environ.get("CI"):
     failures.append("node not available in CI")
 
+# ---------------- public summary page (template_public.html) ----------------
+# A served page of its own (index.html): same contrast bar, one <main>, a
+# visible focus ring, and dark tokens identical in both dark selectors.
+PUB = open(os.path.join(P.ROOT, "template_public.html")).read()
+pstyle = re.search(r"<style>(.*?)</style>", PUB, re.S).group(1)
+plight = _block(pstyle, r"(?m)^:root")
+pdark = _block(pstyle, r"@media \(prefers-color-scheme: dark\)\{:root:not\(\[data-theme=\"light\"\]\)")
+check(pdark == _block(pstyle, r':root\[data-theme="dark"\]'), "public page: dark tokens differ between the media query and [data-theme=dark]")
+ppairs = [("body text on surface", "var(--ink)", "var(--surface)"),
+          ("secondary text on surface", "var(--ink2)", "var(--surface)"),
+          ("tile label / footer on page bg", "var(--ink3)", "var(--bg)"),
+          ("tile label on surface", "var(--ink3)", "var(--surface)"),
+          ("link on surface", "var(--acc)", "var(--surface)"),
+          ("banner text", "var(--warn)", "var(--warnbg)")]
+for theme, tokens in (("light", plight), ("dark", pdark)):
+    for name, fg, bg in ppairs:
+        c = contrast(resolve(fg, tokens), resolve(bg, tokens))
+        check(c >= 4.5, f"public page {theme}: {name} contrast {c:.2f}:1 < 4.5:1")
+check(len(re.findall(r"<main\b", PUB)) == 1, "public page: expected exactly one <main> landmark")
+check(re.search(r":focus-visible\{outline:", pstyle), "public page: no :focus-visible outline")
+check('name="viewport"' in PUB, "public page: no viewport meta")
+for bid in ("loadBanner", "staleBanner", "renderBanner"):
+    check(re.search(r'id="%s" role="alert"' % bid, PUB), f"public page: #{bid} is not role=alert")
+
 for f in failures:
     print("FAIL", f)
 if failures:

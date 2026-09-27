@@ -94,7 +94,7 @@ def main():
         # the legacy view was retired 2026-09-28; no page may mention it
         stripped = text
         n = len(re.findall("legacy", stripped, re.I))
-        assert n == 0, f"{rel}: {n} 'legacy' mention(s) outside the legacy.html link"
+        assert n == 0, f"{rel}: {n} 'legacy' mention(s) — the legacy view was retired"
         # the page never says 'creators' as a count of people — wallets only
         assert not re.search(r"\d\s+creators\b", text), f"{rel}: a count of 'creators' (should be creator wallets)"
     print(f"ok prose: {len(PROSE_DENIED)} status/cap/paid-vs-free phrases absent; no 'legacy' mentions; counts say creator wallets")

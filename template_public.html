@@ -10,9 +10,9 @@ setTimeout(function(){var b=document.getElementById("loadBanner");if(b)b.classLi
 </script>
 <style>
 .js #loadBanner{display:none}.js #loadBanner.show{display:block}
-:root{--bg:#f7f7f5;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--ink3:#6f6e69;--line:#e6e5e0;--acc:#1a5fb0;--warn:#9a5800;--warnbg:#fdf6ec}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#121211;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--ink3:#9d9c96;--line:#2e2e2b;--acc:#3987e5;--warn:#e8a44a;--warnbg:#241c10}}
-:root[data-theme="dark"]{--bg:#121211;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--ink3:#9d9c96;--line:#2e2e2b;--acc:#3987e5;--warn:#e8a44a;--warnbg:#241c10}
+:root{--bg:#f7f7f5;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--ink3:#6f6e69;--line:#e6e5e0;--acc:#1a5fb0;--warn:#9a5800;--warnbg:#fdf6ec;}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#121211;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--ink3:#9d9c96;--line:#2e2e2b;--acc:#3987e5;--warn:#e8a44a;--warnbg:#241c10;}}
+:root[data-theme="dark"]{--bg:#121211;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--ink3:#9d9c96;--line:#2e2e2b;--acc:#3987e5;--warn:#e8a44a;--warnbg:#241c10;}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
 a{color:var(--acc)}
@@ -53,7 +53,7 @@ footer{color:var(--ink3);font-size:12px;margin-top:24px}
   </section>
 
   <div class="card">
-    <p style="margin:0 0 8px">This is the public summary. The full dashboard is internal to the Minds team.</p>
+    <p style="margin:0 0 8px">This is the public summary. Every figure comes from public on-chain data, linked below; wallet names are kept internal to the Minds team.</p>
     <ul class="links">
       <li><a href="data.json">data.json</a> — every figure behind this page (versioned contract)</li>
       <li><a href="transfers_export.csv" download>Per-transaction CSV</a> — last 7 days · <a href="https://github.com/Agentic-Po/skill-payout-dashboard/tree/main/exports" target="_blank" rel="noopener">full history by month</a></li>
