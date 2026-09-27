@@ -104,7 +104,7 @@ td a{color:var(--acc);text-decoration:none}
   <div class="tiles" id="ttiles"></div>
   <div class="card">
     <h2>Daily wallet burn — past 3 months</h2>
-    <p class="note">All outgoing MOCA from the wallet per day (creator payouts, credits, referrals, top-up deliveries — everything), valued in USD at each day's implied payout rate where known (live rate otherwise), broken down by payout size. Under each amount: unique recipient wallets that day — for the $3 column, that's how many minds/users received the $3 credit (same wallet on multiple days counts once per day). Inflows are treasury top-ups received.</p>
+    <p class="note">All outgoing MOCA from the wallet per day (creator payouts, credits, referrals, top-up deliveries — everything), valued in USD at each day's implied payout rate where known (live rate otherwise), broken down by payout size. Under each amount: unique recipient wallets that day — for the $3 column, that's how many minds/users received the $3 credit (same wallet on multiple days counts once per day). Inflows are treasury refills received.</p>
     <div class="legend" id="tleg"></div>
     <div class="scroll"><table id="treasT"></table></div>
   </div>
@@ -184,7 +184,7 @@ if(T){
   ["Wallet balance", T.balance!==null?fmt(T.balance)+" MOCA":"n/a", T.balance_usd!==null?("≈ $"+fmt(T.balance_usd)):""],
   ["Total outflow — 24h", "$"+T.out24_usd, fmt(T.out24_moca)+" MOCA · all categories"],
   ["Avg daily burn — 7d", "$"+T.burn7_usd, "whole wallet, USD at day's implied rate"],
-  ["Inflow — 24h", fmt(T.in24_moca)+" MOCA", "treasury top-ups received"],
+  ["Inflow — 24h", fmt(T.in24_moca)+" MOCA", "treasury refills received"],
  ];
  document.getElementById("ttiles").innerHTML=ttiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
  const BK=[["c010","$0.10 invokes","var(--c-invoke)"],["c1","$1 equips","var(--c-equip)"],["c3","$3 credits","var(--c-growth)"],["c5","$5 referrals","#0aa5a5"],["stripe","Stripe $10/25/50","#b03a9c"],["other","Other","var(--ink3)"]];

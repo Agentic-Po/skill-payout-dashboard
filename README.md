@@ -210,7 +210,7 @@ Built for one decision — how much to refill this wallet, and when. In order:
 definition, no new numbers) → **Month by month**: payouts out (excl. swaps) ·
 swaps & ops out · refills in · returns in · biggest item, all straight from
 `facts.monthly`. Rules the card keeps: swaps are their own column so a
-swap-heavy month never reads as spend; partial months carry "N of M days" and
+swap-heavy month never reads as spend; partial months carry "N of M days" (the open month: "to <day> <time> UTC") and
 no ratio compares a partial month with a full one; the biggest item carries
 its size-inferred band **in the cell**; no forecast, runway date, scenario or
 recommended amount is published (council ruling — those are the owner's

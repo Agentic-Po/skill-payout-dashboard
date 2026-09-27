@@ -28,9 +28,10 @@ CENT = 0.011
 # ours; "top-ups" names Stripe packs delivered to users, not money in)
 BANNED = [r"\bnew funding\b", r"\bexternal funding\b", r"\bmanual funding\b",
           r"\bnew money\b", r"\btreasury top-ups?\b", r"\btop-ups? in\b",
-          r"In: top-ups", r"\btop-up funding\b", r"money entering from outside"]
+          r"In: top-ups", r"\btop-up funding\b", r"money entering from outside",
+          r"\bdeliberate top-ups?\b", r"top-ups? of this wallet"]
 # public surfaces the lint reads (data.json carries the rendered prose)
-LINT_TARGETS = ["template.html", "data.json"]
+LINT_TARGETS = ["template.html", "data.json", "template_legacy.html"]
 
 
 def lint(text):

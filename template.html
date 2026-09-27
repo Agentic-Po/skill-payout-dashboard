@@ -119,7 +119,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
 
   <div class="card" id="trendCard" style="display:none">
     <h2>Month by month — what went out, what came in</h2>
-    <p class="note" style="margin-top:0">Every figure below is from this wallet's on-chain transfers, priced at each day's token rate. <b>Swaps &amp; ops</b> are treasury logistics (token swaps, internal moves), kept apart so a swap-heavy month does not read as spending. All money in is our own: <b>refills</b> are deliberate top-ups of this wallet, <b>returns</b> come back from the collector (recycling stopped 2026-06-18) or the reserve (returns began 2026-09-04) — so July and August genuinely had none. Refills and returns are identified by sending wallet, not by size. <span class="aibadge">AI-inferred</span> the payout type in "Biggest item" is read from transfer size, not from a platform record.</p>
+    <p class="note" style="margin-top:0">Every figure below is from this wallet's on-chain transfers, priced at each day's token rate. <b>Swaps &amp; ops</b> are treasury logistics (token swaps, internal moves), kept apart so a swap-heavy month does not read as spending. All money in is our own: <b>refills</b> are deliberate transfers into this wallet from our treasury wallets, <b>returns</b> come back from the collector (recycling stopped 2026-06-18) or the reserve (returns began 2026-09-04) — so July and August genuinely had none. Refills and returns are identified by sending wallet, not by size. August's swaps &amp; ops is mostly ~$41K parked in the treasury reserve on 2026-08-25; September's returns are that same money coming back — not extra cover for payouts. <b>Sent out</b> includes the Stripe credit packs users bought (“top-ups delivered”), not only giveaways. <span class="aibadge">AI-inferred</span> the payout type in "Biggest item" is read from transfer size, not from a platform record.</p>
     <div class="scroll"><table id="trendT"></table></div>
   </div>
 
@@ -158,7 +158,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
   <div class="card">
     <h2>Flow summary — rolling windows &amp; calendar months</h2>
     <p class="insight" id="ins-flows"></p>
-    <p class="note">USD values historical transfers at that day's token price (method in the scope box); raw token amounts are exact. Net = inflow − outflow. All inflow is our own treasury money. It splits into <b>refills</b> (deliberate top-ups from Minds/Animoca treasury wallets) vs <b>returns</b> — MENTE recycled from the Cognition Collector (until the recycle leg stopped) plus the treasury reserve handing back funds it had parked. Tap a row for the split.</p>
+    <p class="note">USD values historical transfers at that day's token price (method in the scope box); raw token amounts are exact. Net = inflow − outflow. All inflow is our own treasury money. It splits into <b>refills</b> (deliberate transfers from Minds/Animoca treasury wallets) vs <b>returns</b> — MENTE recycled from the Cognition Collector (until the recycle leg stopped) plus the treasury reserve handing back funds it had parked. Tap a row for the split.</p>
     <div class="scroll"><table id="winT"></table></div>
     <details style="margin-top:8px"><summary class="showmore" style="display:block">Calendar months (UTC)</summary><div class="scroll"><table id="monT"></table></div></details>
   </div>
@@ -465,9 +465,9 @@ const MEAN={"Wallet balance":"What this wallet holds right now, at today's token
  "Outflow — 24h":"Everything this wallet sent out in the last 24 hours.",
  "Inflow — 24h":"What came in during the last 24 hours — refills and returns, all our own money.",
  "Distribution float":"How long the balance lasts at last week's pace before the next refill is needed.",
- "Outflow — all history":"Everything sent out since the wallet started on 2026-04-24.",
+ "Outflow — all history":`Everything sent out since the wallet started on ${F.range.from}.`,
  "Recipient wallets":"Distinct wallets that have ever received a transfer from this one."};
-const meanOf=k=>MEAN[k]||(k.startsWith("Collector sweep")?"Share of user spend swept back from the collector, against the 40% target.":"");
+const meanOf=k=>MEAN[k]||(k.startsWith("Collector sweep")?`Share of the MENTE the collector receives that it sweeps on to the Rebate wallet, against the ${(DATA.sink&&DATA.sink.contract&&DATA.sink.contract.rate)||40}% target.`:"");
 document.getElementById("ftiles").innerHTML=ftiles.map(t=>`<div class="tile" style="${SC.complete?"":"border-color:var(--warn)"}"><div class="k">${t[0]}</div><div class="v">${t[1]}</div>${meanOf(t[0])?`<div class="d" style="color:var(--ink);margin-bottom:3px">${meanOf(t[0])}</div>`:""}<div class="d">${t[2]}</div>${stale}</div>`).join("");
 
 // month-by-month trend (loop 1, 2026-09-27): facts.monthly only — no new
@@ -477,18 +477,20 @@ document.getElementById("ftiles").innerHTML=ftiles.map(t=>`<div class="tile" sty
  if(M.length){
   const big=m=>{const g=GK.filter(k=>k!=="ops"&&m.groups&&m.groups[k]&&m.groups[k].usd>0).sort((a,b)=>m.groups[b].usd-m.groups[a].usd)[0];
     if(!g)return"—";const eco=m.economy_out_usd||0;const pct=eco?Math.round(m.groups[g].usd/eco*100):null;
-    return `${GL[g]||g} ${usd(m.groups[g].usd)}${pct!=null?` <span class="sub">(${pct}% of payouts)</span>`:""} <span class="aibadge" style="font-size:9px;padding:0 4px;margin:0 0 0 4px" title="payout type read from transfer size, ${BAND[g]||""} band — not a platform record">size-inferred ${BAND[g]||""}</span>`;};
+    return `${GL[g]||g} ${usd(m.groups[g].usd)}${pct!=null?` <span class="sub">(${pct}% of this)</span>`:""} <span class="aibadge" style="font-size:9px;padding:0 4px;margin:0 0 0 4px" title="payout type read from transfer size, ${bandOf(g,m.label.slice(0,7))} band — not a platform record">size-inferred ${bandOf(g,m.label.slice(0,7))}</span>`;};
   // partial months say how many days they cover — no ratio on this card
   // ever compares a partial month with a full one
   const dim=ym=>new Date(Date.UTC(+ym.slice(0,4),+ym.slice(5,7),0)).getUTCDate();
   const lab=m=>{const ym=m.label.slice(0,7), n=dim(ym);
-    const from=(m.label.match(/from (\d{4}-\d\d-(\d\d))/)||[])[2], to=m.label.includes("partial")?(F.range.to||"").slice(8,10):null;
-    const cov=from?n-(+from)+1:(to?+to:null);
-    return ym+(cov!=null&&cov<n?` <span class="pill">${cov} of ${n} days</span>`:"");};
+    const from=(m.label.match(/from (\d{4}-\d\d-(\d\d))/)||[])[2];
+    if(from)return ym+` <span class="pill">${n-(+from)+1} of ${n} days</span>`;
+    const to=F.range.to||"";
+    return ym+(m.label.includes("partial")&&to?` <span class="pill">to ${+to.slice(8,10)} ${new Date(to.slice(0,10)+"T00:00Z").toLocaleString("en",{month:"short",timeZone:"UTC"})} ${to.slice(11,16)} UTC</span>`:"");};
   // every non-ops group is read from transfer SIZE — the band rides in the cell
-  const BAND={credit_grants:"±8%",system_topups:"±8%",skill_rewards:"±8–12%",topups_delivered:"±15%",micro:""};
+  // skill rewards: v1 grid ±8% until 2026-08-21, v2 grid ±12% from 2026-09-14 (classify.ERAS)
+  const bandOf=(g,ym)=>g==="skill_rewards"?(ym>="2026-09"?"±12%":"±8%"):({credit_grants:"±8%",system_topups:"±8%",topups_delivered:"±15%"}[g]||"");
   document.getElementById("trendT").innerHTML=
-   `<thead><tr><th>Month (UTC)</th><th class="r">Payouts out<br><span class="sub">excl. swaps</span></th><th class="r">Swaps &amp; ops out</th><th class="r">Refills in</th><th class="r">Returns in</th><th>Biggest item</th></tr></thead><tbody>`
+   `<thead><tr><th>Month (UTC)</th><th class="r">Sent to users &amp; creators<br><span class="sub">excl. swaps · incl. Stripe packs</span></th><th class="r">Swaps &amp; ops out</th><th class="r">Refills in</th><th class="r">Returns in</th><th>Biggest item</th></tr></thead><tbody>`
    +M.map(m=>`<tr><td class="mono">${lab(m)}</td><td class="r mono"><b>${usd(m.economy_out_usd??m.out_usd)}</b></td><td class="r mono">${usd(m.ops_out_usd||0)}</td><td class="r mono">${usd(m.in_external_usd||0)}</td><td class="r mono">${usd(m.in_recycled_usd||0)}</td><td>${big(m)}</td></tr>`).join("")+`</tbody>`;
   document.getElementById("trendCard").style.display="";
  }}// ---- A1: Top creator wallets — four windows, "since 14 Sep" default. Every
