@@ -125,8 +125,8 @@ in_recycled_usd` and `in_external_usd + in_recycled_usd == in_usd`, each to the 
 both. Why: the page headline still called all of `in_recycled_usd` "usage fees recycling back" after the v4 change, so
 $40,828 of reserve returns read as usage fees. No existing value changed.
 
-**Naming (2026-09-27)**: `in_external_usd` keeps its key name but means **treasury top-ups from Minds/Animoca's own
-wallets** — no inflow to this wallet is external money. Present it as "top-ups", never "external" or "new" funding.
+**Naming (2026-09-27)**: `in_external_usd` keeps its key name but means **treasury refills from Minds/Animoca's own
+wallets** — no inflow to this wallet is external money. Present it as "refills" (not "top-ups", which names Stripe packs delivered out), never "external" or "new" funding.
 
 **CSV export (2026-09-27, CSV schema still v2 — same 13 columns)**: the full per-tx history moved to
 `exports/transfers-YYYY-MM.csv`, one file per UTC month (raw URL pattern as catalog.json; catalog entry

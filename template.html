@@ -117,13 +117,10 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
   <p class="sect">Now — observed on-chain</p>
   <div class="tiles" id="ftiles"></div>
 
-  <div class="card" id="creatorCard" style="display:none">
-    <h2>Top creator wallets — skill rewards</h2>
-    <p class="note">Wallets paid an equip- or invoke-sized reward, ranked by USD in the window. <b>Per wallet, not per creator</b> — a creator may hold several wallets, so wallet counts are an upper bound on creators. Sizes are inferred on the row's own era grid; first-seen is the UTC day of the wallet's first-ever reward. No hourly figures.</p>
-    <div class="legend" id="creatorTabs" style="gap:6px"></div>
-    <p class="note" id="creatorNote" style="margin:0 0 8px"></p>
-    <div class="tiles" id="creatorTiles"></div>
-    <div class="scroll" style="margin-top:10px"><table id="creatorT"></table></div>
+  <div class="card" id="trendCard" style="display:none">
+    <h2>Month by month — what went out, what came in</h2>
+    <p class="note" style="margin-top:0">Every figure below is from this wallet's on-chain transfers, priced at each day's token rate. <b>Swaps &amp; ops</b> are treasury logistics (token swaps, internal moves), kept apart so a swap-heavy month does not read as spending. All money in is our own: <b>refills</b> are deliberate top-ups of this wallet, <b>returns</b> come back from the collector (recycling stopped 2026-06-18) or the reserve (returns began 2026-09-04) — so July and August genuinely had none. Refills and returns are identified by sending wallet, not by size. <span class="aibadge">AI-inferred</span> the payout type in "Biggest item" is read from transfer size, not from a platform record.</p>
+    <div class="scroll"><table id="trendT"></table></div>
   </div>
 
   <div class="card">
@@ -161,10 +158,19 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
   <div class="card">
     <h2>Flow summary — rolling windows &amp; calendar months</h2>
     <p class="insight" id="ins-flows"></p>
-    <p class="note">USD values historical transfers at that day's token price (method in the scope box); raw token amounts are exact. Net = inflow − outflow. All inflow is our own treasury money. It splits into <b>top-ups</b> (deliberate refills from Minds/Animoca treasury wallets) vs <b>returns</b> — MENTE recycled from the Cognition Collector (until the recycle leg stopped) plus the treasury reserve handing back funds it had parked. Tap a row for the split.</p>
+    <p class="note">USD values historical transfers at that day's token price (method in the scope box); raw token amounts are exact. Net = inflow − outflow. All inflow is our own treasury money. It splits into <b>refills</b> (deliberate top-ups from Minds/Animoca treasury wallets) vs <b>returns</b> — MENTE recycled from the Cognition Collector (until the recycle leg stopped) plus the treasury reserve handing back funds it had parked. Tap a row for the split.</p>
     <div class="scroll"><table id="winT"></table></div>
     <details style="margin-top:8px"><summary class="showmore" style="display:block">Calendar months (UTC)</summary><div class="scroll"><table id="monT"></table></div></details>
   </div>
+
+  <details class="card" id="creatorCard" style="display:none">
+    <summary style="cursor:pointer;font-size:15px;font-weight:650;list-style:none">Top creator wallets — skill rewards <span class="pill">a small share of payouts · show</span></summary>
+    <p class="note">Wallets paid an equip- or invoke-sized reward, ranked by USD in the window. <b>Per wallet, not per creator</b> — a creator may hold several wallets, so wallet counts are an upper bound on creators. Sizes are inferred on the row's own era grid; first-seen is the UTC day of the wallet's first-ever reward. No hourly figures.</p>
+    <div class="legend" id="creatorTabs" style="gap:6px"></div>
+    <p class="note" id="creatorNote" style="margin:0 0 8px"></p>
+    <div class="tiles" id="creatorTiles"></div>
+    <div class="scroll" style="margin-top:10px"><table id="creatorT"></table></div>
+  </details>
 
   <div class="card" id="cogCard" style="display:none">
     <h2>Cognition consumption — minds spending MENTE</h2>
@@ -183,7 +189,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
         <marker id="arrG" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--c-in)"/></marker>
       </defs>
       <g font-size="13" fill="var(--ink)">
-        <text x="150" y="26" text-anchor="middle" font-size="11" fill="var(--c-in)">value IN: treasury top-ups <tspan id="nExt" font-weight="700"></tspan></text>
+        <text x="150" y="26" text-anchor="middle" font-size="11" fill="var(--c-in)">value IN: treasury refills <tspan id="nExt" font-weight="700"></tspan></text>
         <line x1="150" y1="34" x2="150" y2="114" stroke="var(--c-in)" stroke-width="1.5" marker-end="url(#arrG)"/>
         <a href="https://debank.com/profile/0x1c5ebb794335b72d773df2fd8f80f3d1afbb75dd/history?chain=base&amp;token=" target="_blank" rel="noopener">
         <rect x="430" y="18" width="220" height="54" rx="8" fill="none" stroke="var(--ink3)" stroke-width="1.5"/>
@@ -229,11 +235,11 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     </details>
   </details>
 
-  <div class="card" id="registryCard">
-    <h2>Address registry — every wallet in the loop</h2>
+  <details class="card" id="registryCard">
+    <summary style="cursor:pointer;font-size:15px;font-weight:650;list-style:none">Address registry — every wallet in the loop <span class="pill">full addresses · show</span></summary>
     <p class="note">Full, untruncated addresses for every material participant. Everywhere else this page shortens addresses — tables to <span class="mono">0xd85096…f111</span>, the flow diagram and prose to <span class="mono">0xd850…f111</span>. <b>The short form is not a safe identifier</b>: the Cognition Credits collector and its address-poisoning mimic are identical in it. Anything flagged <span class="pill" style="background:var(--warn);color:#fff">ambiguous when shortened</span> must be matched in full. Click any address to copy it.</p>
     <div class="scroll"><table id="addrT"></table></div>
-  </div>
+  </details>
 
   <div class="card" id="sinkCard" style="display:none;border-left:6px solid var(--warn)">
     <h2 id="sinkHead">Collected MENTE stopped coming back here</h2>
@@ -398,7 +404,7 @@ const FL=F.float||null;
  const u0=usd;
  const floatD=FL&&FL.days_7d_pace;
  document.getElementById("plainStrip").innerHTML=
-  `<b>Since ${F.range.from}:</b> this wallet sent out <b>${u0(wA.out_usd)}</b> — <b>${u0(wA.economy_out_usd??wA.out_usd)}</b> into the Minds economy${wA.ops_out_usd?` and ${u0(wA.ops_out_usd)} in treasury swaps/ops moves`:""} — and was refilled with <b>${u0(wA.in_external_usd||0)}</b> of treasury top-ups${wA.in_recycled_usd?` plus ${u0(wA.in_recycled_usd)} of returns (collector recycling and reserve)`:""} — all our own treasury money. <a href="#registerCard" class="pill" style="border-color:var(--acc);color:var(--acc);font-weight:600">${openN} open item${openN===1?"":"s"} ↓</a>`
+  `<b>Since ${F.range.from}:</b> this wallet sent out <b>${u0(wA.out_usd)}</b> — <b>${u0(wA.economy_out_usd??wA.out_usd)}</b> in payouts to users and creators${wA.ops_out_usd?` and ${u0(wA.ops_out_usd)} in treasury swaps/ops moves`:""} — and was refilled with <b>${u0(wA.in_external_usd||0)}</b> of treasury refills${wA.in_recycled_usd?` plus ${u0(wA.in_recycled_usd)} of returns (collector recycling and reserve)`:""} — all our own treasury money. <a href="#registerCard" class="pill" style="border-color:var(--acc);color:var(--acc);font-weight:600">${openN} open item${openN===1?"":"s"} ↓</a>`
   +`<div class="sub" style="margin-top:6px">Changed 2026-09-27: inflow once labelled “usage fees recycling back” is now split into collector recycling${wA.in_collector_usd!=null?` (${u0(wA.in_collector_usd)})`:""} and reserve returns of treasury funds${wA.in_reserve_usd!=null?` (${u0(wA.in_reserve_usd)})`:""}; totals unchanged.</div>`;
 }
 // scope + reconciliation
@@ -442,7 +448,7 @@ const ftiles=[
  ["Outflow — 24h", usd(w24.out_usd), gsub(w24)+delta(w24.out_usd,p24.out_usd)],
  ["Inflow — 24h", usd(w24.in_usd), w24.in_tx+" transfer"+(w24.in_tx===1?"":"s")+" · "+w24.in_sources+" source"+(w24.in_sources===1?"":"s")],
  ["Distribution float", floatV, FL?`balance ÷ 7-day pace of total outflow (${usd(FL.out_7d_avg_usd)}/day)${FL.days_24h_pace?` · ${FL.days_24h_pace} d at yesterday's pace`:""}${FL.driver_24h?` · driver: ${FL.driver_24h.label.toLowerCase()} ${FL.driver_24h.share_pct}% of 24h`:""} — a refill schedule, not solvency`:"total-outflow basis"],
- ["Outflow — all history", usd(wall.out_usd), wall.out_tx.toLocaleString()+" tx since "+F.range.from+(wall.economy_out_usd!=null?` · economy ${usd(wall.economy_out_usd)} + ops ${usd(wall.ops_out_usd)}`:"")],
+ ["Outflow — all history", usd(wall.out_usd), wall.out_tx.toLocaleString()+" tx since "+F.range.from+(wall.economy_out_usd!=null?` · payouts ${usd(wall.economy_out_usd)} + swaps/ops ${usd(wall.ops_out_usd)}`:"")],
  ["Recipient wallets", fmt0(F.wallets_all), fmt0(F.wallets_repeat)+" received on 2+ days"],
 ];
 // the sweep figures below are the sink card's own (same fields, same math) —
@@ -450,12 +456,42 @@ const ftiles=[
 {const S=DATA.sink, C=S&&S.contract;
  if(C&&C.new_pct!=null){
   const idle=S.collector_bal&&S.rate?usd(S.collector_bal*S.rate):null;
-  ftiles.splice(4,0,["Collector sweep vs "+C.rate+"% contract", `<span style="color:var(--warn)">${C.new_pct}%</span>`,
-   `delivered since ${S.first}${C.variance_usd<0?` · short ${usd(-C.variance_usd)} (contract base not yet confirmed)`:""}${idle?` · ${idle} of MENTE held in the collector`:""} · <a href="#sinkCard">details ↓</a>`]);
+  ftiles.splice(4,0,["Collector sweep vs "+C.rate+"% target", `<span style="color:var(--warn)">${C.new_pct}%</span>`,
+   `contract base unconfirmed · delivered since ${S.first}${C.variance_usd<0?` · short ${usd(-C.variance_usd)}`:""}${idle?` · ${idle} of MENTE held in the collector`:""} · <a href="#sinkCard">details ↓</a>`]);
  }}
 const stale=SC.complete?"":`<div style="font-size:11px;color:var(--warn);margin-top:4px">⚠ as of last complete fetch</div>`;
-document.getElementById("ftiles").innerHTML=ftiles.map(t=>`<div class="tile" style="${SC.complete?"":"border-color:var(--warn)"}"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div>${stale}</div>`).join("");
-// ---- A1: Top creator wallets — four windows, "since 14 Sep" default. Every
+// one plain-English line per tile: a definition only, never a new number
+const MEAN={"Wallet balance":"What this wallet holds right now, at today's token price.",
+ "Outflow — 24h":"Everything this wallet sent out in the last 24 hours.",
+ "Inflow — 24h":"What came in during the last 24 hours — refills and returns, all our own money.",
+ "Distribution float":"How long the balance lasts at last week's pace before the next refill is needed.",
+ "Outflow — all history":"Everything sent out since the wallet started on 2026-04-24.",
+ "Recipient wallets":"Distinct wallets that have ever received a transfer from this one."};
+const meanOf=k=>MEAN[k]||(k.startsWith("Collector sweep")?"Share of user spend swept back from the collector, against the 40% target.":"");
+document.getElementById("ftiles").innerHTML=ftiles.map(t=>`<div class="tile" style="${SC.complete?"":"border-color:var(--warn)"}"><div class="k">${t[0]}</div><div class="v">${t[1]}</div>${meanOf(t[0])?`<div class="d" style="color:var(--ink);margin-bottom:3px">${meanOf(t[0])}</div>`:""}<div class="d">${t[2]}</div>${stale}</div>`).join("");
+
+// month-by-month trend (loop 1, 2026-09-27): facts.monthly only — no new
+// figure. Payouts and swaps/ops are separate columns so August's swaps do
+// not read as spend; the biggest item is the largest NON-ops group.
+{const M=(F.monthly||[]).slice().reverse();
+ if(M.length){
+  const big=m=>{const g=GK.filter(k=>k!=="ops"&&m.groups&&m.groups[k]&&m.groups[k].usd>0).sort((a,b)=>m.groups[b].usd-m.groups[a].usd)[0];
+    if(!g)return"—";const eco=m.economy_out_usd||0;const pct=eco?Math.round(m.groups[g].usd/eco*100):null;
+    return `${GL[g]||g} ${usd(m.groups[g].usd)}${pct!=null?` <span class="sub">(${pct}% of payouts)</span>`:""} <span class="aibadge" style="font-size:9px;padding:0 4px;margin:0 0 0 4px" title="payout type read from transfer size, ${BAND[g]||""} band — not a platform record">size-inferred ${BAND[g]||""}</span>`;};
+  // partial months say how many days they cover — no ratio on this card
+  // ever compares a partial month with a full one
+  const dim=ym=>new Date(Date.UTC(+ym.slice(0,4),+ym.slice(5,7),0)).getUTCDate();
+  const lab=m=>{const ym=m.label.slice(0,7), n=dim(ym);
+    const from=(m.label.match(/from (\d{4}-\d\d-(\d\d))/)||[])[2], to=m.label.includes("partial")?(F.range.to||"").slice(8,10):null;
+    const cov=from?n-(+from)+1:(to?+to:null);
+    return ym+(cov!=null&&cov<n?` <span class="pill">${cov} of ${n} days</span>`:"");};
+  // every non-ops group is read from transfer SIZE — the band rides in the cell
+  const BAND={credit_grants:"±8%",system_topups:"±8%",skill_rewards:"±8–12%",topups_delivered:"±15%",micro:""};
+  document.getElementById("trendT").innerHTML=
+   `<thead><tr><th>Month (UTC)</th><th class="r">Payouts out<br><span class="sub">excl. swaps</span></th><th class="r">Swaps &amp; ops out</th><th class="r">Refills in</th><th class="r">Returns in</th><th>Biggest item</th></tr></thead><tbody>`
+   +M.map(m=>`<tr><td class="mono">${lab(m)}</td><td class="r mono"><b>${usd(m.economy_out_usd??m.out_usd)}</b></td><td class="r mono">${usd(m.ops_out_usd||0)}</td><td class="r mono">${usd(m.in_external_usd||0)}</td><td class="r mono">${usd(m.in_recycled_usd||0)}</td><td>${big(m)}</td></tr>`).join("")+`</tbody>`;
+  document.getElementById("trendCard").style.display="";
+ }}// ---- A1: Top creator wallets — four windows, "since 14 Sep" default. Every
 // figure is facts.creator_wallets (computed server-side from the classified
 // rows; the page only renders). Labels say creator WALLETS, never creators.
 const CW=F.creator_wallets||null;
@@ -494,9 +530,9 @@ if(CW&&CW.windows){
 // window + month tables (compact: USD out/in/net; per-token split via tooltip)
 function flowRows(ws){return ws.map(w=>{
  const grp=w.groups?"\n"+GK.filter(g=>w.groups[g]&&w.groups[g].n).map(g=>`${GL[g]||g}: $${w.groups[g].usd.toLocaleString()} (${w.groups[g].n} tx)`).join(" · "):"";
- const split=`MENTE $${w.out_usd_tok.MENTE.toLocaleString()} / MOCA $${w.out_usd_tok.MOCA.toLocaleString()}${grp}\nin: $${(w.in_external_usd??0).toLocaleString()} top-ups + $${(w.in_recycled_usd??0).toLocaleString()} returns ($${(w.in_collector_usd??0).toLocaleString()} collector recycling · $${(w.in_reserve_usd??0).toLocaleString()} reserve returns)\nraw out: ${fmt(w.out_raw.MENTE)} MENTE · ${fmt(w.out_raw.MOCA)} MOCA\nraw in: ${fmt(w.in_raw.MENTE)} MENTE · ${fmt(w.in_raw.MOCA)} MOCA`;
+ const split=`MENTE $${w.out_usd_tok.MENTE.toLocaleString()} / MOCA $${w.out_usd_tok.MOCA.toLocaleString()}${grp}\nin: $${(w.in_external_usd??0).toLocaleString()} refills + $${(w.in_recycled_usd??0).toLocaleString()} returns ($${(w.in_collector_usd??0).toLocaleString()} collector recycling · $${(w.in_reserve_usd??0).toLocaleString()} reserve returns)\nraw out: ${fmt(w.out_raw.MENTE)} MENTE · ${fmt(w.out_raw.MOCA)} MOCA\nraw in: ${fmt(w.in_raw.MENTE)} MENTE · ${fmt(w.in_raw.MOCA)} MOCA`;
  return `<tr data-tip="${split.replace(/"/g,"&quot;")}"><td>${w.label}</td><td class="r mono">$${w.out_usd.toLocaleString()}</td><td class="r mono" style="color:var(--c-in)">$${(w.in_recycled_usd||0).toLocaleString()}</td><td class="r mono">$${(w.in_external_usd||0).toLocaleString()}</td><td class="r mono">${w.out_tx.toLocaleString()}</td><td class="r mono">${w.out_wallets.toLocaleString()}</td></tr>`;}).join("");}
-const flowHead=`<thead><tr><th>Period</th><th class="r">Out USD</th><th class="r">In: returns</th><th class="r">In: top-ups</th><th class="r">Out tx</th><th class="r">Recipients</th></tr></thead>`;
+const flowHead=`<thead><tr><th>Period</th><th class="r">Out USD</th><th class="r">In: returns</th><th class="r">In: refills</th><th class="r">Out tx</th><th class="r">Recipients</th></tr></thead>`;
 document.getElementById("winT").innerHTML=flowHead+`<tbody>`+flowRows(F.windows)+`</tbody>`;
 document.getElementById("monT").innerHTML=flowHead+`<tbody>`+flowRows(F.monthly)+`</tbody>`;
 bindTips(document.getElementById("winT"));bindTips(document.getElementById("monT"));
@@ -575,7 +611,7 @@ if(F.balance_series&&F.balance_series.tokens&&F.balance_series.tokens.length){
   document.getElementById("balSpark").innerHTML=
     `<div style="display:flex;gap:20px;flex-wrap:wrap">`
     +spark("MENTE",mLabel,"var(--c-mente)")
-    +(toks.includes("MOCA")?spark("MOCA","MOCA — the active token: top-ups + swaps in, payouts out","var(--c-moca)"):"")
+    +(toks.includes("MOCA")?spark("MOCA","MOCA — the active token: refills + swaps in, payouts out","var(--c-moca)"):"")
     +`</div>`;
 
   // table: newest first, MENTE Δ + recycled-in columns

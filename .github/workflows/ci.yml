@@ -70,6 +70,10 @@ jobs:
         run: python3 tests/test_cap.py
       - name: Per-category outflow fence tests
         run: python3 tests/test_fences.py
+      # month-by-month closure, first-screen order, inflow wording lint
+      # (council loop 1, 2026-09-27)
+      - name: Decision-first page gates
+        run: python3 tests/test_page.py
       # Coupon crawl vs the private coupon ledger. CI has no access to that
       # repo, so this SKIPS clean here (exit 0, loud message) and is run
       # locally with COUPON_LEDGER_PATH set; the step exists so the skip is

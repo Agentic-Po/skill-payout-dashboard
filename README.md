@@ -203,6 +203,24 @@ ALL history, counts fires per day (a fire outside a known-incident window
 is a false fire, and those counts assign the tiers) and prints a T-minus
 table per incident with the ~30 min refresh-cadence bound.
 
+## The first screen (council loop 1, 2026-09-27)
+
+Built for one decision — how much to refill this wallet, and when. In order:
+7-day exec summary → lifetime sentence → tiles (each with a one-line plain
+definition, no new numbers) → **Month by month**: payouts out (excl. swaps) ·
+swaps & ops out · refills in · returns in · biggest item, all straight from
+`facts.monthly`. Rules the card keeps: swaps are their own column so a
+swap-heavy month never reads as spend; partial months carry "N of M days" and
+no ratio compares a partial month with a full one; the biggest item carries
+its size-inferred band **in the cell**; no forecast, runway date, scenario or
+recommended amount is published (council ruling — those are the owner's
+analysis, not page facts). Top creator wallets and the address registry are
+collapsed below the fold. `tests/test_page.py` holds the card to the cent
+(months close per column, sum to all-history, closed months = their sealed
+days), pins the first-screen order, and lints public surfaces for ruled-out
+inflow wording ("new/external funding", "top-ups in" — inflow is "refills" and
+"returns"; "top-ups" names Stripe packs delivered OUT).
+
 ## Changing code safely — the golden diff
 
 `refresh.py --offline` is byte-deterministic run-to-run, so a code change can be
@@ -266,8 +284,8 @@ entry. **If you are about to quote a number in a deck, quote the safe sentence.*
 - **Formula**: `refresh.py:facts_window` — `in_recycled_usd` = inflows from the collector (`in_collector_usd`) or the treasury reserve (`in_reserve_usd`); `in_external_usd = in_usd - in_recycled_usd`. Both identities hold to the cent (`tests/test_contract.py`).
 - **Source**: `transfers_in/`, priced day-pinned. **Coverage**: every window, `prev24`, every month.
 - **Bias**: classified by SOURCE ADDRESS only. Collector recycling stopped 2026-06-18, so recent `in_collector_usd` is 0; the reserve returned funds the treasury itself had parked there (2026-08-25 out, 09-04/11/18 back).
-- **Naming**: `in_external_usd` is a legacy key name — it is **treasury top-ups from Minds/Animoca's own wallets**, never external money (Po, 2026-09-27: all inbound refills are ours). The page says "top-ups" and "returns".
-- **Safe to say**: "Of $X lifetime inflow — all our own treasury money — $Y was deliberate top-ups and the rest came back: $C recycled from the collector before June and $R returned from the reserve." Never "usage fees recycling back" for the whole returns figure, and never "new" or "external" funding.
+- **Naming**: `in_external_usd` is a legacy key name — it is **treasury refills from Minds/Animoca's own wallets**, never external money (Po, 2026-09-27: all inbound refills are ours). The page says "refills" and "returns" — never "top-ups" for inflow, which the page reserves for Stripe packs delivered OUT to users.
+- **Safe to say**: "Of $X lifetime inflow — all our own treasury money — $Y was deliberate refills and the rest came back: $C recycled from the collector before June and $R returned from the reserve." Never "usage fees recycling back" for the whole returns figure, and never "new" or "external" funding.
 
 ### wallet balance
 - **Formula**: `refresh.py:balance_at` — `eth_call` `balanceOf` per token at latest block, USD at the live rate; block-pinned copy at `RECON_BLOCK` drives the drift fence.

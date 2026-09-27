@@ -87,7 +87,7 @@ ADDR2SYM = {v["addr"]: k for k, v in TOKENS.items()}
 # The four flow-chart wallets (treasury, collector, rebate, gas funder) are
 # deliberately public by owner decision and keep their names.
 KNOWN = {"0x9a95d76c41aa34093a0db5f26f97309fe734a07f": "creator wallet",
-         "0x5edea73327eaf586164233e288ba2a8775ccd49c": "Treasury reserve — internal; its inflows here are returns of treasury funds, not new money",
+         "0x5edea73327eaf586164233e288ba2a8775ccd49c": "Treasury reserve — internal; its inflows here are returns of parked treasury funds, not refills",
          "0xd85096faec1ac03075667b4c1a1661f5623bf111": "Cognition Credits collector — also the original SWARM-era treasury+collector hub (pre-Apr 2026)",
          "0xea87169699dabd028a78d4b91544b4298086baf6": "SWARM token contract (original Cognition Credit token, migrated to MENTE ~Apr 2026)",
          "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432": "AgentIdentity registry (historic, ERC-8004 era)",
@@ -1891,7 +1891,7 @@ _rec_last = max((f["ts"][:10] for f in inflows if f["from"].lower() == RECYCLE_S
 _rec_share = round(facts["windows"][3]["in_recycled_usd"] / facts["windows"][3]["in_usd"] * 100) if facts["windows"][3]["in_usd"] else 0
 insights = {
     "diagram": "Every token here is a unit of cognition — this diagram is the economy; the rest of the page is its measurements.",
-    "flows": f"Outflow is the signal: ~${round(facts['windows'][1]['out_usd']/7):,}/day of distribution IS the ecosystem's activity. Inflow is manual treasury logistics keeping the wallet alive — {_rec_share}% of lifetime inflow was returns (usage fees recycled from the collector{f' until {_rec_last}' if _rec_last else ''}, plus the reserve handing back parked funds); the rest was deliberate top-ups — all of it our own treasury money.",
+    "flows": f"Outflow is the signal: ~${round(facts['windows'][1]['out_usd']/7):,}/day of distribution IS the ecosystem's activity. Inflow is manual treasury logistics keeping the wallet alive — {_rec_share}% of lifetime inflow was returns (usage fees recycled from the collector{f' until {_rec_last}' if _rec_last else ''}, plus the reserve handing back parked funds); the rest was deliberate refills — all of it our own treasury money.",
     "daily": f"Watch the pulse, not the balance: distribution spikes mark campaigns and growth pushes; the current pace is ~${round(facts['windows'][1]['out_usd']/7):,}/day.",
     # no ratio here (2026-09-27): cognition spend and treasury outflow are two
     # different flows (different tokens, different start dates) — dividing one
@@ -1913,7 +1913,9 @@ open_items = [o for o in open_items if o]
 # each gap carries the date it was opened (C11, 2026-09-15) so the page can
 # age it — a promise older than 60 days gets a chip, not a "landing next"
 gaps = [
-    {"missing": "SWARM era (pre-Apr 2026) not yet integrated", "opened": "2026-07-19", "effect": "this dashboard covers the MENTE/MOCA credit era (from Apr 12/24); the economy's first generation ran on SWARM (Ethoswarm token) through the SAME collector hub 0xd850… — those flows are not yet counted", "unlocks": "full multi-era economy history: crawl the collector's SWARM in/outflows and add an era-aware timeline"},
+    # "SWARM era not yet integrated" retired 2026-09-27: the Generation-1
+    # SWARM archive section has shipped (swarm_era.json) — a closed gap left
+    # open reads as an unmaintained page
     {"missing": "Recycle policy (constitutional)", "opened": "2026-07-19", "effect": "collector→treasury flows are informal; ownership of the economy's cash flow undefined", "unlocks": "closed-loop rule, creator revenue-share, or burn discipline — a protocol instead of a babysat wallet"},
     {"missing": "Complete Stripe data feed — the data platform team has Stripe API access (pulls for PostHog today, but only client-side events land)", "opened": "2026-07-18", "effect": "live revenue still client-side only; an interim VERIFIED snapshot (Stripe CSV, May 13–Jul 15: net $6,455) now anchors the true numbers — live feed needed for ongoing days", "unlocks": "live top-up revenue instead of a dated snapshot"},
     {"missing": "Per-transfer memo/event from the payout contract", "opened": "2026-07-19", "effect": "classification is size-inference (±8%); amber zone larger than it needs to be", "unlocks": "exact payout types — most of the amber zone becomes fact"},
@@ -2160,7 +2162,7 @@ registry = [
     # private (moca-ledger-private:labels/). Mimic warnings name no victim.
     _reg("0x4d3021a52b31ffafde3c46450d02c72807c3a178", f"{in_label('0x4d3021a52b31ffafde3c46450d02c72807c3a178')[0] or 'Funding wallet'} — manual MOCA top-ups", "Funding sources"),
     _reg("0xf605dbb5626dfc1448cee33e2e1221103021468f", f"{in_label('0xf605dbb5626dfc1448cee33e2e1221103021468f')[0] or 'Funding wallet'} — primary MENTE funder", "Funding sources"),
-    _reg(RESERVE, "Treasury reserve — funds moved out 2026-08-25 and returned 2026-09-04/11/18; inflows from here are returns of parked funds, not top-ups", "Treasury"),
+    _reg(RESERVE, "Treasury reserve — funds moved out 2026-08-25 and returned 2026-09-04/11/18; inflows from here are returns of parked funds, not refills", "Treasury"),
     _reg(SINK, "Minds Rebate wallet — receives the daily 40% MENTE sweep from the collector since 2026-06-19; DATops swaps its MENTE to MOCA on a weekly cadence", "Collector"),
     _reg("0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B", "EIP-7702 delegator implementation the treasury EOA delegates to", "Infrastructure"),
     _reg("0x45d0cEAd7c0a2E1a0528C4131A2d95DE9a394839", f"{in_label('0x45d0cEAd7c0a2E1a0528C4131A2d95DE9a394839')[0] or 'Funding wallet'} — early MENTE funder (Apr 2026)", "Funding sources"),
