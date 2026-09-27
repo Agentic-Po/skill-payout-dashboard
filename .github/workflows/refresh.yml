@@ -179,6 +179,26 @@ jobs:
           HC_URL: ${{ secrets.HEALTHCHECK_URL }}
         run: |
           if [ -n "$HC_URL" ]; then curl -fsS -m 10 --retry 3 "$HC_URL" >/dev/null && echo "ping ok"; else echo "HEALTHCHECK_URL not set — skipping"; fi
+      - name: Private edition gate check
+        continue-on-error: true   # silent by design: prints nothing, alerts
+                                  # Telegram only if the sign-in gate is gone
+        env:
+          CONSOLE_URL: ${{ secrets.CONSOLE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -n "$CONSOLE_URL" ] || exit 0
+          bad=""
+          for p in / /labels.json; do
+            r=$(curl -s -o /dev/null -m 15 -w '%{http_code} %{redirect_url}' "${CONSOLE_URL%/}$p" || true)
+            code=${r%% *}
+            case "$code" in 000|5*) continue ;; esac   # unreachable is not exposure
+            case "$r" in 30[1278]\ https://*.cloudflareaccess.com/*) ;; *) bad="$bad $p→$code" ;; esac
+          done
+          [ -z "$bad" ] && exit 0
+          curl -s -o /dev/null -m 15 "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode chat_id="$TELEGRAM_CHAT_ID" \
+            --data-urlencode text="⚠️ Private edition answered WITHOUT sign-in:$bad. Check the Cloudflare Access application for the console now." || true
       - name: Hourly Telegram update
         continue-on-error: true   # keep the job green through a Telegram
                                   # outage (the encrypted cache save at the
