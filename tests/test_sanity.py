@@ -118,6 +118,32 @@ def main():
     finally:
         shutil.rmtree(t, ignore_errors=True)
 
+    # (e) council loop 2: an empty HEADLINE section blocks; an empty SECONDARY
+    # section only logs/warns (the page shows it "unavailable")
+    t = _tree()
+    try:
+        D2 = json.load(open(os.path.join(t, "data.json")))
+        D2["facts"]["balance_series"] = None
+        D2["sink"] = None
+        json.dump(D2, open(os.path.join(t, "data.json"), "w"))
+        rc, summary, blocks, logged, err = _run(t)
+        assert rc == 0 and not blocks, f"empty secondary sections blocked: {blocks[:3]} {err[-400:]}"
+        assert logged >= logged_clean + 2, f"empty secondary sections not logged: {logged} vs {logged_clean}"
+        print(f"ok (e1) empty balance_series + sink: exit 0, logged (page shows them unavailable)")
+    finally:
+        shutil.rmtree(t, ignore_errors=True)
+    t = _tree()
+    try:
+        D2 = json.load(open(os.path.join(t, "data.json")))
+        D2["facts"]["monthly"] = []
+        json.dump(D2, open(os.path.join(t, "data.json"), "w"))
+        rc, summary, blocks, _, err = _run(t)
+        assert rc == 1 and any("headline section facts.monthly present" in b for b in blocks), \
+            f"empty headline section did not block: {summary} {blocks[:3]} {err[-400:]}"
+        print("ok (e2) empty facts.monthly (headline) BLOCKS the publish")
+    finally:
+        shutil.rmtree(t, ignore_errors=True)
+
     # (e) WARN queue semantics on a throwaway state file
     import state
     real_path = state.PATH

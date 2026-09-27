@@ -149,7 +149,7 @@ is a broader surface than repo secrets — treat its contents accordingly.
   rewards are < 2% of outflow (0.4% today; `cap_detect.CREATOR_REWARD_TIER`
   is the deliberate switch), private state only; a heartbeat older than 2h
   turns the workflow red via `alive_check.py`
-- **Degradation**: data-source incomplete flips, stale-page banners
+- **Degradation**: data-source incomplete flips, stale-page banners (75 min, see "Page render safety")
   (client-side, works when the pipeline is fully dead), daily >3h staleness
   fail-loud, weekly dead-man health check
 
@@ -220,6 +220,58 @@ collapsed below the fold. `tests/test_page.py` holds the card to the cent
 days), pins the first-screen order, and lints public surfaces for ruled-out
 inflow wording ("new/external funding", "top-ups in" — inflow is "refills" and
 "returns"; "top-ups" names Stripe packs delivered OUT).
+
+## Page render safety (council loop 2, 2026-09-27)
+
+The page is one inline script; before loop 2 a single missing data key threw
+at top level and blanked every section below it with nothing on screen saying
+so (reproduced: deleting or nulling `scope`, `facts`, `infer`,
+`facts.windows/monthly/daily` or `infer.guard` blanked 4–31 of 31 content
+blocks). Now:
+
+- **Section isolation.** Every section runs in `renderSection(name, cardId,
+  fn)`. A throw — or a rendered `NaN` / `Infinity` / `[object Object]` —
+  wipes that card to "This section is unavailable right now — the rest of
+  the page is unaffected." (never half-written; no stack trace), records
+  `{name, msg}` in `window.__renderErrors`, and raises the page banner "Part
+  of this page could not be displayed — do not rely on it for decisions
+  until it recovers." `window.onerror` is the last resort for anything
+  outside a section. A missing optional block (no `sink`, no `stripe_snap`)
+  still just hides its card — that is design, not an error.
+- **Strict formatters.** `fmt` / `fmt0` / `usd` / `usd2` / `num` (and every
+  direct `.toLocaleString()` / `.toFixed()` on a data field) throw on null,
+  undefined, NaN or a non-number; a real 0 renders. Audited on the live
+  data.json before switching: zero non-finite inputs.
+- **Fail closed.** "This page is still loading or failed to load …" is static
+  markup, visible by default; the script's LAST statement removes it only if
+  `window.__renderErrors` is empty. A syntax error, invalid inlined JSON or an
+  uncaught throw leaves it up.
+- **Stale banner** at **75 min** past `scope.generated_iso` (was 2.5 h),
+  re-checked every 60 s and on `visibilitychange`; a page with no readable
+  build time says its freshness cannot be checked.
+- **Accessibility.** Creator-window tabs and the USD/count toggle are
+  `<button aria-pressed>`; one `<main>`; `th scope="col"` everywhere; chart
+  SVGs are `role="img"` with a label; Escape closes tooltips; daily rows are
+  no longer tab stops; `:focus-visible` outline; `prefers-reduced-motion`
+  honoured. Band chips carry their hue as a left stripe with body-ink text;
+  the old `#d33` is the `--bad` token. Contrast ≥ 4.5:1 in both themes.
+
+Gates (all in `ci.yml`, all driven by `tests/render_harness.js` +
+`tests/domshim.js`, which runs a page's scripts in one shared realm with a
+fake clock, timers, events and the page's own id tree):
+`tests/test_render_exec.py` (real data: zero `__renderErrors`, loading banner
+removed, stale-banner clock test, fail-closed cases) ·
+`tests/test_render_mutation.py` (every top-level key plus `facts.windows /
+monthly / daily / balance_series` and `infer.guard`, each deleted, nulled,
+first numeric leaf → NaN and → string: only the sections that read the key may
+degrade — declared in its `DEPENDS` map — no uncaught error, banner iff a
+failure) · `tests/test_figure_parity.py` (every digit-bearing rendered text
+node, ages masked, identical between `origin/main`'s template and the working
+one on the same data.json; an intended figure change runs with
+`FIGURE_PARITY_ALLOW=1` and says so in the PR) · `tests/test_a11y.py`
+(controls, landmarks, scopes, SVG labels, contrast computed from the CSS
+tokens). A new section needs a `renderSection` wrapper and a `DEPENDS` /
+`SECTIONS` entry, or the mutation gate fails.
 
 ## Changing code safely — the golden diff
 

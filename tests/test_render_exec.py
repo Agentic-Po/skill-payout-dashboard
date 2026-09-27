@@ -24,6 +24,20 @@ coupon.html (coupon_data.json):
   * the summary strip (#couponStrip) rendered non-empty with a "$" figure,
   * the claimant concentration table (#topT) got > 0 rows.
 
+Loop 2 (2026-09-27): all of a page's scripts now run in ONE shared realm
+(tests/render_harness.js, as a browser does), with the page's own markup
+parsed into the shim's id tree (tests/pagehost.py). index.html additionally
+must finish with window.__renderErrors EMPTY on the real data (a section
+that degraded to "unavailable" on real data is red here), must have removed
+the fail-closed loading banner, and:
+  * stale banner: hidden at build+74 min; shown after the 60 s re-check
+    once the (fake) clock passes build+75 min; shown on visibilitychange
+    after a clock jump that fires no timer;
+  * fail-closed: invalid inlined JSON, a syntax error in the script, or a
+    null data block leaves the loading banner up (and never throws past
+    window.onerror); the removal is the script's last statement and is
+    conditional on zero errors.
+
 Requires node on PATH (present on GitHub runners); in CI a missing node
 FAILS — a skipped gate is a lying-green gate.
 
@@ -33,12 +47,12 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
-import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+import pagehost as P  # noqa: E402
 
 if not shutil.which("node"):
     if os.environ.get("CI"):
@@ -51,7 +65,7 @@ if not shutil.which("node"):
 # id list is the union across pages — a page that has no such element records
 # an empty string, which its own assertions simply do not look at.
 PROBE = r"""
-;(function () {
+(function () {
   const els = globalThis.__domshim.elements;
   const html = id => String((els.get(id) || {}).innerHTML || "");
   const text = id => String((els.get(id) || {}).textContent || "");
@@ -80,8 +94,8 @@ PROBE = r"""
     gaps_rows: (html("gapsT").match(/<tr\b/g) || []).length,
     mix_toggle: (html("mixToggle").match(/data-mix=/g) || []).length
   };
-  console.log("__RENDER_PROBE__" + JSON.stringify(out));
-})();
+  return out;
+})()
 """
 
 
@@ -156,63 +170,105 @@ PAGES = [("index.html", "data.json", _checks_index),
          ("coupon.html", "coupon_data.json", _checks_coupon)]
 
 
-def run_page(page, data_rel, checks, shim):
+def run_page(page, data_rel, checks, shim=None):
     data = open(os.path.join(ROOT, data_rel)).read()
     html = open(os.path.join(ROOT, page)).read()
-    scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
+    scripts = P.scripts_of(html)
     assert scripts, f"{page} has no inline <script> blocks"
+    # the built page ships with the data already injected (no marker left);
+    # a template still carries the slot — either way this runs the REAL data
+    # file, never the parse gate's {} stand-in. All scripts share one realm.
+    r = P.run(html, data, [{"probe": PROBE}])[0]
+    if r["uncaught"]:
+        print(f"FAIL {page} raised at runtime (uncaught):")
+        for u in r["uncaught"][:8]:
+            print(f"    {u['where']}: {u['msg']}")
+        return 1
+    p = r["probe"]
+    assert p and "__probe_error" not in p, f"{page} probe failed: {p}"
+    print(f"ok {page} {len(scripts)} script(s) executed clean in one realm "
+          f"(daily_rows={p['daily_rows']}, band_divs={p['band_divs']})")
+    if page == "index.html":
+        errs = r["renderErrors"]
+        assert errs == [], f"index.html: sections degraded on REAL data: {errs}"
+        ids = r["dump"]["ids"]
+        assert ids.get("loadBanner", {}).get("removed"), \
+            "index.html: clean run did not remove the fail-closed loading banner"
+        assert ids.get("renderBanner", {}).get("hidden", True), "page banner raised on real data"
+        print("ok index.html window.__renderErrors == [] · loading banner removed · page banner hidden")
+    print(f"ok {page} signal: {checks(p)}")
+    return 0
 
-    failures = 0
-    probe = {"daily_rows": 0, "band_divs": 0, "strip_text": "", "exec_text": "",
-             "coupon_strip": "", "top_rows": 0, "legend_chips": 0, "v2_tiles": 0,
-             "v2_foot": "", "legline": "", "creator_rows": 0, "creator_tiles": 0,
-             "creator_tabs": 0, "creator_note": "", "gen_text": "", "hourly_groups": 0,
-             "hourly_line": 0, "gT_text": "", "patsum": "", "ftiles": "", "gaps_rows": 0,
-             "mix_toggle": 0}
-    for i, script in enumerate(scripts):
-        # the built page ships with the data already injected (no marker
-        # left); the template still carries the slot — either way this runs
-        # the REAL data file, never the parse gate's {} stand-in.
-        src = shim + "\n" + script.replace("/*__DATA__*/", data) + "\n" + PROBE
-        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as fh:
-            fh.write(src)
-            path = fh.name
-        try:
-            r = subprocess.run(["node", path], capture_output=True, text=True, timeout=25)
-        finally:
-            os.unlink(path)
-        if r.returncode != 0:
-            failures += 1
-            err = (r.stderr or "uncaught error").strip().splitlines()
-            print(f"FAIL {page} script[{i}] raised at runtime:")
-            for line in err[:8]:
-                print(f"    {line}")
-            continue
-        m = re.search(r"__RENDER_PROBE__(\{.*\})", r.stdout)
-        assert m, f"{page} script[{i}] ran but the probe line is missing:\n{r.stdout[-500:]}"
-        p = json.loads(m.group(1))
-        for k in ("daily_rows", "band_divs", "top_rows", "legend_chips", "v2_tiles",
-                  "creator_rows", "creator_tiles", "creator_tabs", "hourly_groups",
-                  "hourly_line", "gaps_rows", "mix_toggle"):
-            probe[k] = max(probe[k], p.get(k, 0))
-        for k in ("strip_text", "exec_text", "coupon_strip", "v2_foot", "legline",
-                  "creator_note", "gen_text", "gT_text", "patsum", "ftiles"):
-            probe[k] = probe[k] or p.get(k, "")
-        print(f"ok {page} script[{i}] executed clean "
-              f"(daily_rows={p['daily_rows']}, band_divs={p['band_divs']})")
-    if failures:
-        return failures
-    print(f"ok {page} signal: {checks(probe)}")
+
+def _banner(res, bid):
+    return res["dump"]["ids"].get(bid, {})
+
+
+def check_stale_and_fail_closed():
+    """Clock-driven stale banner + fail-closed loading banner, on the template."""
+    tpl = open(os.path.join(ROOT, "template.html")).read()
+    page = P.build_from_template(tpl)
+    data = open(os.path.join(ROOT, "data.json")).read()
+    gen = P.generated_ms(data)
+    MIN = 60000
+    runs = [
+        {"now": gen + 74 * MIN},                                        # 0 fresh
+        {"now": gen + 74 * MIN, "after": [{"advance": 2 * MIN}]},       # 1 interval re-check
+        {"now": gen + 10 * MIN, "after": [{"setNow": gen + 80 * MIN},
+                                          {"visibility": "visible"}]},  # 2 tab re-shown
+        {"now": gen + 10 * MIN, "after": [{"setNow": gen + 80 * MIN}]},  # 3 no timer, no event
+        {"now": gen, "rawData": "{\"facts\": "},                       # 4 invalid JSON
+        {"now": gen, "rawData": "null"},                                # 5 no data at all
+    ]
+    r = P.run(page, data, runs)
+    assert _banner(r[0], "staleBanner").get("hidden", True), "stale banner up at build+74 min"
+    assert not _banner(r[1], "staleBanner").get("hidden", True), \
+        "stale banner NOT raised by the 60 s re-check after build+75 min"
+    assert not _banner(r[2], "staleBanner").get("hidden", True), \
+        "stale banner NOT raised on visibilitychange after build+75 min"
+    assert _banner(r[3], "staleBanner").get("hidden", True), \
+        "stale banner changed with no timer and no event (test is not measuring the trigger)"
+    for i in (0, 1, 2):
+        assert not r[i]["uncaught"] and r[i]["renderErrors"] == [], (i, r[i]["uncaught"], r[i]["renderErrors"])
+    txt = r[1]["dump"]["ids"]["staleBanner"]["text"] or ""
+    assert "old" in txt and "stale" in txt, txt
+    # invalid inlined JSON: the script never parses -> loading banner stays
+    assert r[4]["uncaught"], "invalid JSON did not fail the script?"
+    assert not _banner(r[4], "loadBanner").get("removed"), "invalid JSON removed the loading banner"
+    # null data: every data section degrades, nothing escapes, banner stays
+    assert not r[5]["uncaught"], f"null data escaped renderSection: {r[5]['uncaught']}"
+    assert r[5]["renderErrors"], "null data rendered with zero errors?"
+    assert not _banner(r[5], "loadBanner").get("removed"), "null data removed the loading banner"
+    assert not _banner(r[5], "renderBanner").get("hidden", True), "null data did not raise the page banner"
+    # syntax error in the script -> loading banner stays
+    broken = page.replace("renderSection(\"Headline strip\"", "renderSection((\"Headline strip\"", 1)
+    assert broken != page
+    rb = P.run(broken, data, [{"now": gen}])[0]
+    assert rb["uncaught"] and not _banner(rb, "loadBanner").get("removed"), \
+        "a syntax error removed the loading banner"
+    # static: banner visible by default in markup; removal is the LAST
+    # statement of the last script and conditional on zero errors
+    st = P.parse_static(page).tree
+    lb = st.get("loadBanner")
+    assert lb and "hidden" not in lb["attrs"], "loading banner missing from markup or hidden by default"
+    last = P.scripts_of(page)[-1].strip().splitlines()[-1].strip()
+    assert re.fullmatch(r'if\(window\.__renderErrors\.length===0\)\{const lb=document\.getElementById\("loadBanner"\);if\(lb\)lb\.remove\(\);\}', last), \
+        f"last statement is not the conditional banner removal: {last!r}"
+    print("ok stale banner: hidden at +74 min, raised by the 60 s re-check and by "
+          "visibilitychange past +75 min · fail-closed: invalid JSON / syntax error / null "
+          "data keep the loading banner; removal is the last, zero-error-conditional statement")
     return 0
 
 
 def main():
-    shim = open(os.path.join(HERE, "domshim.js")).read()
+    shim = None
     want = os.path.basename(sys.argv[1]) if len(sys.argv) > 1 else None
     pages = [x for x in PAGES if want is None or x[0] == want]
     assert pages, f"no known page matches {want!r} — known: {[p[0] for p in PAGES]}"
     failures = sum(run_page(page, data_rel, checks, shim)
                    for page, data_rel, checks in pages)
+    if want in (None, "index.html") and not failures:
+        failures += check_stale_and_fail_closed()
     if failures:
         print(f"test_render_exec: FAIL ({failures} script(s) raised at runtime)")
         sys.exit(1)

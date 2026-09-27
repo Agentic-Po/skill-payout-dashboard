@@ -65,7 +65,7 @@ PUBLISH_EXTRA = [
     "*.py", "tests/*.py",
     # the render-exec gate's committed DOM shim (Cycle-3 Loop 2, item 1) —
     # listed explicitly or the stage step warns and silently never commits it
-    "tests/domshim.js",
+    "tests/domshim.js", "tests/render_harness.js",
     ".github/workflows/*.yml",
     ".gitignore", "Makefile",
     "README.md", "DATASETS.md",

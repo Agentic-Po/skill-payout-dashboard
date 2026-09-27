@@ -47,6 +47,13 @@ def phase(name):
     _PHASES[name] = _PHASES.get(name, 0.0) + (t - _ph_last)
     _ph_last = t
 
+
+def _require(cond, msg=""):
+    """An invariant that survives `python -O` (which strips assert). Raises
+    AssertionError exactly as the assert statements it replaced did."""
+    if not cond:
+        raise AssertionError(msg)
+
 # ---- --offline: rebuild pages + derived artifacts from on-disk state ----
 # (Cycle-3 Loop 3.) No crawling, no RPC, no rate/balance/PostHog fetches:
 # rows come from the committed shards, rates/balances/sink/server are reused
@@ -938,7 +945,7 @@ STATE["market_refused"] = [{"sym": s, "day": d, "why": w, "close": m,
 # so the invariant is one-directional.)
 for _s in TOKENS:
     _missing = set(STATE["day_rates"][_s]) - set(STATE["day_rate_src"].get(_s, {}))
-    assert not _missing, f"{_s}: day_rates days without a day_rate_src stamp: {sorted(_missing)[:5]}"
+    _require(not _missing, f"{_s}: day_rates days without a day_rate_src stamp: {sorted(_missing)[:5]}")
 
 # ---- pricing provenance (public summary) ----
 # Surfacing only: per-token COUNTS by source value of STATE["day_rate_src"].
@@ -967,15 +974,15 @@ for _s in TOKENS:
 # summarise is worse than no summary.
 for _s in TOKENS:
     _direct = Counter((STATE["day_rate_src"].get(_s) or {}).values())
-    assert pricing_provenance["by_token"][_s] == dict(_direct), \
-        f"{_s}: pricing_provenance drifted from day_rate_src"
-    assert sum(pricing_provenance["by_token"][_s].values()) == len(STATE["day_rate_src"].get(_s) or {}), \
-        f"{_s}: pricing_provenance count != number of stamped days"
-assert (pricing_provenance["implied"] + pricing_provenance["market"]
+    _require(pricing_provenance["by_token"][_s] == dict(_direct),
+             f"{_s}: pricing_provenance drifted from day_rate_src")
+    _require(sum(pricing_provenance["by_token"][_s].values()) == len(STATE["day_rate_src"].get(_s) or {}),
+             f"{_s}: pricing_provenance count != number of stamped days")
+_require((pricing_provenance["implied"] + pricing_provenance["market"]
         + pricing_provenance["refused"] + pricing_provenance["carry_forward"]
         + pricing_provenance["market_open"]) == sum(
-            sum(c.values()) for c in pricing_provenance["by_token"].values()), \
-    "pricing_provenance totals do not cover every day_rate_src value"
+            sum(c.values()) for c in pricing_provenance["by_token"].values()),
+         "pricing_provenance totals do not cover every day_rate_src value")
 
 def day_rate(sym, ts):
     """Return (rate, source) for a timestamp."""
@@ -1564,7 +1571,7 @@ creator_wallets = {
 # the all-time top-10 must be a strict subset of the public top_recipients
 # ranking's universe (recipient wallets), by construction — assert it
 for _t in creator_wallets["windows"]["all"]["top"]:
-    assert _t["addr"] in {r["to"].lower() for r in rows}
+    _require(_t["addr"] in {r["to"].lower() for r in rows}, "")
 
 facts = {"windows": windows, "prev24": prev24, "monthly": monthly, "daily": daily, "hourly": hourly,
          "rewards_v2": rewards_v2, "creator_wallets": creator_wallets,
@@ -1789,11 +1796,11 @@ for _cat, _v in retired_ledger.items():
         "last_seen": max((h["ts"][:10] for h in _v["entries"]), default=None)})
 for _rp in retired_public:
     _src = retired_ledger[_rp["cat"]]
-    assert _rp["n"] == len(_src["entries"]), f"retired_public {_rp['cat']}: n != len(entries)"
-    assert _rp["usd"] == round(sum(h["usd"] for h in _src["entries"]), 2), \
-        f"retired_public {_rp['cat']}: usd != sum(entries)"
-    assert set(_rp) == {"cat", "cutoff", "n", "usd", "last_seen"}, \
-        "retired_public carries a field outside the published aggregate contract"
+    _require(_rp["n"] == len(_src["entries"]), f"retired_public {_rp['cat']}: n != len(entries)")
+    _require(_rp["usd"] == round(sum(h["usd"] for h in _src["entries"]), 2),
+             f"retired_public {_rp['cat']}: usd != sum(entries)")
+    _require(set(_rp) == {"cat", "cutoff", "n", "usd", "last_seen"},
+             "retired_public carries a field outside the published aggregate contract")
 # Public aggregate for the system free top-ups — same shape class, same
 # one-codepath rule. NO per-wallet field: the one-per-wallet rule is a
 # detector; the daily mix bar's per-day b1 wallet count is the public view.
@@ -1804,11 +1811,11 @@ for _cat, _v in system_topup_ledger.items():
         "n": _v["n"], "usd": _v["usd"],
         "last_seen": max((h["ts"][:10] for h in _v["entries"]), default=None)})
 for _lp, (_cat, _src) in zip(system_topup_public, system_topup_ledger.items()):
-    assert _lp["n"] == len(_src["entries"]), f"system_topup_public {_cat}: n != len(entries)"
-    assert _lp["usd"] == round(sum(h["usd"] for h in _src["entries"]), 2), \
-        f"system_topup_public {_cat}: usd != sum(entries)"
-    assert set(_lp) == {"cat", "since", "n", "usd", "last_seen"}, \
-        "system_topup_public carries a field outside the published aggregate contract"
+    _require(_lp["n"] == len(_src["entries"]), f"system_topup_public {_cat}: n != len(entries)")
+    _require(_lp["usd"] == round(sum(h["usd"] for h in _src["entries"]), 2),
+             f"system_topup_public {_cat}: usd != sum(entries)")
+    _require(set(_lp) == {"cat", "since", "n", "usd", "last_seen"},
+             "system_topup_public carries a field outside the published aggregate contract")
 
 # permanent Stripe snapshot (verified server-side revenue reference)
 stripe_snap = None
@@ -2215,7 +2222,7 @@ for _r in registry:
 # anomaly/detector content beyond what the pattern panel already publishes
 # (verdict 12a) — and none is included at all.
 _w7 = facts["windows"][1]
-assert _w7["label"] == "7d", "facts.windows[1] is no longer the 7d window"
+_require(_w7["label"] == "7d", "facts.windows[1] is no longer the 7d window")
 _bal_pub = sum(v for v in facts["balance_usd"].values() if v)
 _g7 = _w7["groups"]
 # X2 (2026-09-15): the sentence names the groups, never a hand-typed figure —

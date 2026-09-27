@@ -338,6 +338,37 @@ def check_runway(rep, D, rows, syms, gen, live_bal):
                 unit="", warn_key="runway")
 
 
+# Sections the page cannot do without (council loop 2, 2026-09-27). A
+# HEADLINE section that is missing or empty BLOCKS the publish — the last good
+# page stays up, the stale banner (75 min) and the dead-man take over, which is
+# louder than a page quietly missing its core. A SECONDARY section only WARNs
+# (the page shows "unavailable" for it). Dry run before enabling: none of the
+# last 400 published data.json had any of these empty (0 false blocks).
+HEADLINE_SECTIONS = ("facts.windows", "facts.monthly", "facts.daily", "facts.float",
+                     "facts.balance_usd", "scope", "exec_summary")
+SECONDARY_SECTIONS = ("facts.balance_series", "sink", "infer", "facts.hourly",
+                      "facts.creator_wallets")
+
+
+def _section(D, path):
+    cur = D
+    for k in path.split("."):
+        cur = cur.get(k) if isinstance(cur, dict) else None
+    return cur
+
+
+def check_sections(rep, D):
+    for path in HEADLINE_SECTIONS:
+        rep.exact(f"headline section {path} present", True, bool(_section(D, path)))
+    for path in SECONDARY_SECTIONS:
+        if _section(D, path):
+            rep.exact_ok += 1
+        else:
+            rep.warns.append((f"section:{path}", f"sanity: secondary section {path} is empty — "
+                                                 f"the page shows it as unavailable"))
+            rep.logs.append(f"LOG secondary section {path} empty (page shows it unavailable)")
+
+
 def check_peer(rep, root):
     p = os.path.join(root, "DATASETS.md")
     if os.path.exists(p) and "degraded: peer catalog not fetched" in open(p, errors="replace").read():
@@ -419,6 +450,7 @@ def run(root=HERE, offline=False, bank=True, queue_warns=True):
     rep = Report()
     D, dr, rows, ins, syms = load_raw(root)
     gen = datetime.fromisoformat(D["scope"]["generated_iso"].rstrip("Z")[:19])
+    check_sections(rep, D)
     check_windows(rep, D, rows, ins, syms, gen)
     check_days(rep, D, rows, root, gen)
     check_prices(rep, dr, syms, gen)

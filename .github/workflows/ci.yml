@@ -46,6 +46,18 @@ jobs:
       # here even though it parses.
       - name: Render execution gate
         run: python3 tests/test_render_exec.py
+      # Loop 2 (2026-09-27): one mutated data key must degrade only the
+      # sections that read it (placeholder + page banner), never blank the page
+      - name: Render isolation gate (data mutations)
+        run: python3 tests/test_render_mutation.py
+      # template-vs-template on today's data: a page change must not move a
+      # rendered figure (checkout is shallow, so fetch main's tip first)
+      - name: Figure parity vs main
+        run: |
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          python3 tests/test_figure_parity.py origin/main
+      - name: Accessibility + contrast gate
+        run: python3 tests/test_a11y.py
       - name: Shard corruption / atomic-write gate
         run: python3 tests/test_shards.py
       - name: Closed-day digest ledger gate

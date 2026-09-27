@@ -5,29 +5,31 @@
 :root{
   --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#6f6e69;
   --line:#e6e5e0; --acc:#1a5fb0;
-  --c-mente:#7c5cd6; --c-moca:#2a78d6; --c-in:#008300; --warn:#9a5800; --warnbg:#fdf6ec;
+  --c-mente:#7c5cd6; --c-moca:#2a78d6; --c-in:#008300; --warn:#9a5800; --warnbg:#fdf6ec; --bad:#b3261e;
   --band1:#00907c; --band2:#4f8fdd; --band3:#3f3fb8; --band4:#a855d6; --band5:#8f1770; --band6:#e0447a; --band7:#a35400; --band8:#8a8984; --band9:#c6c5bf; --band10:#0b6bab; --band11:#5e5a00; --band12:#3fb39f; --band13:#7fa9e8;
 }
 @media (prefers-color-scheme: dark){:root{
   --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#9d9c96;
   --line:#2e2e2b; --acc:#3987e5;
-  --c-mente:#9b83e8; --c-moca:#3987e5; --c-in:#3fa93f; --warn:#e8a44a; --warnbg:#241c10;
+  --c-mente:#9b83e8; --c-moca:#3987e5; --c-in:#3fa93f; --warn:#e8a44a; --warnbg:#241c10; --bad:#ff7a70;
   --band1:#12a389; --band2:#3d63d6; --band3:#8f7bea; --band4:#8f3ec4; --band5:#d557b3; --band6:#c33556; --band7:#c87f26; --band8:#888782; --band9:#4e4e49; --band10:#3f9bd9; --band11:#b3ac33; --band12:#5ccbb1; --band13:#6f8fe6;
 }}
 :root[data-theme="dark"]{
   --bg:#121211; --surface:#1a1a19; --ink:#fff; --ink2:#c3c2b7; --ink3:#9d9c96;
   --line:#2e2e2b; --acc:#3987e5;
-  --c-mente:#9b83e8; --c-moca:#3987e5; --c-in:#3fa93f; --warn:#e8a44a; --warnbg:#241c10;
+  --c-mente:#9b83e8; --c-moca:#3987e5; --c-in:#3fa93f; --warn:#e8a44a; --warnbg:#241c10; --bad:#ff7a70;
   --band1:#12a389; --band2:#3d63d6; --band3:#8f7bea; --band4:#8f3ec4; --band5:#d557b3; --band6:#c33556; --band7:#c87f26; --band8:#888782; --band9:#4e4e49; --band10:#3f9bd9; --band11:#b3ac33; --band12:#5ccbb1; --band13:#6f8fe6;
 }
 :root[data-theme="light"]{
   --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#6f6e69;
   --line:#e6e5e0; --acc:#1a5fb0;
-  --c-mente:#7c5cd6; --c-moca:#2a78d6; --c-in:#008300; --warn:#9a5800; --warnbg:#fdf6ec;
+  --c-mente:#7c5cd6; --c-moca:#2a78d6; --c-in:#008300; --warn:#9a5800; --warnbg:#fdf6ec; --bad:#b3261e;
   --band1:#00907c; --band2:#4f8fdd; --band3:#3f3fb8; --band4:#a855d6; --band5:#8f1770; --band6:#e0447a; --band7:#a35400; --band8:#8a8984; --band9:#c6c5bf; --band10:#0b6bab; --band11:#5e5a00; --band12:#3fb39f; --band13:#7fa9e8;
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 a{color:var(--acc);text-decoration:none}
 a:hover{text-decoration:underline}
 a:visited{color:var(--acc)}
@@ -61,7 +63,10 @@ h1{font-size:21px;margin:0;letter-spacing:-.01em}
    visually distinct from the size-band chips so it can never be misread as a
    detector flag or a band. */
 .mkt{font-size:9px;font-weight:700;color:var(--acc);cursor:help;letter-spacing:.02em}
-.bandchip{display:inline-block;font-size:10px;font-weight:650;padding:1px 7px;border-radius:4px;color:#fff;font-variant-numeric:tabular-nums}
+/* band chips (loop 2): the band hue is a left stripe; the text is body ink on
+   the surface, so contrast is >= 4.5:1 by construction in both themes
+   (tests/test_a11y.py computes it from these tokens) */
+.bandchip{display:inline-block;font-size:10px;font-weight:650;padding:1px 7px 1px 5px;border-radius:4px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-left:7px solid var(--chip,var(--line));font-variant-numeric:tabular-nums}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;color:var(--ink3);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
 td{padding:7px 8px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
@@ -73,10 +78,16 @@ svg a{cursor:pointer}svg a:hover text{text-decoration:underline}svg a:hover rect
 .scroll thead th{position:sticky;top:0;background:var(--surface);z-index:2}
 .mrow td{background:color-mix(in srgb,var(--ink) 5%,var(--surface));font-weight:650;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2)}
 .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);color:var(--ink2)}
+button.pill{font:inherit;font-size:11px;background:transparent;cursor:pointer;line-height:1.5}
+.banners{max-width:1080px;margin:0 auto;display:flex;flex-direction:column}
+.banner{border:1.5px solid currentColor;color:var(--warn);border-radius:8px;padding:10px 14px;font-weight:650;font-size:13.5px;background:var(--surface);margin-bottom:8px}
+.banner.muted{color:var(--ink3)}
+.banners .banner:last-child{margin-bottom:14px}
+.unavail{margin:0;padding:10px 0;color:var(--ink2);font-size:13px}
 .tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--bg);font-size:12px;padding:6px 9px;border-radius:6px;opacity:0;transition:opacity .1s;z-index:9;white-space:pre-line;font-variant-numeric:tabular-nums}
 .tip table{border-collapse:collapse;font-size:12px}
 .tip td{padding:1px 6px 1px 0;border:none;color:var(--bg);font-variant-numeric:tabular-nums}
-.tip .bandchip{font-size:10px;padding:0 6px;min-width:44px;text-align:center}
+.tip .bandchip{font-size:10px;padding:0 6px;min-width:44px;text-align:center;color:var(--bg);background:var(--ink);border-color:var(--ink3)}
 .aizone{border:1.5px solid var(--warn);border-left:6px solid var(--warn);border-radius:10px;padding:14px 16px;background:var(--warnbg);display:flex;flex-direction:column;gap:14px}
 .aizone>.zhead{font-size:13px;font-weight:700;color:var(--warn);text-transform:uppercase;letter-spacing:.06em}
 .aizone>.zsub{font-size:12.5px;color:var(--ink2);margin-top:-10px}
@@ -101,7 +112,14 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
  th,td{padding:5px 5px}
 }
 </style>
-<div class="wrap">
+<div class="banners" id="banners">
+  <div class="banner" id="loadBanner" role="status">This page is still loading or failed to load — if this message stays, the figures below are not reliable.</div>
+  <div class="banner" id="renderBanner" role="alert" hidden>Part of this page could not be displayed — do not rely on it for decisions until it recovers.</div>
+  <div class="banner" id="staleBanner" role="alert" hidden></div>
+  <div class="banner" id="incompleteBanner" hidden>⚠ Data incomplete: this refresh rendered from a cached/partial chain fetch — recent transfers may be missing.</div>
+  <div class="banner muted" id="serverBanner" hidden>PostHog tier degraded this run — server-recorded figures are from cache.</div>
+</div>
+<main class="wrap">
   <header>
     <h1>Minds Treasury Wallet — On-chain Flows (MENTE + MOCA)</h1>
     <div class="sub mono"><a href="https://basescan.org/address/0xBD956171F5B50936f0Ad1C4db80c022bd2442519" target="_blank">0xBD95…2519</a> on Base · <span id="gen" title="computed in your browser from the page's build stamp">updated —</span> · <a href="transfers_export.csv" download>per-transaction CSV — last 7 days (__CSV_MB__)</a> · <a href="https://github.com/Agentic-Po/skill-payout-dashboard/tree/main/exports" target="_blank" rel="noopener">full history by month</a> · <a href="coupon.html" title="Coupon Distributor wallet — a separate wallet, out of scope for every figure on this page">Coupon claims →</a> · <a href="legacy.html" title="Original MOCA-only layout, old method — kept for continuity, sunsets after adoption">legacy view (MOCA-only, old method)</a> · <a href="https://github.com/Agentic-Po/skill-payout-dashboard/blob/main/DATASETS.md" target="_blank" title="Machine-computed data catalog — rows, sizes, coverage, provenance">data catalog</a> · <a href="https://docs.google.com/document/d/1fsbN5IG4YoZ6R23KKpe0LPjC3O2lfA1se7gpW8SuZaE/edit" target="_blank" title="Team-internal reading guide — access-controlled">team guide 🔒</a></div>
@@ -123,10 +141,10 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <div class="scroll"><table id="trendT"></table></div>
   </div>
 
-  <div class="card">
+  <div class="card" id="dailyCard">
     <h2>Daily flows</h2>
     <p class="insight" id="ins-daily"></p>
-    <p class="note">The mix bar splits each day's outflow by transfer size band (labels describe the amount only, not its purpose — hover for detail). <span id="mixToggle"></span> The current UTC day is partial and marked. Showing the latest 21 days; expand for full history since <span id="d0"></span>.</p>
+    <p class="note">The mix bar splits each day's outflow by transfer size band (labels describe the amount only, not its purpose — hover for detail). <span id="mixToggle" role="group" aria-label="Mix bar width"></span> The current UTC day is partial and marked. Showing the latest 21 days; expand for full history since <span id="d0"></span>.</p>
     <div class="legend" id="bleg"></div>
     <div class="scroll"><table id="dailyT"></table></div>
     <button class="showmore" id="moreDays">Show full history ▾</button>
@@ -147,7 +165,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <h2>Transfers per hour — last 7 days, by group</h2>
     <p class="note">Count of outgoing transfers per hour stacked by payout group (one classifier, <span class="mono">classify.group_for</span>); the thin line is distinct creator wallets paid in that hour (right axis). Hover or tap for exact counts. The final bar is the in-progress hour (dimmed).</p>
     <div class="legend" id="hourlyLegend"></div>
-    <svg id="hourly" width="100%" height="220" viewBox="0 0 1060 220"></svg>
+    <svg id="hourly" width="100%" height="220" viewBox="0 0 1060 220" role="img" aria-label="Bar chart: outgoing transfers per hour over the last seven days, stacked by payout group, with a line for creator wallets paid; exact counts on hover or tap"></svg>
   </div>
 
   <!-- ===================== UNDERSTAND ===================== -->
@@ -155,7 +173,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
   <div class="scopebox" id="scope"></div>
   <div id="bigin"></div>
 
-  <div class="card">
+  <div class="card" id="flowsCard">
     <h2>Flow summary — rolling windows &amp; calendar months</h2>
     <p class="insight" id="ins-flows"></p>
     <p class="note">USD values historical transfers at that day's token price (method in the scope box); raw token amounts are exact. Net = inflow − outflow. All inflow is our own treasury money. It splits into <b>refills</b> (deliberate transfers from Minds/Animoca treasury wallets) vs <b>returns</b> — MENTE recycled from the Cognition Collector (until the recycle leg stopped) plus the treasury reserve handing back funds it had parked. Tap a row for the split.</p>
@@ -166,7 +184,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
   <details class="card" id="creatorCard" style="display:none">
     <summary style="cursor:pointer;font-size:15px;font-weight:650;list-style:none">Top creator wallets — skill rewards <span class="pill">a small share of payouts · show</span></summary>
     <p class="note">Wallets paid an equip- or invoke-sized reward, ranked by USD in the window. <b>Per wallet, not per creator</b> — a creator may hold several wallets, so wallet counts are an upper bound on creators. Sizes are inferred on the row's own era grid; first-seen is the UTC day of the wallet's first-ever reward. No hourly figures.</p>
-    <div class="legend" id="creatorTabs" style="gap:6px"></div>
+    <div class="legend" id="creatorTabs" style="gap:6px" role="group" aria-label="Creator wallet window"></div>
     <p class="note" id="creatorNote" style="margin:0 0 8px"></p>
     <div class="tiles" id="creatorTiles"></div>
     <div class="scroll" style="margin-top:10px"><table id="creatorT"></table></div>
@@ -177,13 +195,13 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <p class="insight" id="ins-cognition"></p>
     <p class="note">On-chain demand side of the economy: MENTE flowing from mind wallets into the Cognition Credits collection wallet (<a href="https://basescan.org/address/0xd85096fAeC1aC03075667B4C1a1661F5623Bf111" target="_blank" class="mono">0xd85096…f111</a>) when minds spend credits on cognition. Treasury-originated transfers to the collector are excluded; spenders are restricted to wallets that previously received treasury payouts. USD at that day’s token price.</p>
     <div class="tiles" id="cogTiles"></div>
-    <svg id="cogSpark" width="100%" height="70" viewBox="0 0 1060 70" style="margin-top:10px"></svg>
+    <svg id="cogSpark" width="100%" height="70" viewBox="0 0 1060 70" style="margin-top:10px" role="img" aria-label="Bar chart: MENTE consumed on cognition per day"></svg>
   </div>
 
   <details class="card" id="flowCard">
     <summary style="cursor:pointer;font-size:14px;font-weight:650;list-style:none">How Cognition Credits flow — the token cycle this dashboard tracks <span class="pill" id="flowPill">show diagram</span></summary>
     <p class="insight" id="ins-diagram"></p>
-    <div class="scroll"><svg width="100%" viewBox="0 0 1080 330" style="min-width:900px">
+    <div class="scroll"><svg width="100%" viewBox="0 0 1080 330" style="min-width:900px" role="img" aria-label="Diagram: treasury refills flow into the Treasury Distribution wallet, which pays credits and top-ups to mind wallets; minds pay MENTE per request to the Cognition Collector, which sweeps a share daily to the Minds Rebate wallet; a gas funder sends ETH slivers and DEX pools auto-swap MOCA to MENTE">
       <defs>
         <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--ink3)"/></marker>
         <marker id="arrG" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--c-in)"/></marker>
@@ -237,7 +255,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
 
   <details class="card" id="registryCard">
     <summary style="cursor:pointer;font-size:15px;font-weight:650;list-style:none">Address registry — every wallet in the loop <span class="pill">full addresses · show</span></summary>
-    <p class="note">Full, untruncated addresses for every material participant. Everywhere else this page shortens addresses — tables to <span class="mono">0xd85096…f111</span>, the flow diagram and prose to <span class="mono">0xd850…f111</span>. <b>The short form is not a safe identifier</b>: the Cognition Credits collector and its address-poisoning mimic are identical in it. Anything flagged <span class="pill" style="background:var(--warn);color:#fff">ambiguous when shortened</span> must be matched in full. Click any address to copy it.</p>
+    <p class="note">Full, untruncated addresses for every material participant. Everywhere else this page shortens addresses — tables to <span class="mono">0xd85096…f111</span>, the flow diagram and prose to <span class="mono">0xd850…f111</span>. <b>The short form is not a safe identifier</b>: the Cognition Credits collector and its address-poisoning mimic are identical in it. Anything flagged <span class="pill" style="background:var(--warn);color:var(--surface)">ambiguous when shortened</span> must be matched in full. Click any address to copy it.</p>
     <div class="scroll"><table id="addrT"></table></div>
   </details>
 
@@ -257,7 +275,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
 
     <div class="tiles" id="gtiles"></div>
 
-    <details class="aiwrap">
+    <details class="aiwrap" id="classCard">
       <summary><span class="aibadge">AI-inferred</span>Payout type classification — skill rewards, credit grants, top-ups</summary>
       <div class="inner">
         <p class="method"><b>Method:</b> each transfer is classified by its USD value at that day's token price, on the reward grid of its own era (the row's timestamp decides, never the run date): until 21 Aug 2026 13:55 UTC — $0.10 invoke, $1 equip; from 14 Sep 2026 14:19 UTC — $0.05 equip, $0.005 invoke (±12%); a ≈$1 after 21 Aug is a <b>system free top-up</b> (a growth grant, not creator earnings); $3 credit, $5 referral at ±8%; Stripe packs $10/$20/$25/$50/$100 matched on the fee-adjusted value (÷0.94, ±15% — deliveries land ~6% short of the pack price after processing). One shared classifier (classify.py) produces this table, the Telegram digest and the CSV export, so the three always agree, and one grouping layer (<span class="mono">group_for</span>) buckets every row as <b>skill rewards</b> (to creator wallets) · <b>credit grants</b> · <b>system free top-ups</b> · <b>top-ups delivered</b> · <b>ops</b>. This is inference from size, not ground truth: a per-transfer memo from the payout contract (requested) would make it exact. The $3 bucket mixes new-user credits and internal top-ups — the internal top-ups sheet is the authoritative split. Pack-sized transfers are size-inferred and may include coupon-delivered credits — not verified revenue (this page does not read the Stripe ledger).</p>
@@ -269,7 +287,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
       </div>
     </details>
 
-    <details class="aiwrap">
+    <details class="aiwrap" id="patCard">
       <summary id="patSum"><span class="aibadge">AI-inferred</span>Payout pattern monitor <span class="pill">reviewed privately</span></summary>
       <div class="inner">
         <p class="method"><b>Method:</b> we look at each earner's payout timing and ask: does it look human-irregular or robotically regular? Statistical pattern checks flag transfer patterns worth review; the specific signals, their cut-offs and their results are reviewed privately, because publishing them would hand anyone gaming payouts a calibration oracle. Cut-offs are judgment calls; flags mean "worth a look", never "confirmed abuse". Automated invocation can be legitimate — the automation policy is an open decision.</p>
@@ -321,47 +339,71 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <p class="note">Known limits of this dashboard, stated once with the date each was opened — each gap names what its resolution unlocks. Not weaknesses: the roadmap from inference to verifiable fact.</p>
     <div class="scroll"><table id="gapsT"></table></div>
   </details>
-</div>
+</main>
 <div class="tip" id="tip"></div>
 <script>
 const DATA = /*__DATA__*/;
-// ---- freshness & degradation banners (council 2026-08-28): visible even
-// when the pipeline is fully dead, because this runs in the viewer's browser.
-(function(){
-  const SC=DATA.scope||{};
-  const box=document.createElement("div");
-  box.style.cssText="max-width:1080px;margin:0 auto 14px;display:flex;flex-direction:column;gap:8px";
-  function banner(txt,color){const d=document.createElement("div");
-    d.style.cssText="border:1.5px solid "+color+";color:"+color+";border-radius:8px;padding:10px 14px;font-weight:650;font-size:13.5px;background:var(--surface)";
-    d.textContent=txt;box.appendChild(d);}
-  // Safari-safe: generated_iso is "YYYY-MM-DDTHH:MM:SSZ"; fall back to the
-  // older space-separated stamp by converting it to ISO.
-  const stamp=SC.generated_iso||((SC.generated||"").replace(" ","T")+":00Z");
-  const t=Date.parse(stamp);
-  if(!isNaN(t)){
-    const ageH=(Date.now()-t)/3.6e6;
-    if(ageH>2.5) banner("⚠ Data is "+(ageH<48?Math.round(ageH)+" hours":Math.round(ageH/24)+" days")+" old — the refresh pipeline has not published since "+(SC.generated||stamp)+" UTC. Treat all figures as stale.","var(--warn)");
+// ---- render isolation (council loop 2, 2026-09-27) ----
+// Every section below runs inside renderSection(): a section that throws (or
+// renders a non-finite figure) is wiped to a plain placeholder — never left
+// half-written — its failure is recorded in window.__renderErrors, and the
+// page-level banner goes up. The static "still loading" banner in the markup
+// is removed by the LAST statement of this script, and only when every
+// section finished with zero errors: a parse error, invalid inlined JSON or
+// an uncaught throw leaves it showing (fail closed).
+window.__renderErrors=[];
+const UNAVAIL="This section is unavailable right now — the rest of the page is unaffected.";
+function raisePageBanner(){const b=document.getElementById("renderBanner");if(b)b.hidden=false;}
+// last resort: anything that escapes renderSection (a timer, a handler)
+window.onerror=function(msg){try{window.__renderErrors.push({name:"page",msg:String(msg||"script error")});raisePageBanner();}catch(e){}return false;};
+// no \b: textContent joins adjacent cells ("receiveNaNcredited")
+const BAD_TEXT=/NaN|Infinity|\[object Object\]/;
+const escHtml=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+function renderSection(name,cardId,fn){
+ try{
+  fn();
+  const c=cardId?document.getElementById(cardId):null;
+  if(c&&BAD_TEXT.test(c.textContent||""))throw new Error("non-finite figure rendered");
+  return true;
+ }catch(e){
+  window.__renderErrors.push({name:name,msg:String((e&&e.message)||e)});
+  const c=cardId?document.getElementById(cardId):null;
+  if(c){
+   // wipe the WHOLE card: no figure written before the throw survives
+   const p=`<p class="unavail" role="status">${UNAVAIL}</p>`;
+   if(c.tagName==="DETAILS"){c.innerHTML=`<summary class="unavail-sum">${escHtml(name)}</summary>`+p;c.open=true;}
+   else c.innerHTML=p;
+   c.style.display="";c.hidden=false;
   }
-  if(SC.complete===false) banner("⚠ Data incomplete: this refresh rendered from a cached/partial chain fetch — recent transfers may be missing.","var(--warn)");
-  if(DATA.server&&DATA.server.complete===false) banner("PostHog tier degraded this run — server-recorded figures are from cache.","var(--ink3)");
-  if(box.children.length)document.body.insertBefore(box,document.body.firstChild);
-})();
-const F=DATA.facts, I=DATA.infer, SC=DATA.scope, G=I.guard;
+  raisePageBanner();
+  return false;
+ }
+}
+// strict formatters: a real 0 renders; null / undefined / NaN / a string
+// throws, so a broken figure fails its section instead of printing "NaN"
+function chk(n){if(typeof n!=="number"||!isFinite(n))throw new TypeError("non-finite figure ("+(typeof n==="number"?String(n):n===null?"null":typeof n)+")");return n;}
+const num=n=>String(chk(n));
+const fmt=n=>chk(n).toLocaleString("en-US",{maximumFractionDigits:1});
+const fmt0=n=>chk(n).toLocaleString("en-US",{maximumFractionDigits:0});
+const usd=n=>"$"+chk(n).toLocaleString("en-US",{maximumFractionDigits:0});
+const usd2=n=>"$"+chk(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+// safe prelude: a missing block degrades the sections that read it, never
+// the script (a missing `infer` used to throw here and blank the page)
+const OBJ=v=>(v&&typeof v==="object")?v:{};
+const F=OBJ(DATA&&DATA.facts), I=OBJ(DATA&&DATA.infer), SC=OBJ(DATA&&DATA.scope), G=OBJ(I.guard);
 // day-pricing provenance summary; absent in an older data.json, in which case
 // every provenance marker below renders as nothing at all (render gate lesson)
 const PP=F.pricing_provenance||null;
-const fmt=n=>n.toLocaleString("en-US",{maximumFractionDigits:1});
-const fmt0=n=>n.toLocaleString("en-US",{maximumFractionDigits:0});
-const usd=n=>"$"+n.toLocaleString("en-US",{maximumFractionDigits:0});
-const usd2=n=>"$"+n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 const tip=document.getElementById("tip");
 let pinned=null;
 function showTip(e,txt,html){if(html){tip.innerHTML=txt;}else{tip.textContent=txt;}
  const w=html?300:220;
  tip.style.left=Math.min((e.clientX||60)+14,window.innerWidth-w)+"px";tip.style.top=((e.clientY||120)-10)+"px";tip.style.opacity=1;}
 function hideTip(){if(!pinned)tip.style.opacity=0;}
-function bindTips(root){root.querySelectorAll("[data-tip],[data-tiphtml]").forEach(el=>{
- el.setAttribute("tabindex","0");
+// focusable=false for rows that are not interactive (the daily table): the
+// tooltip stays on hover/tap, but the row is not a keyboard tab stop
+function bindTips(root,focusable){root.querySelectorAll("[data-tip],[data-tiphtml]").forEach(el=>{
+ if(focusable!==false)el.setAttribute("tabindex","0");
  const T=()=>el.dataset.tiphtml||el.dataset.tip, H=()=>!!el.dataset.tiphtml;
  el.addEventListener("mousemove",e=>{if(!pinned)showTip(e,T(),H())});
  el.addEventListener("mouseleave",hideTip);
@@ -370,85 +412,125 @@ function bindTips(root){root.querySelectorAll("[data-tip],[data-tiphtml]").forEa
  el.addEventListener("click",e=>{if(pinned===el){pinned=null;tip.style.opacity=0;}else{pinned=el;showTip(e,T(),H());}});
 });}
 document.addEventListener("click",e=>{if(pinned&&!pinned.contains(e.target)){pinned=null;tip.style.opacity=0;}},true);
+// Escape closes any open (hovered, focused or pinned) tooltip
+document.addEventListener("keydown",e=>{if(e.key==="Escape"||e.key==="Esc"){pinned=null;tip.style.opacity=0;}});
 // ---- A4: age, not ISO stamps. "Updated HH:MM HKT · N min ago", computed in
 // the viewer's browser from scope.generated_iso (works when the pipeline is
 // dead); refreshed every 30 s. Non-live cards get a freshness pill via fresh().
-const GEN_T=Date.parse(SC.generated_iso||((SC.generated||"").replace(" ","T")+":00Z"));
+// Safari-safe: generated_iso is "YYYY-MM-DDTHH:MM:SSZ"; fall back to the
+// older space-separated stamp by converting it to ISO. No stamp at all =>
+// "" => NaN (V8 would otherwise parse the bare ":00Z" as 1 Jan 2000).
+const STAMP=SC.generated_iso||(SC.generated?String(SC.generated).replace(" ","T")+":00Z":"");
+const GEN_T=Date.parse(STAMP);
 const hkt=iso=>{const t=Date.parse(iso);return isNaN(t)?iso:new Date(t+8*3.6e6).toISOString().slice(0,16).replace("T"," ")+" HKT";};
 function ageWords(ms){const m=Math.round(ms/6e4);if(m<1)return"just now";if(m<90)return m+" min ago";const h=Math.round(m/60);if(h<48)return h+" h ago";return Math.round(h/24)+" d ago";}
-function stampGen(){const e=document.getElementById("gen");if(isNaN(GEN_T)){e.textContent="updated "+(SC.generated||"?")+" UTC";return;}
+function stampGen(){const e=document.getElementById("gen");if(!e)return;if(isNaN(GEN_T)){e.textContent="updated "+(SC.generated||"?")+" UTC";return;}
  e.textContent="Updated "+hkt(SC.generated_iso).slice(11)+" · "+ageWords(Date.now()-GEN_T);e.title=(SC.generated||"")+" UTC";}
-stampGen();try{const _iv=setInterval(stampGen,30000);if(_iv&&typeof _iv.unref==="function")_iv.unref();}catch(e){}
-function fresh(dateIso,label){const t=Date.parse(dateIso);if(isNaN(t))return"";const d=Math.round((GEN_T-t)/864e5);
- const col=d>30?"#d33":(d>7?"var(--warn)":"var(--ink3)");
+// ---- freshness & degradation banners (council 2026-08-28; loop 2: 75 min,
+// re-checked every 60 s and whenever the tab becomes visible again): visible
+// even when the pipeline is fully dead, because this runs in the viewer's
+// browser. The banner elements are static markup (hidden until needed).
+const STALE_MIN=75;
+function checkStale(){
+ const el=document.getElementById("staleBanner");if(!el)return;
+ const stamp=STAMP, t=GEN_T;
+ // no readable build stamp: freshness is unknown, which is not "fresh"
+ if(isNaN(t)){el.textContent="⚠ This page carries no readable build time — its freshness cannot be checked. Treat all figures as stale.";el.hidden=false;return;}
+ const ageM=(Date.now()-t)/6e4;
+ if(!(ageM>STALE_MIN)){el.hidden=true;return;}
+ const ageH=ageM/60;
+ el.textContent="⚠ Data is "+(ageH<2?Math.round(ageM)+" minutes":ageH<48?Math.round(ageH)+" hours":Math.round(ageH/24)+" days")+" old — the refresh pipeline has not published since "+(SC.generated||stamp)+" UTC. Treat all figures as stale.";
+ el.hidden=false;
+}
+renderSection("Freshness banners",null,()=>{
+ checkStale();
+ if(SC.complete===false)document.getElementById("incompleteBanner").hidden=false;
+ if(DATA.server&&DATA.server.complete===false)document.getElementById("serverBanner").hidden=false;
+});
+renderSection("Header age",null,stampGen);
+try{
+ const _iv=setInterval(stampGen,30000);if(_iv&&typeof _iv.unref==="function")_iv.unref();
+ const _sv=setInterval(checkStale,60000);if(_sv&&typeof _sv.unref==="function")_sv.unref();
+ document.addEventListener("visibilitychange",()=>{if(!document.hidden){checkStale();stampGen();}});
+}catch(e){}
+function fresh(dateIso,label){const t=Date.parse(dateIso);if(isNaN(t)||isNaN(GEN_T))return"";const d=Math.round((GEN_T-t)/864e5);
+ const col=d>30?"var(--bad)":(d>7?"var(--warn)":"var(--ink3)");
  return `<span class="pill" style="border-color:${col};color:${col}">${label} · ${d}d old</span>`;}
+// C11 helpers (open items, gaps, server line): age vs the page's build stamp
+const ageDays=d=>{const t=Date.parse(d+"T00:00:00Z");return isNaN(t)||isNaN(GEN_T)?null:Math.floor((GEN_T-t)/864e5);};
+const oldChip=d=>{const a=ageDays(d);return a!=null&&a>60?` <span class="pill" style="border-color:var(--warn);color:var(--warn)" title="opened ${d}">open ${a} d</span>`:"";};
 // executive summary — server-computed in refresh.py from the SAME facts the
 // page renders (parity held to the cent by tests/test_parity.py); the
 // degraded "Data is N hours old" prefix is decided upstream too. Injected as
 // text only — this script must never recompute the figures. Absent in an
 // older data.json => the card simply stays hidden (render-gate lesson).
+renderSection("Executive summary","execSummary",()=>{
 if(DATA.exec_summary&&DATA.exec_summary.text){
  const ex=document.getElementById("execSummary");
  ex.textContent=DATA.exec_summary.text;
  ex.style.display="";
-}
+}});
 // group vocabulary (classify.GROUP_LABEL) — one place, never retyped
-const GK=F.group_keys||["skill_rewards","credit_grants","system_topups","topups_delivered","ops","micro"];
-const GL=F.group_labels||{};
+const GK=Array.isArray(F.group_keys)?F.group_keys:["skill_rewards","credit_grants","system_topups","topups_delivered","ops","micro"];
+const GL=OBJ(F.group_labels);
 const GCOL={skill_rewards:"var(--band1)",credit_grants:"var(--band3)",system_topups:"var(--band4)",topups_delivered:"var(--band5)",ops:"var(--band8)",micro:"var(--band9)"};
 const GSHORT={skill_rewards:"rewards",credit_grants:"credits",system_topups:"system top-ups",topups_delivered:"top-ups",ops:"ops",micro:"dust"};
 const FL=F.float||null;
 // plain-English summary strip — outflow-first (the outflow IS the ecosystem's activity)
-{const wA=F.windows[3];
+renderSection("Headline strip","plainStrip",()=>{const wA=F.windows[3];
  const openN=(DATA.open_items||[]).length;
  const u0=usd;
  const floatD=FL&&FL.days_7d_pace;
  document.getElementById("plainStrip").innerHTML=
   `<b>Since ${F.range.from}:</b> this wallet sent out <b>${u0(wA.out_usd)}</b> — <b>${u0(wA.economy_out_usd??wA.out_usd)}</b> in payouts to users and creators${wA.ops_out_usd?` and ${u0(wA.ops_out_usd)} in treasury swaps/ops moves`:""} — and was refilled with <b>${u0(wA.in_external_usd||0)}</b> of treasury refills${wA.in_recycled_usd?` plus ${u0(wA.in_recycled_usd)} of returns (collector recycling and reserve)`:""} — all our own treasury money. <a href="#registerCard" class="pill" style="border-color:var(--acc);color:var(--acc);font-weight:600">${openN} open item${openN===1?"":"s"} ↓</a>`
   +`<div class="sub" style="margin-top:6px">Changed 2026-09-27: inflow once labelled “usage fees recycling back” is now split into collector recycling${wA.in_collector_usd!=null?` (${u0(wA.in_collector_usd)})`:""} and reserve returns of treasury funds${wA.in_reserve_usd!=null?` (${u0(wA.in_reserve_usd)})`:""}; totals unchanged.</div>`;
-}
+});
 // scope + reconciliation
+renderSection("Scope","scope",()=>{
 const rec=Object.entries(F.recon).map(([s,r])=>{if(!r)return`${s} n/a`;
  const drift=r.drift!==null&&r.drift!==undefined?` · drift ${r.drift>0?"+":""}${fmt(r.drift)}`:"";
  const t=`${s} Δ ${fmt(r.delta)}${drift} (live ${fmt0(r.balance)} vs cached net ${fmt0(r.net_cached)})`;
  return r.warn?`<b style="color:var(--warn)">⚠ ${t} — delta moved since last run, possible missed transfers</b>`:t;}).join(" · ")+(SC.complete?"":" · <b style='color:var(--warn)'>⚠ computed from stale cache (incomplete fetch)</b>");
 document.getElementById("scope").innerHTML=
- `<span><b>Scope:</b> one wallet · MENTE + MOCA only (${SC.excluded_in_tx} inbound transfers of other tokens excluded)</span>`+
+ `<span><b>Scope:</b> one wallet · MENTE + MOCA only (${num(SC.excluded_in_tx)} inbound transfers of other tokens excluded)</span>`+
  `<span><b>Data range:</b> ${F.range.from} → ${F.range.to} UTC${SC.complete?"":" · <b style='color:var(--warn)'>⚠ fetch incomplete this run</b>"}</span>`+
- `<span><b>Rates:</b> MENTE $${F.rate.MENTE.toFixed(6)} (${F.rate_src.MENTE}) · MOCA $${F.rate.MOCA.toFixed(6)} (${F.rate_src.MOCA})`
-  +(PP?` · <b>day pricing:</b> ${PP.implied} days implied (history, before 14 Sep 2026) · ${PP.market} market-filled · ${PP.refused} refused (out-of-band market closes, carried forward instead)${PP.carry_forward!=null?` · ${PP.carry_forward} carry-forward`:""}${PP.market_open?` · open day: market-open`:""} — market fills carry a <sup class="mkt">m</sup> below; per-day provenance in day_rates.json. Restating history on this basis moved the lifetime total by +$${PP.restatement_usd.toLocaleString()} (${PP.restatement_date}).`:"")
+ `<span><b>Rates:</b> MENTE $${chk(F.rate.MENTE).toFixed(6)} (${F.rate_src.MENTE}) · MOCA $${chk(F.rate.MOCA).toFixed(6)} (${F.rate_src.MOCA})`
+  +(PP?` · <b>day pricing:</b> ${PP.implied} days implied (history, before 14 Sep 2026) · ${PP.market} market-filled · ${PP.refused} refused (out-of-band market closes, carried forward instead)${PP.carry_forward!=null?` · ${PP.carry_forward} carry-forward`:""}${PP.market_open?` · open day: market-open`:""} — market fills carry a <sup class="mkt">m</sup> below; per-day provenance in day_rates.json. Restating history on this basis moved the lifetime total by +$${chk(PP.restatement_usd).toLocaleString()} (${PP.restatement_date}).`:"")
   +`</span>`+
  `<span><b>Independent check:</b> ${SC.cross_check?SC.cross_check.text:"Cross-checked weekly, row-exact, against an independent second crawler"} (public <a href="${SC.cross_check?SC.cross_check.repo:"https://github.com/Agentic-Po/moca-ledger"}" target="_blank">moca-ledger</a> repo)</span>`+
  (F.market_check&&Object.keys(F.market_check).length?`<span><b>Rate validation:</b> ${Object.entries(F.market_check).map(([k,v])=>`${k} ${v.within15}/${v.n} typically within ${v.median_dev??"?"}% of market price (${v.within15}/${v.n} days inside the 15% gate; worst day ${v.max_dev}%)`).join(" · ")} — each day priced at its own day's rate, cross-checked against the right trading pool for that period</span>`:"")+
  `<span><b>Balance reconciliation:</b> ${rec} — cache covers the wallet's full lifetime; balance valued at the newest cached block. The MENTE Δ (<b>≈$1,250 over the wallet's lifetime</b> — 88K tokens, ~1.2%) is an automatic burn by the token contract itself — expected platform behavior being confirmed with the team, <b>not missing funds</b>. (Technical: transfer logs verify exact vs raw chain, 36,715 = 36,715; the delta accrues in blocks with zero token events — the contract changes balances without emitting them.) Movement beyond this pattern flags in amber here</span>`+
- `<span><b>Note:</b> ${SC.note}</span>`;
+ `<span><b>Note:</b> ${SC.note!=null?SC.note:"—"}</span>`;
+});
 // large-inflow flag: any single transfer >= $10k. C10: collapsed unless one
 // landed in the last 7 days (then open, amber, 🔔).
+renderSection("Large inflows","bigin",()=>{
 const bigIn=F.large_inflows||[];
 if(bigIn.length){
  const fresh7=bigIn.some(l=>(GEN_T-Date.parse(l.ts+":00Z"))<7*864e5);
- const rows=bigIn.slice(0,5).map(l=>`<tr><td class="mono">${l.ts.replace("T"," ")}</td><td class="r mono">${l.val.toLocaleString()} ${l.tok}</td><td class="r mono"><b>$${l.usd.toLocaleString()}</b></td><td class="mono"><a href="https://basescan.org/tx/${l.tx}" target="_blank">${l.addr.slice(0,8)}…${l.addr.slice(-4)}</a>${l.label?` <span class="pill">${l.label}</span>`:` <span class="pill" style="opacity:.5">unlabeled</span>`}</td></tr>`).join("");
+ const rows=bigIn.slice(0,5).map(l=>`<tr><td class="mono">${l.ts.replace("T"," ")}</td><td class="r mono">${chk(l.val).toLocaleString()} ${l.tok}</td><td class="r mono"><b>$${chk(l.usd).toLocaleString()}</b></td><td class="mono"><a href="https://basescan.org/tx/${l.tx}" target="_blank">${l.addr.slice(0,8)}…${l.addr.slice(-4)}</a>${l.label?` <span class="pill">${l.label}</span>`:` <span class="pill" style="opacity:.5">unlabeled</span>`}</td></tr>`).join("");
  const notes=[...new Set(bigIn.slice(0,5).filter(l=>l.note).map(l=>`<b>${l.label}:</b> ${l.note}`))].join("<br>");
  document.getElementById("bigin").innerHTML=
   `<details class="card" ${fresh7?"open":""} style="${fresh7?"border:1.5px solid var(--warn);border-left:6px solid var(--warn);background:var(--warnbg)":""}">
    <summary style="cursor:pointer;font-size:14px;font-weight:650;list-style:none">${fresh7?"🔔 ":""}Large inflows — single transfers ≥ $10,000 <span class="pill">${bigIn.length} on record · last ${bigIn[0].ts.slice(0,10)}</span>${fresh7?` <span style="font-size:12px;color:var(--warn);font-weight:700">NEW WITHIN 7 DAYS</span>`:""}</summary>
-   <div class="scroll" style="margin-top:8px"><table><thead><tr><th>When (UTC)</th><th class="r">Amount</th><th class="r">USD</th><th>Sender (tx link)</th></tr></thead><tbody>${rows}</tbody></table></div>
+   <div class="scroll" style="margin-top:8px"><table><thead><tr><th scope="col">When (UTC)</th><th scope="col" class="r">Amount</th><th scope="col" class="r">USD</th><th scope="col">Sender (tx link)</th></tr></thead><tbody>${rows}</tbody></table></div>
    ${notes?`<p class="note" style="margin-top:8px">${notes}</p>`:""}
   </details>`;
-}
+}});
 // fact tiles with deltas vs prev 24h. Outflow subtitle = group sums (A2):
 // they close on the tile total to the cent (test_parity).
+renderSection("Headline tiles","ftiles",()=>{
 const w24=F.windows[0], wall=F.windows[3], p24=F.prev24;
 const balUsd=(F.balance_usd.MENTE||0)+(F.balance_usd.MOCA||0);
 function delta(cur,prev){if(!prev)return"";const d=(cur-prev)/prev*100;const cls=d>0?"delta-up":"delta-dn";return ` <span class="${cls}">${d>0?"+":""}${d.toFixed(0)}% vs prev 24h</span>`;}
 const gsub=w=>w.groups?GK.filter(g=>w.groups[g]&&w.groups[g].usd).map(g=>`${GSHORT[g]} ${usd(w.groups[g].usd)}`).join(" · "):`${w.out_tx} tx · ${w.out_wallets} wallets`;
-const floatV=FL&&FL.days_7d_pace?`<span style="${FL.days_7d_pace<5?"color:#d33;font-weight:800":(FL.days_7d_pace<14?"color:var(--warn)":"")}">~${FL.days_7d_pace} days</span>`:"n/a";
+const floatV=FL&&FL.days_7d_pace?`<span style="${FL.days_7d_pace<5?"color:var(--bad);font-weight:800":(FL.days_7d_pace<14?"color:var(--warn)":"")}">~${FL.days_7d_pace} days</span>`:"n/a";
 const ftiles=[
  ["Wallet balance", usd(balUsd), fmt0(F.balance.MENTE||0)+" MENTE · "+fmt0(F.balance.MOCA||0)+" MOCA"],
  ["Outflow — 24h", usd(w24.out_usd), gsub(w24)+delta(w24.out_usd,p24.out_usd)],
  ["Inflow — 24h", usd(w24.in_usd), w24.in_tx+" transfer"+(w24.in_tx===1?"":"s")+" · "+w24.in_sources+" source"+(w24.in_sources===1?"":"s")],
  ["Distribution float", floatV, FL?`balance ÷ 7-day pace of total outflow (${usd(FL.out_7d_avg_usd)}/day)${FL.days_24h_pace?` · ${FL.days_24h_pace} d at yesterday's pace`:""}${FL.driver_24h?` · driver: ${FL.driver_24h.label.toLowerCase()} ${FL.driver_24h.share_pct}% of 24h`:""} — a refill schedule, not solvency`:"total-outflow basis"],
- ["Outflow — all history", usd(wall.out_usd), wall.out_tx.toLocaleString()+" tx since "+F.range.from+(wall.economy_out_usd!=null?` · payouts ${usd(wall.economy_out_usd)} + swaps/ops ${usd(wall.ops_out_usd)}`:"")],
+ ["Outflow — all history", usd(wall.out_usd), chk(wall.out_tx).toLocaleString()+" tx since "+F.range.from+(wall.economy_out_usd!=null?` · payouts ${usd(wall.economy_out_usd)} + swaps/ops ${usd(wall.ops_out_usd)}`:"")],
  ["Recipient wallets", fmt0(F.wallets_all), fmt0(F.wallets_repeat)+" received on 2+ days"],
 ];
 // the sweep figures below are the sink card's own (same fields, same math) —
@@ -469,11 +551,12 @@ const MEAN={"Wallet balance":"What this wallet holds right now, at today's token
  "Recipient wallets":"Distinct wallets that have ever received a transfer from this one."};
 const meanOf=k=>MEAN[k]||(k.startsWith("Collector sweep")?`Share of the MENTE the collector receives that it sweeps on to the Rebate wallet, against the ${(DATA.sink&&DATA.sink.contract&&DATA.sink.contract.rate)||40}% target.`:"");
 document.getElementById("ftiles").innerHTML=ftiles.map(t=>`<div class="tile" style="${SC.complete?"":"border-color:var(--warn)"}"><div class="k">${t[0]}</div><div class="v">${t[1]}</div>${meanOf(t[0])?`<div class="d" style="color:var(--ink);margin-bottom:3px">${meanOf(t[0])}</div>`:""}<div class="d">${t[2]}</div>${stale}</div>`).join("");
+});
 
 // month-by-month trend (loop 1, 2026-09-27): facts.monthly only — no new
 // figure. Payouts and swaps/ops are separate columns so August's swaps do
 // not read as spend; the biggest item is the largest NON-ops group.
-{const M=(F.monthly||[]).slice().reverse();
+renderSection("Month by month","trendCard",()=>{const M=(F.monthly||[]).slice().reverse();
  if(M.length){
   const big=m=>{const g=GK.filter(k=>k!=="ops"&&m.groups&&m.groups[k]&&m.groups[k].usd>0).sort((a,b)=>m.groups[b].usd-m.groups[a].usd)[0];
     if(!g)return"—";const eco=m.economy_out_usd||0;const pct=eco?Math.round(m.groups[g].usd/eco*100):null;
@@ -490,12 +573,14 @@ document.getElementById("ftiles").innerHTML=ftiles.map(t=>`<div class="tile" sty
   // skill rewards: v1 grid ±8% until 2026-08-21, v2 grid ±12% from 2026-09-14 (classify.ERAS)
   const bandOf=(g,ym)=>g==="skill_rewards"?(ym>="2026-09"?"±12%":"±8%"):({credit_grants:"±8%",system_topups:"±8%",topups_delivered:"±15%"}[g]||"");
   document.getElementById("trendT").innerHTML=
-   `<thead><tr><th>Month (UTC)</th><th class="r">Sent to users &amp; creators<br><span class="sub">excl. swaps · incl. Stripe packs</span></th><th class="r">Swaps &amp; ops out</th><th class="r">Refills in</th><th class="r">Returns in</th><th>Biggest item</th></tr></thead><tbody>`
+   `<thead><tr><th scope="col">Month (UTC)</th><th scope="col" class="r">Sent to users &amp; creators<br><span class="sub">excl. swaps · incl. Stripe packs</span></th><th scope="col" class="r">Swaps &amp; ops out</th><th scope="col" class="r">Refills in</th><th scope="col" class="r">Returns in</th><th scope="col">Biggest item</th></tr></thead><tbody>`
    +M.map(m=>`<tr><td class="mono">${lab(m)}</td><td class="r mono"><b>${usd(m.economy_out_usd??m.out_usd)}</b></td><td class="r mono">${usd(m.ops_out_usd||0)}</td><td class="r mono">${usd(m.in_external_usd||0)}</td><td class="r mono">${usd(m.in_recycled_usd||0)}</td><td>${big(m)}</td></tr>`).join("")+`</tbody>`;
   document.getElementById("trendCard").style.display="";
- }}// ---- A1: Top creator wallets — four windows, "since 14 Sep" default. Every
+ }});
+// ---- A1: Top creator wallets — four windows, "since 14 Sep" default. Every
 // figure is facts.creator_wallets (computed server-side from the classified
 // rows; the page only renders). Labels say creator WALLETS, never creators.
+renderSection("Top creator wallets","creatorCard",()=>{
 const CW=F.creator_wallets||null;
 if(CW&&CW.windows){
  const card=document.getElementById("creatorCard"); card.style.display="";
@@ -511,7 +596,7 @@ if(CW&&CW.windows){
  const link=a=>`<a href="https://debank.com/profile/${a}/history?chain=base&token=" target="_blank" rel="noopener" class="mono">${short(a)}</a>`;
  function render(){
   const w=CW.windows[cur];
-  document.getElementById("creatorTabs").innerHTML=TABS.map(([k,l])=>`<span class="pill" data-tab="${k}" style="cursor:pointer;${k===cur?"background:var(--acc);color:#fff;border-color:var(--acc)":""}">${l}</span>`).join("");
+  document.getElementById("creatorTabs").innerHTML=TABS.map(([k,l])=>`<button type="button" class="pill" data-tab="${k}" aria-pressed="${k===cur}" style="${k===cur?"background:var(--acc);color:var(--surface);border-color:var(--acc)":""}">${l}</button>`).join("");
   document.getElementById("creatorNote").innerHTML=NOTE[cur]||"";
   const pct=v=>v==null?"—":v+"%";
   const tiles=[
@@ -522,30 +607,36 @@ if(CW&&CW.windows){
   if(w.median_usd!=null) tiles.push(["Median per wallet", usd2(w.median_usd), "hidden when fewer than 10 wallets"]);
   if(w.new_wallets!=null) tiles.push(["New creator wallets", fmt0(w.new_wallets), "first-ever reward inside the window"]);
   document.getElementById("creatorTiles").innerHTML=tiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
-  document.getElementById("creatorT").innerHTML=`<thead><tr><th>#</th><th>Creator wallet</th><th class="r">Rewards USD</th><th class="r">Equips</th><th class="r">Invokes</th><th class="r">First seen (UTC day)</th></tr></thead><tbody>`+
+  document.getElementById("creatorT").innerHTML=`<thead><tr><th scope="col">#</th><th scope="col">Creator wallet</th><th scope="col" class="r">Rewards USD</th><th scope="col" class="r">Equips</th><th scope="col" class="r">Invokes</th><th scope="col" class="r">First seen (UTC day)</th></tr></thead><tbody>`+
    (w.top||[]).map((c,i)=>`<tr><td class="mono">${i+1}</td><td>${link(c.addr)}</td><td class="r mono">${usd2(c.usd)}</td><td class="r mono">${fmt0(c.equips)}</td><td class="r mono">${fmt0(c.invokes)}</td><td class="r mono">${c.first_seen||"—"}</td></tr>`).join("")
    +(w.top&&w.top.length?"":`<tr><td colspan="6" style="color:var(--ink2)">no skill rewards in this window</td></tr>`)+`</tbody>`;
  }
  render();
- document.getElementById("creatorTabs").addEventListener("click",e=>{const t=e.target&&e.target.dataset&&e.target.dataset.tab;if(!t||!CW.windows[t])return;cur=t;try{localStorage.setItem("cwTab",t);}catch(x){}render();});
-}
+ document.getElementById("creatorTabs").addEventListener("click",e=>{const b=e.target&&e.target.closest?e.target.closest("[data-tab]"):e.target;const t=b&&b.dataset&&b.dataset.tab;if(!t||!CW.windows[t])return;cur=t;try{localStorage.setItem("cwTab",t);}catch(x){}
+  // a tab click re-renders in place; a failure here wipes the card like a load failure
+  renderSection("Top creator wallets","creatorCard",render);});
+}});
 // window + month tables (compact: USD out/in/net; per-token split via tooltip)
 function flowRows(ws){return ws.map(w=>{
- const grp=w.groups?"\n"+GK.filter(g=>w.groups[g]&&w.groups[g].n).map(g=>`${GL[g]||g}: $${w.groups[g].usd.toLocaleString()} (${w.groups[g].n} tx)`).join(" · "):"";
- const split=`MENTE $${w.out_usd_tok.MENTE.toLocaleString()} / MOCA $${w.out_usd_tok.MOCA.toLocaleString()}${grp}\nin: $${(w.in_external_usd??0).toLocaleString()} refills + $${(w.in_recycled_usd??0).toLocaleString()} returns ($${(w.in_collector_usd??0).toLocaleString()} collector recycling · $${(w.in_reserve_usd??0).toLocaleString()} reserve returns)\nraw out: ${fmt(w.out_raw.MENTE)} MENTE · ${fmt(w.out_raw.MOCA)} MOCA\nraw in: ${fmt(w.in_raw.MENTE)} MENTE · ${fmt(w.in_raw.MOCA)} MOCA`;
- return `<tr data-tip="${split.replace(/"/g,"&quot;")}"><td>${w.label}</td><td class="r mono">$${w.out_usd.toLocaleString()}</td><td class="r mono" style="color:var(--c-in)">$${(w.in_recycled_usd||0).toLocaleString()}</td><td class="r mono">$${(w.in_external_usd||0).toLocaleString()}</td><td class="r mono">${w.out_tx.toLocaleString()}</td><td class="r mono">${w.out_wallets.toLocaleString()}</td></tr>`;}).join("");}
-const flowHead=`<thead><tr><th>Period</th><th class="r">Out USD</th><th class="r">In: returns</th><th class="r">In: refills</th><th class="r">Out tx</th><th class="r">Recipients</th></tr></thead>`;
+ const grp=w.groups?"\n"+GK.filter(g=>w.groups[g]&&w.groups[g].n).map(g=>`${GL[g]||g}: $${chk(w.groups[g].usd).toLocaleString()} (${w.groups[g].n} tx)`).join(" · "):"";
+ const split=`MENTE $${chk(w.out_usd_tok.MENTE).toLocaleString()} / MOCA $${chk(w.out_usd_tok.MOCA).toLocaleString()}${grp}\nin: $${chk(w.in_external_usd??0).toLocaleString()} refills + $${chk(w.in_recycled_usd??0).toLocaleString()} returns ($${chk(w.in_collector_usd??0).toLocaleString()} collector recycling · $${chk(w.in_reserve_usd??0).toLocaleString()} reserve returns)\nraw out: ${fmt(w.out_raw.MENTE)} MENTE · ${fmt(w.out_raw.MOCA)} MOCA\nraw in: ${fmt(w.in_raw.MENTE)} MENTE · ${fmt(w.in_raw.MOCA)} MOCA`;
+ return `<tr data-tip="${split.replace(/"/g,"&quot;")}"><td>${w.label}</td><td class="r mono">$${chk(w.out_usd).toLocaleString()}</td><td class="r mono" style="color:var(--c-in)">$${chk(w.in_recycled_usd||0).toLocaleString()}</td><td class="r mono">$${chk(w.in_external_usd||0).toLocaleString()}</td><td class="r mono">${chk(w.out_tx).toLocaleString()}</td><td class="r mono">${chk(w.out_wallets).toLocaleString()}</td></tr>`;}).join("");}
+const flowHead=`<thead><tr><th scope="col">Period</th><th scope="col" class="r">Out USD</th><th scope="col" class="r">In: returns</th><th scope="col" class="r">In: refills</th><th scope="col" class="r">Out tx</th><th scope="col" class="r">Recipients</th></tr></thead>`;
+renderSection("Flow summary","flowsCard",()=>{
 document.getElementById("winT").innerHTML=flowHead+`<tbody>`+flowRows(F.windows)+`</tbody>`;
 document.getElementById("monT").innerHTML=flowHead+`<tbody>`+flowRows(F.monthly)+`</tbody>`;
 bindTips(document.getElementById("winT"));bindTips(document.getElementById("monT"));
+});
 // daily table — compact with band mix bar + tooltip. X3: the bar is USD-width
 // by default; the count/USD toggle re-widths it by transfer COUNT so a reward
 // spike (many tiny rows) stays visible next to $3 credits. Legend unchanged.
+renderSection("Daily flows","dailyCard",()=>{
 const BK=F.band_keys;
 // b0005/b005 (Creator Rewards v2 sizes, from 14 Sep 2026) sit next to b010/b1
 // in hue so "reward-sized" reads as one family; b010/b1 stay forever (history).
 const BC={micro:"var(--band9)",b0005:"var(--band12)",b005:"var(--band13)",b010:"var(--band1)",b1:"var(--band2)",b3:"var(--band3)",b5:"var(--band4)",b10:"var(--band5)",b20:"var(--band10)",b25:"var(--band6)",b50:"var(--band7)",b100:"var(--band11)",other:"var(--band8)"};
-document.getElementById("bleg").innerHTML=BK.map(k=>`<span class="bandchip" style="background:${BC[k]}${(k==="micro"||k==="other")?";color:var(--ink)":""}">${F.band_labels[k]}</span>`).join(" ");
+// chips: the band hue is the left stripe, the text is body ink (contrast by construction)
+document.getElementById("bleg").innerHTML=BK.map(k=>`<span class="bandchip" style="--chip:${BC[k]}">${F.band_labels[k]}</span>`).join(" ");
 document.getElementById("d0").textContent=F.range.from;
 let mixMode="usd";
 try{if(localStorage.getItem("mixMode")==="n")mixMode="n";}catch(e){}
@@ -554,22 +645,29 @@ const val=(d,k)=>((d.bands[k]||{})[mixMode]||0);
 const dmax=Math.max(...list.map(d=>mixMode==="usd"?d.out_usd:d.out_tx),1);
 return list.map(d=>{
  const bar=BK.map(k=>{const v=val(d,k);return v?`<div style="height:10px;background:${BC[k]};width:${v/dmax*100}%;border-right:1px solid var(--surface)"></div>`:"";}).join("");
- const tipRows=BK.filter(k=>d.bands[k]).map(k=>`<tr><td><span class="bandchip" style="background:${BC[k]}${(k==="micro"||k==="other")?";color:#111":""}">${F.band_labels[k]}</span></td><td style="text-align:right">${d.bands[k].n} tx</td><td style="text-align:right"><b>$${d.bands[k].usd.toFixed(0)}</b></td><td style="text-align:right">${d.bands[k].w} wallets</td></tr>`).join("");
-  const tipTxt=`<b>${d.d}</b> — $${d.out_usd.toFixed(0)} out · ${d.out_tx} tx<table>${tipRows||"<tr><td>no outflow</td></tr>"}</table>`;
- return `<tr data-tiphtml="${tipTxt.replace(/"/g,"&quot;")}" style="${d.partial?"opacity:.75":""}"><td class="mono">${d.d}${d.mkt?`<sup class="mkt" title="priced from that day's market close: ${Object.keys(d.mkt).join(", ")}">•m</sup>`:""}${d.partial?' <span class="pill">partial day</span>':""}</td><td class="r mono">$${d.out_usd.toFixed(2)}</td><td style="width:26%;min-width:130px"><div style="display:flex;border-radius:3px;overflow:hidden">${bar}</div></td><td class="r mono">${d.out_tx}</td><td class="r mono">${d.wallets}</td><td class="r mono" style="color:${d.in_usd?"var(--c-in)":"var(--ink3)"}">${d.in_usd?"$"+d.in_usd.toFixed(0):"—"}</td></tr>`;});}
-const dHead=`<thead><tr><th>Day (UTC)</th><th class="r">Out USD</th><th>Size-band mix</th><th class="r">Tx</th><th class="r">Wallets</th><th class="r">In USD</th></tr></thead>`;
+ const tipRows=BK.filter(k=>d.bands[k]).map(k=>`<tr><td><span class="bandchip" style="--chip:${BC[k]}">${F.band_labels[k]}</span></td><td style="text-align:right">${d.bands[k].n} tx</td><td style="text-align:right"><b>$${chk(d.bands[k].usd).toFixed(0)}</b></td><td style="text-align:right">${d.bands[k].w} wallets</td></tr>`).join("");
+  const tipTxt=`<b>${d.d}</b> — $${chk(d.out_usd).toFixed(0)} out · ${d.out_tx} tx<table>${tipRows||"<tr><td>no outflow</td></tr>"}</table>`;
+ return `<tr data-tiphtml="${tipTxt.replace(/"/g,"&quot;")}" style="${d.partial?"opacity:.75":""}"><td class="mono">${d.d}${d.mkt?`<sup class="mkt" title="priced from that day's market close: ${Object.keys(d.mkt).join(", ")}">•m</sup>`:""}${d.partial?' <span class="pill">partial day</span>':""}</td><td class="r mono">$${chk(d.out_usd).toFixed(2)}</td><td style="width:26%;min-width:130px"><div style="display:flex;border-radius:3px;overflow:hidden">${bar}</div></td><td class="r mono">${d.out_tx}</td><td class="r mono">${d.wallets}</td><td class="r mono" style="color:${d.in_usd?"var(--c-in)":"var(--ink3)"}">${d.in_usd?"$"+chk(d.in_usd).toFixed(0):"—"}</td></tr>`;});}
+const dHead=`<thead><tr><th scope="col">Day (UTC)</th><th scope="col" class="r">Out USD</th><th scope="col">Size-band mix</th><th scope="col" class="r">Tx</th><th scope="col" class="r">Wallets</th><th scope="col" class="r">In USD</th></tr></thead>`;
 const dailyT=document.getElementById("dailyT");
 const revDaily=F.daily.slice().reverse();
 function withMonthSeps(list,html){const out=[];let cur=null;
  list.forEach((d,i)=>{const m=d.d.slice(0,7);if(cur!==null&&m!==cur)out.push(`<tr class="mrow"><td colspan="6">${m}</td></tr>`);else if(i===0)out.push(`<tr class="mrow"><td colspan="6">${m}</td></tr>`);cur=m;out.push(html[i]);});
  return out.join("");}
 let allDays=false;
-function renderDaily(all){const list=all?revDaily:revDaily.slice(0,21);dailyT.innerHTML=dHead+`<tbody>`+withMonthSeps(list,buildRows(list))+`</tbody>`;bindTips(dailyT);}
-function renderMixToggle(){document.getElementById("mixToggle").innerHTML=`Bar width by <span class="pill" data-mix="usd" style="cursor:pointer;${mixMode==="usd"?"background:var(--acc);color:#fff;border-color:var(--acc)":""}">USD</span> <span class="pill" data-mix="n" style="cursor:pointer;${mixMode==="n"?"background:var(--acc);color:#fff;border-color:var(--acc)":""}">count</span>.`;}
+// daily rows carry a hover/tap tooltip but are not interactive: no tab stop
+function renderDaily(all){const list=all?revDaily:revDaily.slice(0,21);dailyT.innerHTML=dHead+`<tbody>`+withMonthSeps(list,buildRows(list))+`</tbody>`;bindTips(dailyT,false);}
+const mixBtn=(m,l)=>`<button type="button" class="pill" data-mix="${m}" aria-pressed="${mixMode===m}" style="${mixMode===m?"background:var(--acc);color:var(--surface);border-color:var(--acc)":""}">${l}</button>`;
+function renderMixToggle(){document.getElementById("mixToggle").innerHTML=`Bar width by ${mixBtn("usd","USD")} ${mixBtn("n","count")}.`;}
 renderMixToggle();
-document.getElementById("mixToggle").addEventListener("click",e=>{const m=e.target&&e.target.dataset&&e.target.dataset.mix;if(!m||m===mixMode)return;mixMode=m;try{localStorage.setItem("mixMode",m);}catch(x){}renderMixToggle();renderDaily(allDays);});
+document.getElementById("mixToggle").addEventListener("click",e=>{const b=e.target&&e.target.closest?e.target.closest("[data-mix]"):e.target;const m=b&&b.dataset&&b.dataset.mix;if(!m||m===mixMode)return;mixMode=m;try{localStorage.setItem("mixMode",m);}catch(x){}
+ renderSection("Daily flows","dailyCard",()=>{renderMixToggle();renderDaily(allDays);});});
+renderDaily(false);
+document.getElementById("moreDays").addEventListener("click",function(){const btn=this;allDays=!allDays;renderSection("Daily flows","dailyCard",()=>renderDaily(allDays));btn.textContent=allDays?"Show latest 21 days ▴":"Show full history ▾";});
+});
 
 // ---- treasury balance — daily, by token (reconstructed, anchored to chain) ----
+renderSection("Treasury balance","balCard",()=>{
 if(F.balance_series&&F.balance_series.tokens&&F.balance_series.tokens.length){
   const B=F.balance_series, toks=B.tokens, S=B.series;
   document.getElementById("balCard").style.display="";
@@ -581,7 +679,7 @@ if(F.balance_series&&F.balance_series.tokens&&F.balance_series.tokens.length){
   const usdOf=(tok,d)=>{const p=at(tok,d);return p?Math.max(0,p.usd):0;};
   const totUsd=d=>toks.reduce((s,t)=>s+(usdOf(t,d)||0),0);
 
-  document.getElementById("balSub").innerHTML=`Reconstructed from on-chain transfers, anchored to the verified balance at block ${B.recon_block.toLocaleString()} — not a recorded snapshot.`;
+  document.getElementById("balSub").innerHTML=`Reconstructed from on-chain transfers, anchored to the verified balance at block ${chk(B.recon_block).toLocaleString()} — not a recorded snapshot.`;
 
   // headline in Po's exact format, held tokens only (>0)
   const held=toks.filter(t=>qty(t,latest)>0.5);
@@ -618,10 +716,10 @@ if(F.balance_series&&F.balance_series.tokens&&F.balance_series.tokens.length){
 
   // table: newest first, MENTE Δ + recycled-in columns
   const hasM=toks.includes("MENTE");
-  const head=`<thead><tr><th>Date (UTC)</th>`
-    +toks.map(t=>`<th class="r">${t} qty</th><th class="r">${t} $</th>`).join("")
-    +`<th class="r">Total $</th>`
-    +(hasM?`<th class="r">MENTE Δ<br><span class="sub">out−in</span></th><th class="r">recycled-in</th>`:"")
+  const head=`<thead><tr><th scope="col">Date (UTC)</th>`
+    +toks.map(t=>`<th scope="col" class="r">${t} qty</th><th scope="col" class="r">${t} $</th>`).join("")
+    +`<th scope="col" class="r">Total $</th>`
+    +(hasM?`<th scope="col" class="r">MENTE Δ<br><span class="sub">out−in</span></th><th scope="col" class="r">recycled-in</th>`:"")
     +`</tr></thead>`;
   const rowFor=d=>{
     const m=hasM?at("MENTE",d):null;
@@ -636,7 +734,7 @@ if(F.balance_series&&F.balance_series.tokens&&F.balance_series.tokens.length){
   const renderBal=all=>{const list=all?revDays:revDays.slice(0,14);document.getElementById("balT").innerHTML=head+`<tbody>`+list.map(rowFor).join("")+`</tbody>`;};
   renderBal(false);
   let balAll=false;
-  document.getElementById("moreBal").onclick=e=>{balAll=!balAll;renderBal(balAll);e.target.textContent=balAll?"Show less ▴":"Show full history ▾";};
+  document.getElementById("moreBal").onclick=e=>{const btn=e.currentTarget||e.target;balAll=!balAll;renderSection("Treasury balance","balCard",()=>renderBal(balAll));btn.textContent=balAll?"Show less ▴":"Show full history ▾";};
 
   const burn=B.burn_offset, rc=B.recon&&B.recon.MENTE;
   const stale=rc&&(rc.warn||rc.degraded);
@@ -647,10 +745,9 @@ if(F.balance_series&&F.balance_series.tokens&&F.balance_series.tokens.length){
     +`Closed days are priced at that day's immutable rate, never today's. `
     +(B.moca_ledger_from?`MOCA transfers in the ledger begin ${B.moca_ledger_from}; the wallet held ~0 MOCA before then (shown as 0, not negative). `:"")
     +`SWARM (prior era, ended 2026-04-24) and USDC were never held by this wallet — not shown.`;
-}
-renderDaily(false);
-document.getElementById("moreDays").addEventListener("click",function(){allDays=!allDays;renderDaily(allDays);this.textContent=allDays?"Show latest 21 days ▴":"Show full history ▾";});
+}});
 // ---- X4: hourly svg, stacked by group + creator-wallets line ----
+renderSection("Transfers per hour","hourlyCard",()=>{
 const gOf=h=>h.g||{};
 let H=F.hourly;
 if(window.matchMedia&&window.matchMedia("(max-width:640px)").matches){
@@ -692,20 +789,26 @@ function hourTip(e){const t=e.target.dataset.i;if(t===undefined)return null;cons
 svg.addEventListener("mousemove",e=>{if(pinned)return;const t=hourTip(e);if(!t){tip.style.opacity=0;return;}showTip(e,t);});
 svg.addEventListener("mouseleave",()=>{if(!pinned)tip.style.opacity=0;});
 svg.addEventListener("click",e=>{const t=hourTip(e);if(!t){pinned=null;tip.style.opacity=0;return;}pinned=svg;showTip(e,t);});
+});
 // top recipients (factual)
-document.getElementById("recipT").innerHTML=`<thead><tr><th>#</th><th>Wallet</th><th class="r">Transfers</th><th class="r">Active days</th><th class="r">First → last</th><th class="r">USD</th><th class="r">Share of outflow</th></tr></thead><tbody>`+
- F.top_recipients.map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${c.n.toLocaleString()}</td><td class="r mono">${c.days}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${c.usd.toLocaleString()}</td><td class="r mono">${c.share}%</td></tr>`).join("")+`</tbody>`;
-document.getElementById("srcT").innerHTML=`<thead><tr><th>Source wallet</th><th class="r">Transfers</th><th class="r">First → last</th><th class="r">USD</th></tr></thead><tbody>`+
- F.in_sources.map(c=>`<tr><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${c.n.toLocaleString()}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${c.usd.toLocaleString()}</td></tr>`).join("")+`</tbody>`;
+renderSection("Top recipients","recipCard",()=>{
+document.getElementById("recipT").innerHTML=`<thead><tr><th scope="col">#</th><th scope="col">Wallet</th><th scope="col" class="r">Transfers</th><th scope="col" class="r">Active days</th><th scope="col" class="r">First → last</th><th scope="col" class="r">USD</th><th scope="col" class="r">Share of outflow</th></tr></thead><tbody>`+
+ F.top_recipients.map((c,i)=>`<tr><td class="mono">${i+1}</td><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${chk(c.n).toLocaleString()}</td><td class="r mono">${c.days}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${chk(c.usd).toLocaleString()}</td><td class="r mono">${c.share}%</td></tr>`).join("")+`</tbody>`;
+});
+renderSection("Inflow sources","srcCard",()=>{
+document.getElementById("srcT").innerHTML=`<thead><tr><th scope="col">Source wallet</th><th scope="col" class="r">Transfers</th><th scope="col" class="r">First → last</th><th scope="col" class="r">USD</th></tr></thead><tbody>`+
+ F.in_sources.map(c=>`<tr><td class="mono"><a href="https://basescan.org/address/${c.addr}" target="_blank">${c.addr.slice(0,8)}…${c.addr.slice(-4)}</a>${c.label?` <span class="pill">${c.label}</span>`:""}</td><td class="r mono">${chk(c.n).toLocaleString()}</td><td class="r mono">${c.first} → ${c.last}</td><td class="r mono">$${chk(c.usd).toLocaleString()}</td></tr>`).join("")+`</tbody>`;
 {const L=F.in_ledger||[];
  document.getElementById("ledgerSum").textContent=`Inflow ledger — every funding event (${L.length} rows${L.length?`, last ${L[0].day}`:""}) ▾`;
- document.getElementById("inLedgerT").innerHTML=`<thead><tr><th>Day</th><th>From wallet</th><th>Token</th><th class="r">Amount</th><th class="r">USD</th><th>Label / note</th></tr></thead><tbody>`+
- L.map(l=>`<tr><td class="mono">${l.day}</td><td class="mono"><a href="https://basescan.org/address/${l.addr}" target="_blank">${l.addr.slice(0,8)}…${l.addr.slice(-4)}</a></td><td class="mono">${l.tok}</td><td class="r mono">${l.val.toLocaleString()}${l.n>1?` <span style="opacity:.6">(${l.n} tx)</span>`:""}</td><td class="r mono">$${l.usd.toLocaleString()}</td><td>${l.label?`<span class="pill">${l.label}</span>`:`<span class="pill" style="opacity:.5">unlabeled</span>`}${l.note?` <span style="font-size:12px;opacity:.75">${l.note}</span>`:""}</td></tr>`).join("")+`</tbody>`;}
+ document.getElementById("inLedgerT").innerHTML=`<thead><tr><th scope="col">Day</th><th scope="col">From wallet</th><th scope="col">Token</th><th scope="col" class="r">Amount</th><th scope="col" class="r">USD</th><th scope="col">Label / note</th></tr></thead><tbody>`+
+ L.map(l=>`<tr><td class="mono">${l.day}</td><td class="mono"><a href="https://basescan.org/address/${l.addr}" target="_blank">${l.addr.slice(0,8)}…${l.addr.slice(-4)}</a></td><td class="mono">${l.tok}</td><td class="r mono">${chk(l.val).toLocaleString()}${l.n>1?` <span style="opacity:.6">(${l.n} tx)</span>`:""}</td><td class="r mono">$${chk(l.usd).toLocaleString()}</td><td>${l.label?`<span class="pill">${l.label}</span>`:`<span class="pill" style="opacity:.5">unlabeled</span>`}${l.note?` <span style="font-size:12px;opacity:.75">${l.note}</span>`:""}</td></tr>`).join("")+`</tbody>`;}
+});
 // ---- collector outflow: where collected MENTE goes ----
+renderSection("Collector sweep","sinkCard",()=>{
 if(DATA.sink&&DATA.sink.days){
   const S=DATA.sink; document.getElementById("sinkCard").style.display="";
-  const f=n=>n.toLocaleString(undefined,{maximumFractionDigits:0});
-  const usd=n=>"$"+(n*(S.rate||0)).toLocaleString(undefined,{maximumFractionDigits:0});
+  const f=n=>chk(n).toLocaleString(undefined,{maximumFractionDigits:0});
+  const usd=n=>"$"+chk(n*(S.rate||0)).toLocaleString(undefined,{maximumFractionDigits:0});
   const shortA=a=>a.slice(0,6)+"…"+a.slice(-4);
   const SINK_NAME="Minds Rebate wallet";const SINK_LONG="Digital Assets Team Operations (DATops)";
   const D=(a,t)=>`<a href="https://basescan.org/address/${a}" target="_blank" class="mono" title="${t}">${shortA(a)}</a>`;
@@ -784,9 +887,10 @@ if(DATA.sink&&DATA.sink.days){
 
   const ins=document.getElementById("ins-sink");
   if(ins)ins.innerHTML=`&rarr; On <b>${S.first}</b> the daily sweep out of the collector was redirected to the ${SINK_NAME}: same job, similar share, new destination. <b>${f(S.total)} MENTE</b> (${usd(S.total)}) has been swept there since${S.rebate?`; it holds <b>${f(S.rebate.bal_mente)} MENTE + ${f(S.rebate.bal_moca)} MOCA</b> (last MENTE→MOCA swap ${S.rebate.last_swap||"never"})`:""}. Inflow to Minds Treasury Distribution from user spending is currently <b>zero</b>.`;
-}
+}});
 
 // ---- address registry: full addresses, grouped, copy-on-click ----
+renderSection("Address registry","registryCard",()=>{
 if(DATA.registry&&DATA.registry.length){
   const R=DATA.registry, order=["Treasury","Collector","Funding sources","Recipients","Token contracts","Liquidity","Infrastructure","Other labeled","Warnings"];
   const groups=[...new Set(R.map(r=>r.group))].sort((a,b)=>order.indexOf(a)-order.indexOf(b));
@@ -795,13 +899,13 @@ if(DATA.registry&&DATA.registry.length){
     body+=`<tr class="mrow"><td colspan="3">${g}</td></tr>`;
     R.filter(r=>r.group===g).forEach(r=>{
       const warn=r.warn?`style="color:var(--warn)"`:"";
-      const flag=r.collision?` <span class="pill" style="background:var(--warn);color:#fff" title="${r.collision==="table"?"Another address is identical even in the 0xXXXXXX…XXXX table form":"Another address is identical in the short 0xXXXX…XXXX form used by the flow diagram and prose"}">ambiguous when shortened${r.collision==="table"?"":" (short form)"}</span>`:"";
+      const flag=r.collision?` <span class="pill" style="background:var(--warn);color:var(--surface)" title="${r.collision==="table"?"Another address is identical even in the 0xXXXXXX…XXXX table form":"Another address is identical in the short 0xXXXX…XXXX form used by the flow diagram and prose"}">ambiguous when shortened${r.collision==="table"?"":" (short form)"}</span>`:"";
       body+=`<tr><td class="mono" ${warn}><span class="copyaddr" data-a="${r.addr}" title="Click to copy the full address" style="cursor:pointer;border-bottom:1px dotted currentColor">${r.addr}</span></td>`
           +`<td ${warn}>${r.warn?"⚠ ":""}${r.role}${flag}</td>`
           +`<td class="r mono"><a href="https://basescan.org/address/${r.addr}" target="_blank">basescan ↗</a></td></tr>`;
     });
   });
-  document.getElementById("addrT").innerHTML=`<thead><tr><th>Address (full)</th><th>Role</th><th class="r">Explorer</th></tr></thead><tbody>${body}</tbody>`;
+  document.getElementById("addrT").innerHTML=`<thead><tr><th scope="col">Address (full)</th><th scope="col">Role</th><th scope="col" class="r">Explorer</th></tr></thead><tbody>${body}</tbody>`;
   document.getElementById("addrT").addEventListener("click",e=>{
     const t=e.target.closest(".copyaddr"); if(!t)return;
     navigator.clipboard.writeText(t.dataset.a).then(()=>{
@@ -809,14 +913,20 @@ if(DATA.registry&&DATA.registry.length){
     });
   });
 }else{const rc=document.getElementById("registryCard");if(rc)rc.style.display="none";}
+});
 // ---- guided-view: insights, diagram numbers, register ----
-if(DATA.insights){for(const[k,v]of Object.entries(DATA.insights)){const el=document.getElementById("ins-"+k);if(el)el.innerHTML="&rarr; "+v;}}
-{const wA=F.windows[3];
- const put=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=" · $"+v.toLocaleString(undefined,{maximumFractionDigits:0})+" lifetime";};
+// insights land in many cards: resolve every target first, then write, so a
+// failure leaves no card with a partial set of insight lines
+renderSection("Insights",null,()=>{
+if(DATA.insights){const w=[];for(const[k,v]of Object.entries(DATA.insights)){const el=document.getElementById("ins-"+k);if(el)w.push([el,"&rarr; "+v]);}
+ w.forEach(([el,h])=>{el.innerHTML=h;});}
+});
+renderSection("Flow diagram","flowCard",()=>{const wA=F.windows[3];
+ const put=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=" · $"+chk(v).toLocaleString(undefined,{maximumFractionDigits:0})+" lifetime";};
  put("nDist",wA.out_usd);put("nExt",wA.in_external_usd||0);
  if(DATA.sink&&DATA.sink.total)put("nSweep",Math.round(DATA.sink.total*(DATA.sink.rate||0)));
  if(DATA.sink&&DATA.sink.rebate){const _r=DATA.sink.rebate,_e=document.getElementById("nRebate");
-   if(_e)_e.textContent=`holds ${Math.round(_r.bal_mente).toLocaleString()} MENTE + ${Math.round(_r.bal_moca).toLocaleString()} MOCA · last swap ${_r.last_swap||"never"}`;}
+   if(_e)_e.textContent=`holds ${Math.round(chk(_r.bal_mente)).toLocaleString()} MENTE + ${Math.round(chk(_r.bal_moca)).toLocaleString()} MOCA · last swap ${_r.last_swap||"never"}`;}
  if(F.cognition)put("nCons",F.cognition.total_usd);
  // C9 (amended): the diagram is CLOSED by default; a viewer who opens it is remembered
  const fc=document.getElementById("flowCard"),fp=document.getElementById("flowPill");
@@ -824,28 +934,31 @@ if(DATA.insights){for(const[k,v]of Object.entries(DATA.insights)){const el=docum
  const syncPill=()=>{fp.textContent=fc.open?"hide diagram":"show diagram";};
  syncPill();
  fc.addEventListener("toggle",()=>{syncPill();try{localStorage.setItem("flowOpen",fc.open?"1":"0");}catch(e){}});
-}
+});
 // C11: open items and gaps are collapsed; each row shows its opened date and
 // a chip once it is older than 60 days (age vs the page's build stamp).
-const ageDays=d=>{const t=Date.parse(d+"T00:00:00Z");return isNaN(t)||isNaN(GEN_T)?null:Math.floor((GEN_T-t)/864e5);};
-const oldChip=d=>{const a=ageDays(d);return a!=null&&a>60?` <span class="pill" style="border-color:var(--warn);color:var(--warn)" title="opened ${d}">open ${a} d</span>`:"";};
+renderSection("Open items","registerCard",()=>{
 if(DATA.open_items){const O=DATA.open_items;
  document.getElementById("regSum").innerHTML=`Open items &amp; follow-ups <span class="pill">${O.length} open · ${O.filter(o=>(ageDays(o.opened)||0)>60).length} older than 60 d</span>`;
- document.getElementById("regT").innerHTML=`<thead><tr><th>Item</th><th>Type</th><th>Owner</th><th class="r">Opened</th></tr></thead><tbody>`+
+ document.getElementById("regT").innerHTML=`<thead><tr><th scope="col">Item</th><th scope="col">Type</th><th scope="col">Owner</th><th scope="col" class="r">Opened</th></tr></thead><tbody>`+
  O.map(o=>`<tr><td>${o.item}${o.anchor?` <a href="#${o.anchor}" class="pill">section ↑</a>`:""}</td><td><span class="pill">${o.type}</span></td><td>${o.owner}</td><td class="r mono">${o.opened}${oldChip(o.opened)}</td></tr>`).join("")+`</tbody>`;}
+});
+renderSection("Data gaps","gapsCard",()=>{
 if(DATA.gaps){const Gp=DATA.gaps;
  document.getElementById("gapsSum").innerHTML=`Data gaps &amp; what's landing next <span class="pill">${Gp.length} gaps · ${Gp.filter(g=>(ageDays(g.opened)||0)>60).length} older than 60 d</span>`;
- document.getElementById("gapsT").innerHTML=`<thead><tr><th>What's missing</th><th>Effect on this page</th><th>What it unlocks</th><th class="r">Opened</th></tr></thead><tbody>`+
+ document.getElementById("gapsT").innerHTML=`<thead><tr><th scope="col">What's missing</th><th scope="col">Effect on this page</th><th scope="col">What it unlocks</th><th scope="col" class="r">Opened</th></tr></thead><tbody>`+
  Gp.map(g=>`<tr><td><b>${g.missing}</b></td><td>${g.effect}</td><td>${g.unlocks}</td><td class="r mono">${g.opened||"—"}${g.opened?oldChip(g.opened):""}</td></tr>`).join("")+`</tbody>`;}
+});
 // ---- cognition consumption (facts) ----
-const CG=DATA.facts.cognition;
+renderSection("Cognition consumption","cogCard",()=>{
+const CG=F.cognition;
 if(CG){
  document.getElementById("cogCard").style.display="block";
  const ct=[
-  ["Cognition consumed — 7d","$"+CG.usd_7d.toLocaleString(), CG.minds_7d.toLocaleString()+" minds spent · "+CG.n_24h+" spend tx in 24h"+(CG.crawl_complete?"":" · ⚠ data since "+CG.range_from+", crawl in progress")],
-  ["Consumed — "+(CG.crawl_complete?"all history":"partial"),"$"+CG.total_usd.toLocaleString(), CG.total_mente.toLocaleString()+" MENTE since "+CG.range_from+(CG.crawl_complete?"":" (backfill running)")],
-  ["Spend transactions", CG.total_n.toLocaleString(), "mind → collector transfers"+(CG.crawl_complete?"":" since "+CG.range_from)],
-  ["Minds "+(CG.crawl_complete?"ever spending":"spending (partial)"), CG.minds_all.toLocaleString(), "unique treasury-credited wallets consuming cognition"+(CG.crawl_complete?"":" since "+CG.range_from)],
+  ["Cognition consumed — 7d","$"+chk(CG.usd_7d).toLocaleString(), chk(CG.minds_7d).toLocaleString()+" minds spent · "+CG.n_24h+" spend tx in 24h"+(CG.crawl_complete?"":" · ⚠ data since "+CG.range_from+", crawl in progress")],
+  ["Consumed — "+(CG.crawl_complete?"all history":"partial"),"$"+chk(CG.total_usd).toLocaleString(), chk(CG.total_mente).toLocaleString()+" MENTE since "+CG.range_from+(CG.crawl_complete?"":" (backfill running)")],
+  ["Spend transactions", chk(CG.total_n).toLocaleString(), "mind → collector transfers"+(CG.crawl_complete?"":" since "+CG.range_from)],
+  ["Minds "+(CG.crawl_complete?"ever spending":"spending (partial)"), chk(CG.minds_all).toLocaleString(), "unique treasury-credited wallets consuming cognition"+(CG.crawl_complete?"":" since "+CG.range_from)],
  ];
  document.getElementById("cogTiles").innerHTML=ct.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
  const cd=CG.daily;
@@ -856,55 +969,62 @@ if(CG){
    sv+=`<rect x="${i*bw+2}" y="${62-h}" width="${bw-4}" height="${Math.max(h,1)}" fill="var(--c-mente)" opacity=".6" data-i="${i}"/><rect x="${i*bw+2}" y="8" width="${bw-4}" height="54" fill="transparent" data-i="${i}"/>`;});
   sv+=`<text x="4" y="12" font-size="11" fill="var(--ink3)">MENTE consumed per day (last ${cd.length} days)</text>`;
   sp.innerHTML=sv;
-  function cogTip(e){const t=e.target.dataset.i;if(t===undefined)return null;const x=cd[t];return `${x.d}\n${x.mente.toLocaleString()} MENTE · ${x.n} spend tx · ${x.minds} minds`;}
+  function cogTip(e){const t=e.target.dataset.i;if(t===undefined)return null;const x=cd[t];return `${x.d}\n${chk(x.mente).toLocaleString()} MENTE · ${x.n} spend tx · ${x.minds} minds`;}
   sp.addEventListener("mousemove",e=>{if(pinned)return;const t=cogTip(e);if(!t){tip.style.opacity=0;return;}showTip(e,t);});
   sp.addEventListener("mouseleave",()=>{if(!pinned)tip.style.opacity=0;});
   sp.addEventListener("click",e=>{const t=cogTip(e);if(!t){pinned=null;tip.style.opacity=0;return;}pinned=sp;showTip(e,t);});
  }
-}
+}});
 // ---- Generation 1: SWARM era (C8: collapsed archive at the bottom) ----
-const SE=DATA.facts.swarm_era;
+renderSection("SWARM era","swarmCard",()=>{
+const SE=F.swarm_era;
 if(SE){
  document.getElementById("swarmCard").style.display="";
  document.getElementById("swarmFresh").innerHTML=`era closed ${SE.last_spend} · static archive`;
- document.getElementById("ins-swarm").innerHTML="&rarr; The economy worked from generation one: <b>"+SE.out_swarm.toLocaleString()+" SWARM distributed and "+(SE.in_swarm/SE.out_swarm*100).toFixed(1)+"% of it consumed</b> ("+SE.first_spend+" &rarr; "+SE.last_spend+") — near-perfect velocity, "+SE.minds_both.toLocaleString()+" minds completed the full top-up→spend loop before the MENTE migration.";
+ document.getElementById("ins-swarm").innerHTML="&rarr; The economy worked from generation one: <b>"+chk(SE.out_swarm).toLocaleString()+" SWARM distributed and "+(SE.in_swarm/SE.out_swarm*100).toFixed(1)+"% of it consumed</b> ("+SE.first_spend+" &rarr; "+SE.last_spend+") — near-perfect velocity, "+chk(SE.minds_both).toLocaleString()+" minds completed the full top-up→spend loop before the MENTE migration.";
  const t=[
-  ["Distributed (gen-1)", SE.out_swarm.toLocaleString()+" SWARM", "≈ $"+SE.out_usd.toLocaleString(undefined,{maximumFractionDigits:0})+" at each day's market price · "+SE.out_tx.toLocaleString()+" top-ups"],
-  ["Consumed on cognition", SE.in_swarm.toLocaleString()+" SWARM", "≈ $"+SE.in_usd.toLocaleString(undefined,{maximumFractionDigits:0})+" · "+SE.in_tx.toLocaleString()+" spends — "+(SE.in_swarm/SE.out_swarm*100).toFixed(1)+"% of distribution"],
-  ["Minds of the era", SE.minds_topped.toLocaleString()+" topped up", SE.minds_spent.toLocaleString()+" spent · "+SE.minds_both.toLocaleString()+" did both"],
+  ["Distributed (gen-1)", chk(SE.out_swarm).toLocaleString()+" SWARM", "≈ $"+chk(SE.out_usd).toLocaleString(undefined,{maximumFractionDigits:0})+" at each day's market price · "+chk(SE.out_tx).toLocaleString()+" top-ups"],
+  ["Consumed on cognition", chk(SE.in_swarm).toLocaleString()+" SWARM", "≈ $"+chk(SE.in_usd).toLocaleString(undefined,{maximumFractionDigits:0})+" · "+chk(SE.in_tx).toLocaleString()+" spends — "+(SE.in_swarm/SE.out_swarm*100).toFixed(1)+"% of distribution"],
+  ["Minds of the era", chk(SE.minds_topped).toLocaleString()+" topped up", chk(SE.minds_spent).toLocaleString()+" spent · "+chk(SE.minds_both).toLocaleString()+" did both"],
   ["Era boundaries", SE.first_spend+" → "+SE.last_spend, "consumption ceased the day the MENTE treasury launched"],
  ];
  document.getElementById("swarmTiles").innerHTML=t.map(x=>`<div class="tile"><div class="k">${x[0]}</div><div class="v" style="font-size:19px">${x[1]}</div><div class="d">${x[2]}</div></div>`).join("");
- document.getElementById("swarmT").innerHTML=`<thead><tr><th>Month</th><th class="r">Distributed SWARM</th><th class="r">≈ USD</th><th class="r">Consumed SWARM</th><th class="r">≈ USD</th></tr></thead><tbody>`+
-  SE.monthly.map(m=>`<tr><td class="mono">${m.m}</td><td class="r mono">${m.out.toLocaleString()}</td><td class="r mono">$${m.out_usd.toLocaleString(undefined,{maximumFractionDigits:0})}</td><td class="r mono">${m.inn.toLocaleString()}</td><td class="r mono">$${m.in_usd.toLocaleString(undefined,{maximumFractionDigits:0})}</td></tr>`).join("")+`</tbody>`;
-}
+ document.getElementById("swarmT").innerHTML=`<thead><tr><th scope="col">Month</th><th scope="col" class="r">Distributed SWARM</th><th scope="col" class="r">≈ USD</th><th scope="col" class="r">Consumed SWARM</th><th scope="col" class="r">≈ USD</th></tr></thead><tbody>`+
+  SE.monthly.map(m=>`<tr><td class="mono">${m.m}</td><td class="r mono">${chk(m.out).toLocaleString()}</td><td class="r mono">$${chk(m.out_usd).toLocaleString(undefined,{maximumFractionDigits:0})}</td><td class="r mono">${chk(m.inn).toLocaleString()}</td><td class="r mono">$${chk(m.in_usd).toLocaleString(undefined,{maximumFractionDigits:0})}</td></tr>`).join("")+`</tbody>`;
+}});
 // ---- C7: verified Stripe snapshot → one dated archive line ----
+renderSection("Stripe snapshot","stripeCard",()=>{
 const SS=DATA.stripe_snap;
 if(SS){
  document.getElementById("stripeCard").style.display="";
  const kept=SS.net_proceeds_est_usd||(SS.net_usd-SS.fees_est_usd);
- document.getElementById("stripeLine").innerHTML=`<b>Archive — verified Stripe revenue snapshot:</b> ${SS.period[0]} → ${SS.period[1]}: gross $${SS.gross_usd.toLocaleString()} − refunds $${SS.refunded_usd.toLocaleString()} = net $${SS.net_usd.toLocaleString()} (pre-fee) ≈ $${kept.toLocaleString()} after estimated fees · ${SS.paid} paid payments. One-time export captured ${SS.captured} ${fresh(SS.captured,"snapshot")} — a live Stripe feed is an open data gap; this page does not read the Stripe ledger.`;
-}
+ document.getElementById("stripeLine").innerHTML=`<b>Archive — verified Stripe revenue snapshot:</b> ${SS.period[0]} → ${SS.period[1]}: gross $${chk(SS.gross_usd).toLocaleString()} − refunds $${chk(SS.refunded_usd).toLocaleString()} = net $${chk(SS.net_usd).toLocaleString()} (pre-fee) ≈ $${chk(kept).toLocaleString()} after estimated fees · ${SS.paid} paid payments. One-time export captured ${SS.captured} ${fresh(SS.captured,"snapshot")} — a live Stripe feed is an open data gap; this page does not read the Stripe ledger.`;
+}});
 // ---- C7: server-recorded tier (PostHog) → one dated line ----
+renderSection("Server-recorded","serverCard",()=>{
 const SV=DATA.server;
 {const el=document.getElementById("serverLine");
  if(SV){
   const dv=SV.diverge_usd, dvBad=Math.abs(dv)>Math.max(25,SV.topup_usd*0.25), m=SV.diverge_meta||{};
-  el.innerHTML=`<b>Server-recorded — PostHog platform events (T+2 settled):</b> top-ups $${SV.topup_usd.toLocaleString()} over ${SV.topups} client-confirmed purchases and ${SV.awakens7.toLocaleString()} minds awakened (${SV.days?SV.days[0]+" → "+SV.days[1]:"—"})${SV.wau?` · WAU ${SV.wau.toLocaleString()}${SV.mau?` / MAU ${SV.mau.toLocaleString()}`:""}`:""}. Cross-system check: Stripe-sized on-chain outflow $${SV.stripe_out_usd.toLocaleString()} vs recorded top-ups — divergence ${dv>=0?"+":"−"}$${Math.abs(dv).toLocaleString()}${dvBad?` <b style="color:var(--warn)">⚠ not yet reconcilable</b> (${m.status||"open"}; owner ${m.owner||"—"}, opened ${m.opened||"—"}${m.opened?oldChip(m.opened):""})`:" (within expected event loss)"}. Client-side events only (coupons and manual top-ups never appear) · fetched ${SV.fetched?hkt(SV.fetched.replace(" ","T").slice(0,16)+":00Z"):"—"} ${SV.fetched?fresh(SV.fetched.replace(" ","T").slice(0,16)+":00Z","fetched"):""}${SV.complete?"":" · <b>⚠ serving cached (last fetch failed)</b>"}.`;
+  el.innerHTML=`<b>Server-recorded — PostHog platform events (T+2 settled):</b> top-ups $${chk(SV.topup_usd).toLocaleString()} over ${SV.topups} client-confirmed purchases and ${chk(SV.awakens7).toLocaleString()} minds awakened (${SV.days?SV.days[0]+" → "+SV.days[1]:"—"})${SV.wau?` · WAU ${chk(SV.wau).toLocaleString()}${SV.mau?` / MAU ${chk(SV.mau).toLocaleString()}`:""}`:""}. Cross-system check: Stripe-sized on-chain outflow $${chk(SV.stripe_out_usd).toLocaleString()} vs recorded top-ups — divergence ${dv>=0?"+":"−"}$${Math.abs(dv).toLocaleString()}${dvBad?` <b style="color:var(--warn)">⚠ not yet reconcilable</b> (${m.status||"open"}; owner ${m.owner||"—"}, opened ${m.opened||"—"}${m.opened?oldChip(m.opened):""})`:" (within expected event loss)"}. Client-side events only (coupons and manual top-ups never appear) · fetched ${SV.fetched?hkt(SV.fetched.replace(" ","T").slice(0,16)+":00Z"):"—"} ${SV.fetched?fresh(SV.fetched.replace(" ","T").slice(0,16)+":00Z","fetched"):""}${SV.complete?"":" · <b>⚠ serving cached (last fetch failed)</b>"}.`;
  }else{
   el.innerHTML=`<b>Server-recorded — PostHog platform events:</b> not available this run (no platform tier fetched) — the on-chain figures above stand on their own.`;
  }}
+});
 // ---- AI zone ----
+renderSection("Loop closure","gtiles",()=>{
 const gtiles=[
- ["Loop closure — earn + receive", G.loop_n!==undefined?G.loop_n:"n/a", "credited wallets that later earned skill rewards ($"+(G.loop_usd||0).toLocaleString()+" total · "+(G.loop_gt10||0)+" earned >$10, "+(G.loop_gt50||0)+" >$50) — user→creator flywheel, early-stage; per wallet, not per creator"],
+ ["Loop closure — earn + receive", G.loop_n!==undefined?G.loop_n:"n/a", "credited wallets that later earned skill rewards ($"+chk(G.loop_usd||0).toLocaleString()+" total · "+(G.loop_gt10||0)+" earned >$10, "+(G.loop_gt50||0)+" >$50) — user→creator flywheel, early-stage; per wallet, not per creator"],
 ];
 document.getElementById("gtiles").innerHTML=gtiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
+});
+renderSection("Payout classification","classCard",()=>{
 const S=I.S;
 const itiles=[
- ["Invokes (classified)", S.tot.invoke.n.toLocaleString(), "$"+S.tot.invoke.usd.toLocaleString()+" · "+S.inv24+" in last 24h"],
- ["Equips (classified)", S.tot.equip.n.toLocaleString(), S.eq24+" in last 24h"],
- ["Credit grants / top-ups", S.tot.growth.n.toLocaleString(), "$"+S.tot.growth.usd.toLocaleString()],
- ["Nonstandard size", S.tot.nonstandard.n.toLocaleString(), "$"+S.tot.nonstandard.usd.toLocaleString()+" — off-grid, not counted above"],
+ ["Invokes (classified)", chk(S.tot.invoke.n).toLocaleString(), "$"+chk(S.tot.invoke.usd).toLocaleString()+" · "+S.inv24+" in last 24h"],
+ ["Equips (classified)", chk(S.tot.equip.n).toLocaleString(), S.eq24+" in last 24h"],
+ ["Credit grants / top-ups", chk(S.tot.growth.n).toLocaleString(), "$"+chk(S.tot.growth.usd).toLocaleString()],
+ ["Nonstandard size", chk(S.tot.nonstandard.n).toLocaleString(), "$"+chk(S.tot.nonstandard.usd).toLocaleString()+" — off-grid, not counted above"],
 ];
 document.getElementById("itiles").innerHTML=itiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
 // Creator Rewards v2 (from 14 Sep 2026): aggregate tiles only. Times in HKT
@@ -913,8 +1033,8 @@ document.getElementById("itiles").innerHTML=itiles.map(t=>`<div class="tile"><di
 const RV=F.rewards_v2||null;
 if(RV){
  const rtiles=[
-  ["Creator rewards — 24h", usd2(RV.usd_24h), RV.n_equip_24h.toLocaleString()+" equips · "+RV.n_invoke_24h.toLocaleString()+" invokes · "+RV.creator_wallets_24h.toLocaleString()+" creator wallets"],
-  ["Creator rewards — since resume", usd2(RV.usd_since_resume), RV.creator_wallets_since_resume.toLocaleString()+" creator wallets paid since <span title=\""+RV.resumed_utc+"\">"+hkt(RV.resumed_utc)+"</span>"],
+  ["Creator rewards — 24h", usd2(RV.usd_24h), chk(RV.n_equip_24h).toLocaleString()+" equips · "+chk(RV.n_invoke_24h).toLocaleString()+" invokes · "+chk(RV.creator_wallets_24h).toLocaleString()+" creator wallets"],
+  ["Creator rewards — since resume", usd2(RV.usd_since_resume), chk(RV.creator_wallets_since_resume).toLocaleString()+" creator wallets paid since <span title=\""+RV.resumed_utc+"\">"+hkt(RV.resumed_utc)+"</span>"],
  ];
  const rt=document.getElementById("rtiles");
  rt.innerHTML=rtiles.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
@@ -928,21 +1048,23 @@ if(RV){
 const STP=(I.system_topup_public||[]).filter(x=>x&&x.n);
 if(STP.length){
  const lg=document.getElementById("legline");
- lg.innerHTML=STP.map(x=>`$1 system free top-ups: <b>${x.n.toLocaleString()}</b> · <b>${usd2(x.usd)}</b>${x.since?` since ${x.since}`:""}${x.last_seen?` · last ${x.last_seen}`:""} (UTC dates; a growth grant counted with credit grants, not creator earnings)`).join("<br>");
+ lg.innerHTML=STP.map(x=>`$1 system free top-ups: <b>${chk(x.n).toLocaleString()}</b> · <b>${usd2(x.usd)}</b>${x.since?` since ${x.since}`:""}${x.last_seen?` · last ${x.last_seen}`:""} (UTC dates; a growth grant counted with credit grants, not creator earnings)`).join("<br>");
  lg.style.display="";
 }
-document.getElementById("fineT").innerHTML=`<thead><tr><th>Inferred type</th><th>Group</th><th class="r">Count</th><th class="r">USD</th></tr></thead><tbody>`+
- I.fine_table.map(f=>`<tr><td>${f.fine}</td><td>${f.group?`<span class="pill" style="border-color:${GCOL[f.group]||"var(--line)"}">${GL[f.group]||f.group}</span>`:""}</td><td class="r mono">${f.n.toLocaleString()}</td><td class="r mono">$${f.usd.toLocaleString()}</td></tr>`).join("")+`</tbody>`;
+document.getElementById("fineT").innerHTML=`<thead><tr><th scope="col">Inferred type</th><th scope="col">Group</th><th scope="col" class="r">Count</th><th scope="col" class="r">USD</th></tr></thead><tbody>`+
+ I.fine_table.map(f=>`<tr><td>${f.fine}</td><td>${f.group?`<span class="pill" style="border-color:${GCOL[f.group]||"var(--line)"}">${GL[f.group]||f.group}</span>`:""}</td><td class="r mono">${chk(f.n).toLocaleString()}</td><td class="r mono">$${chk(f.usd).toLocaleString()}</td></tr>`).join("")+`</tbody>`;
+});
 // Retired-payout stragglers: AGGREGATE ONLY (count, USD, cutoff, last seen).
 // No tx hashes, no per-entry addresses, no detection band — the entries[] and
 // the band live in the private reviewer file, and check_publish.py --scan
 // fails the build if any of them reach data.json or the page. Hidden when
 // n === 0, and absent entirely from an older data.json.
+renderSection("Pattern monitor","patCard",()=>{
 const RET_LABEL={invoke_v1:"$0.10 invoke",equip:"$1 equip"};
 const RETLINE=(I.retired_public||[]).filter(x=>x&&x.n).map(x=>
  `<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line);color:var(--warn)">
    Retired &lsquo;${RET_LABEL[x.cat]||x.cat}&rsquo; rewards: <b>${x.n}</b> straggler transfer${x.n===1?"":"s"}
-   &asymp; <b>$${x.usd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</b>
+   &asymp; <b>$${chk(x.usd).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</b>
    since the ${String(x.cutoff).replace("T"," ")} UTC cutoff${x.last_seen?`, last ${x.last_seen}`:""} — mis-configured job.
   </div>`).join("");
 // C4: no monitoring status on the public page — no counts, no amounts, no
@@ -952,4 +1074,8 @@ document.getElementById("gT").innerHTML=`<tbody><tr><td style="padding:14px;colo
  a live monitoring status is the calibration oracle this page exists to withhold.
  ${RETLINE}
 </td></tr></tbody>`;
+});
+// FAIL-CLOSED: the static loading banner goes only when every section above
+// finished with zero errors. Keep this the LAST statement of the script.
+if(window.__renderErrors.length===0){const lb=document.getElementById("loadBanner");if(lb)lb.remove();}
 </script>
