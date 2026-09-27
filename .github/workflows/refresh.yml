@@ -70,7 +70,7 @@ jobs:
         env:
           STATE_KEY: ${{ secrets.STATE_KEY }}
         run: python3 tools/state_crypt.py decrypt
-      # One invocation builds BOTH pages: the treasury crawl + index.html and
+      # One invocation builds every page: the treasury crawl + full.html/index.html and
       # the coupon-distributor crawl + coupon.html. Deliberately no second
       # workflow and no second cron — the coupon wallet is ~1 claim/hour and
       # does not justify its own schedule, and sharing the run keeps both
@@ -125,6 +125,7 @@ jobs:
       - name: Anomaly & large-flow alerts
         continue-on-error: true
         env:
+          CONSOLE_URL: ${{ secrets.CONSOLE_URL }}   # Telegram "Open dashboard" -> private edition
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python3 alerts.py
@@ -204,6 +205,7 @@ jobs:
                                   # outage (the encrypted cache save at the
                                   # end runs regardless of job outcome)
         env:
+          CONSOLE_URL: ${{ secrets.CONSOLE_URL }}   # Telegram "Open dashboard" -> private edition
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python3 notify.py hourly

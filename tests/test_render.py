@@ -24,8 +24,8 @@ if not shutil.which("node"):
     sys.exit(0)
 
 failures = 0
-for page in ("index.html", "legacy.html", "coupon.html",
-             "template.html", "template_legacy.html", "template_coupon.html"):
+for page in ("index.html", "full.html", "coupon.html",
+             "template.html", "template_public.html", "template_coupon.html"):
     try:
         html = open(page).read()
     except FileNotFoundError:

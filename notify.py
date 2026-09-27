@@ -15,7 +15,9 @@ from privlog import private_print
 from datetime import datetime, timezone, timedelta
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-URL = "https://agentic-po.github.io/skill-payout-dashboard/"
+# "Open dashboard" opens the private edition when CONSOLE_URL (secret) is set;
+# the public summary otherwise. The console host is kept out of the repo.
+URL = os.environ.get("CONSOLE_URL") or "https://agentic-po.github.io/skill-payout-dashboard/"
 _args = [a for a in sys.argv[1:] if not a.startswith("--")]
 mode = _args[0] if _args else "hourly"
 DRY_RUN = "--dry-run" in sys.argv[1:]

@@ -16,6 +16,7 @@ import csv, json, math, os, statistics, sys, time, urllib.request
 import posthog_source
 import shards
 import freshness
+from util import public_summary   # index.html payload (public summary)
 import state as _state   # alert_state.json single writer (no import side effects)
 from privlog import private_print   # quiet public Actions logs (2026-09-27)
 # taxonomy lives in classify.py — the ONE classifier shared with notify/alerts
@@ -2378,152 +2379,30 @@ def _inline_json(obj):
     return json.dumps(obj).replace("</", "<\\/")
 
 
-# ==================== LEGACY VIEW (continuity for execs) ====================
-# Renders legacy.html with the original MOCA-only layout + method (live-rate
-# USD, old category folding, heuristic organic share). Kept while stakeholders
-# transition; the banner on the page states it is superseded by index.html.
-LRATE = RATE["MOCA"]
-def _lcat(r):
-    if r["cat"] == "nonstandard":
-        return "invoke" if r["usd"] < 0.5 else "growth"
-    return r["cat"]
-mrows = [dict(r, lcat=_lcat(r)) for r in rows if r["tok"] == "MOCA"]
-minf = [f for f in inflows if f["tok"] == "MOCA"]
-lcats = ["invoke", "equip", "growth", "micro"]
-if mrows:
-    LS = {"rate": LRATE, "generated": now.strftime("%Y-%m-%d %H:%M"),
-          "first_invoke": "2026-07-11 17:17:59", "first_moca": "2026-07-11 15:41:07",
-          "last_tx": mrows[0]["ts"],
-          "tot": {c: {"n": sum(1 for r in mrows if r["lcat"] == c),
-                      "moca": round(sum(r["val"] for r in mrows if r["lcat"] == c), 1)} for c in lcats},
-          "inv24": sum(1 for r in mrows if r["lcat"] == "invoke" and r["ts"] > cut24),
-          "eq24": sum(1 for r in mrows if r["lcat"] == "equip" and r["ts"] > cut24)}
-    lbyh, lmh = defaultdict(Counter), defaultdict(float)
-    for r in mrows:
-        lbyh[r["ts"][:13]][r["lcat"]] += 1
-        lmh[r["ts"][:13]] += r["val"]
-    lh0 = datetime.fromisoformat(mrows[-1]["ts"]).replace(minute=0, second=0, tzinfo=timezone.utc)
-    lhourly, lh = [], lh0
-    while lh <= now:
-        k = lh.strftime("%Y-%m-%dT%H")
-        c = lbyh[k]
-        lhourly.append({"h": k, "invoke": c["invoke"], "equip": c["equip"], "growth": c["growth"],
-                        "micro": c["micro"], "moca": round(lmh[k], 1)})
-        lh += timedelta(hours=1)
-    ldays = sorted({r["ts"][:10] for r in mrows})
-    ldaily = []
-    for d in ldays + ([] if today in ldays else [today]):
-        rs = [r for r in mrows if r["ts"][:10] == d]
-        c = Counter(r["lcat"] for r in rs)
-        ldaily.append({"d": d, "invoke": c["invoke"], "equip": c["equip"], "growth": c["growth"], "micro": c["micro"],
-                       "moca_ce": round(sum(r["val"] for r in rs if r["lcat"] in ("invoke", "equip")), 1),
-                       "moca_other": round(sum(r["val"] for r in rs if r["lcat"] in ("growth", "micro")), 1)})
-    lcr = defaultdict(lambda: {"invoke": 0, "equip": 0, "moca": 0.0})
-    for r in mrows:
-        if r["lcat"] in ("invoke", "equip"):
-            lcr[r["to"]][r["lcat"]] += 1
-            lcr[r["to"]]["moca"] += r["val"]
-    lcreators = sorted(({"addr": a, "invoke": d["invoke"], "equip": d["equip"], "moca": round(d["moca"], 1)}
-                        for a, d in lcr.items()), key=lambda x: -x["moca"])
-    LS["creators_n"] = len(lcreators)
-    lother = [{"ts": r["ts"], "val": round(r["val"], 2), "to": r["to"], "tx": r["tx"],
-               "cat": r["fine"] if r["cat"] != "nonstandard" else "nonstandard"}
-              for r in mrows if r["lcat"] in ("growth", "micro")]
-    def _lsum(vals):
-        t = 0
-        for v in vals:
-            t += v
-        return t
-    def _lagg(os_):
-        agg = {}
-        for o in os_:
-            e = agg.setdefault(o["cat"], {"n": 0, "moca": 0})
-            e["n"] += 1
-            e["moca"] += o["val"]
-        return agg
-    lgrows = [dict(g, moca=round(g["usd"] / LRATE, 1)) for g in grows]
-    lce = sum(g["moca"] for g in lgrows) or sum(c["moca"] for c in lcreators) or 1
-    lce_all = sum(c["moca"] for c in lcreators) or 1
-    lburn24 = sum(r["val"] for r in mrows if r["ts"] > cut24 and (r["lcat"] in ("invoke", "equip")
-                  or r["fine"] in ("$3 credit", "referral $5"))) * LRATE
-    lburn_prev = sum(r["val"] for r in mrows if cut48 < r["ts"] <= cut24 and (r["lcat"] in ("invoke", "equip")
-                     or r["fine"] in ("$3 credit", "referral $5"))) * LRATE
-    lbal = BALANCE["MOCA"]
-    lgf = min(lburn24 / lburn_prev, 2) if lburn_prev > 0 else 1
-    lrun = round(lbal * LRATE / lburn24, 1) if lbal and lburn24 > 0 else None
-    lrun_adj = round(lbal * LRATE / (lburn24 * lgf), 1) if lbal and lburn24 > 0 else None
-    # legacy view is intentionally FROZEN on the old taxonomy (no $20/$100
-    # packs) — it exists to match what stakeholders originally saw; do not extend.
-    UNIT_L = {"invoke": 0.10, "equip": 1, "$3 credit": 3, "referral $5": 5,
-              "stripe $10": 10, "stripe $25": 25, "stripe $50": 50}
-    lprom = sum(UNIT_L.get(r["fine"], r["val"] * LRATE) for r in mrows)
-    lsett = sum(r["val"] for r in mrows) * LRATE
-    lout24 = sum(r["val"] for r in mrows if r["ts"] > cut24)
-    lin24 = sum(f["val"] for f in minf if f["ts"] > cut24)
-    # C4 (2026-09-15): no monitoring-status figures on the frozen view either
-    # (organic share / at-risk / rows-monitored were derived from the
-    # private pattern monitor)
-    lguard = {"bal_delta24": round(lin24 - lout24, 0),
-              "topup24": round(sum(f["val"] for f in minf if f["val"] >= 100 and f["ts"] > cut24), 0),
-              "recon_drift": None,
-              "topup_needed": round(max(0, 7 * lburn24 - (lbal or 0) * LRATE) / LRATE, 0) if lbal and lburn24 else None,
-              "runway_days": lrun, "runway_adj": lrun_adj,
-              "balance": round(lbal, 0) if lbal else None,
-              "burn24": round(lburn24, 2), "burn_prev": round(lburn_prev, 2),
-              "promised_usd": round(lprom, 2),
-              "fx_drift_pct": round((lsett - lprom) / lprom * 100, 1) if lprom else 0}
-    def _lbucket(r):
-        f = r["fine"]
-        if f in ("stripe $10", "stripe $25", "stripe $50"): return "stripe"
-        return {"invoke": "c010", "equip": "c1", "$3 credit": "c3", "referral $5": "c5"}.get(f, "other")
-    lo_d, lu_d, li_d = defaultdict(float), defaultdict(float), defaultdict(float)
-    lb_d = defaultdict(lambda: defaultdict(float))
-    lw_d = defaultdict(lambda: defaultdict(set))
-    for r in mrows:
-        d = r["ts"][:10]
-        lo_d[d] += r["val"]; lu_d[d] += r["usd"]
-        lb_d[d][_lbucket(r)] += r["usd"]
-        lw_d[d][_lbucket(r)].add(r["to"])
-    for f in minf:
-        li_d[f["ts"][:10]] += f["val"]
-    lt_days = sorted(set(lo_d) | set(li_d))
-    lt_daily = [{"d": d, "out": round(lo_d[d], 1), "out_usd": round(lu_d[d], 2),
-                 "inn": round(li_d[d], 1), "net": round(li_d[d] - lo_d[d], 1),
-                 "b": {k: round(v, 2) for k, v in lb_d[d].items()},
-                 "w": {k: len(v) for k, v in lw_d[d].items()}} for d in lt_days]
-    lfull = [d for d in lt_days if d < today]
-    ltreas = {"balance": round(lbal, 0) if lbal else None,
-              "balance_usd": round(lbal * LRATE, 0) if lbal else None,
-              "out24_moca": round(lout24, 0), "out24_usd": round(lout24 * LRATE, 2),
-              "in24_moca": round(lin24, 0),
-              "burn7_usd": round(sum(lu_d[d] for d in lfull[-7:]) / max(len(lfull[-7:]), 1), 2),
-              "daily": lt_daily}
-    ldata = {"S": LS, "hourly": lhourly, "daily": ldaily, "creators": lcreators,
-             # only the 40 rows the page lists ship; count/sum/by-type are
-             # pre-aggregated in the page's own order (same float sums). The
-             # full list was 7.0 MB of a 7.3 MB page, rewritten every run —
-             # the top driver of repo growth (audit 2026-09-27)
-             "other": lother[:40], "other_n": len(lother),
-             "other_moca": _lsum(o["val"] for o in lother),
-             "other_agg": _lagg(lother), "treasury": ltreas,
-             # same server-computed executive summary as the main page (item 1)
-             "exec_summary": data["exec_summary"]}
-    ltpl = open(os.path.join(HERE, "template_legacy.html")).read()
-    ltpl = ltpl.replace("MOCA rate used $0.008912", f"MOCA rate used ${LRATE:.6f}")
-    open(os.path.join(HERE, "legacy.html"), "w").write(
-        "<!doctype html>\n<html lang=\"en\">\n" + ltpl.replace("/*__DATA__*/", _inline_json(ldata)) + "\n</html>")
-    print("wrote legacy.html |", len(mrows), "MOCA rows")
 
+# The full page renders to full.html: committed and tested like before, but
+# NOT served — _config.yml excludes it from GitHub Pages. The private edition
+# (Cloudflare Access) renders the same template.html over the public data.json
+# with names joined in the viewer's browser. index.html is the one-screen
+# public summary (template_public.html). Legacy view retired 2026-09-28.
 tpl = open(os.path.join(HERE, "template.html")).read()
 # the header CSV link states its size — it is a 30+ MB download (audit F1)
 _csv_mb = os.path.getsize(os.path.join(HERE, "transfers_export.csv")) / 1e6
 tpl = tpl.replace("__STALE_MIN__", str(freshness.STALE_MINUTES))   # ONE threshold: freshness.py
 tpl = tpl.replace("__CSV_MB__", f"{_csv_mb:.0f} MB" if _csv_mb >= 1 else f"{_csv_mb:.1f} MB")
-out = os.path.join(HERE, "index.html")
+out = os.path.join(HERE, "full.html")
 open(out, "w").write("<!doctype html>\n<html lang=\"en\">\n" + tpl.replace("/*__DATA__*/", _inline_json(data)) + "\n</html>")
 print("wrote", out, "| rows:", len(rows), "| range:", facts["range"], "| recon:", recon)
 
-phase("render_index+legacy")
+# Public summary: a strict subset of data.json, nothing computed here that
+# data.json does not already carry (util.public_summary; test_render_exec).
+_pub = public_summary(data)
+ptpl = open(os.path.join(HERE, "template_public.html")).read().replace("__STALE_MIN__", str(freshness.STALE_MINUTES))
+open(os.path.join(HERE, "index.html"), "w").write(
+    "<!doctype html>\n<html lang=\"en\">\n" + ptpl.replace("/*__DATA__*/", _inline_json(_pub)) + "\n</html>")
+print("wrote index.html (public summary)")
+
+phase("render_pages")
 # ================= COUPON DISTRIBUTOR — claim page =================
 # A SECOND wallet, funded outside the treasury and never touching it: block
 # 48,303,358 is a mint from 0x0…0 (LayerZero bridge mint pattern) straight to

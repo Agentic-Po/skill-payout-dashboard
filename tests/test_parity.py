@@ -101,17 +101,19 @@ def _sums(rows, cut):
 
 def _exec_sentence_checks(D):
     """Executive-summary parity (Cycle-3 Loop 3, item 1): the plain-English
-    sentences embedded in the BUILT index.html must quote facts_window /
-    balance values to the cent. The text is extracted from index.html itself
-    (the page is the artifact execs read), cross-checked against data.json's
-    copy, then each $ figure is parsed back out and compared."""
-    html = open(os.path.join(ROOT, "index.html"), errors="replace").read()
-    m = re.search(r'"exec_summary":\s*\{[^{}]*?"text":\s*"((?:[^"\\]|\\.)*)"', html)
-    assert m, "index.html embeds no exec_summary text — rebuild the page"
-    text = json.loads('"' + m.group(1) + '"')
+    sentences embedded in the BUILT pages must quote facts_window /
+    balance values to the cent. The text is extracted from each page itself
+    (full.html — the private edition's render — and index.html, the public
+    summary), cross-checked against data.json's copy, then each $ figure is
+    parsed back out and compared."""
     ex = D.get("exec_summary") or {}
-    assert ex.get("text") == text, \
-        f"exec text drifted between index.html and data.json:\n  page {text!r}\n  data {ex.get('text')!r}"
+    for page in ("full.html", "index.html"):
+        html = open(os.path.join(ROOT, page), errors="replace").read()
+        m = re.search(r'"exec_summary":\s*\{[^{}]*?"text":\s*"((?:[^"\\]|\\.)*)"', html)
+        assert m, f"{page} embeds no exec_summary text — rebuild the page"
+        text = json.loads('"' + m.group(1) + '"')
+        assert ex.get("text") == text, \
+            f"exec text drifted between {page} and data.json:\n  page {text!r}\n  data {ex.get('text')!r}"
 
     def num(pat):
         mm = re.search(pat, text)

@@ -72,6 +72,7 @@ jobs:
           PY
       - name: Daily Telegram summary
         env:
+          CONSOLE_URL: ${{ secrets.CONSOLE_URL }}   # Telegram "Open dashboard" -> private edition
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python3 notify.py daily

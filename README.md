@@ -22,8 +22,9 @@ best-effort backup, delivers only a few % of slots under starvation)
        │   in NO treasury figure; renders coupon.html + coupon_data.json)
        ├─ day-pinned rate oracle (day_rates.json — closed days never reprice)
        ├─ balance reconciliation (block-pinned, per-token drift fences)
-       ├─ renders index.html (+ legacy.html: old MOCA-only layout and method, still
-       │  recomputed each run; ships only the 40 rows it lists + pre-aggregated totals)
+       ├─ renders full.html (the full page — committed + tested, NOT served:
+       │  _config.yml excludes it; the private edition renders the same template)
+       │  and index.html (one-screen public summary = util.public_summary(data.json))
        ├─ writes data.json           ← THE versioned contract (schema_version 4)
        ├─ writes guard_private.json  ← private (gitignored, encrypted Actions cache only)
        ├─ writes exports/transfers-YYYY-MM.csv (per-tx audit, one file per UTC month,
@@ -85,7 +86,7 @@ in `stripe_snapshot.json`).
 
 | Where | What | Why |
 |---|---|---|
-| committed | data.json, index.html, legacy.html, coupon.html, coupon_data.json, shards, CSV, day_rates.json, stats_history.json | public by design — strict subset of the page |
+| committed | data.json, index.html (public summary), full.html + coupon.html (not served by Pages), coupon_data.json, shards, CSV, day_rates.json, stats_history.json | public by design — no identities; names live only in the private edition |
 | Actions cache (`alert-state-enc-*`) | **encrypted only** (since 2026-09-27): alert_state.json.enc (via `state.py`, atomic single-writer), guard_private.json.enc, private_log.json.enc | detector state & per-wallet signal rows are **never** committed — publishing them hands abusers a calibration oracle. Any workflow in the repo can restore this cache, so it holds only `tools/state_crypt.py` blobs (AES-256-CBC/PBKDF2 via `openssl` + HMAC-SHA256, key = `STATE_KEY`). Worst case on cache loss: one duplicate alert, never silence. |
 | public Actions logs | number-free status only ("alerts: detectors ran", "SANITY: N exact ok …", "alert liveness: ok") | anyone can read a public repo's run logs (retention **7 days** as of 2026-09-27). Inside Actions every detector/monitoring detail line goes through `privlog.private_print` — withheld from the log, banked to private_log.json (encrypted cache, last 5,000 lines); locally it prints as before |
 | repo secrets | TELEGRAM_*, LEDGER_*, HEALTHCHECK_URL, POSTHOG_API_KEY, **STATE_KEY** | never in code or artifacts |

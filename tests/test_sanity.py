@@ -196,7 +196,7 @@ def main():
     for k in ("repeat_grants", "daily_grant_wallets", "heaviest_grants"):
         assert k in check_publish.ORACLE_KEYS, f"{k} not on the structural denied list"
         assert any(k in pat for pat in check_publish.DENIED), f"{k} not on the text denied list"
-    for rel in ("data.json", "index.html", "coupon_data.json"):
+    for rel in ("data.json", "index.html", "full.html", "coupon_data.json"):
         p = os.path.join(ROOT, rel)
         if os.path.exists(p):
             assert "repeat_grants" not in open(p, errors="replace").read(), f"repeat_grants leaked into {rel}"

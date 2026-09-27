@@ -31,7 +31,7 @@ BANNED = [r"\bnew funding\b", r"\bexternal funding\b", r"\bmanual funding\b",
           r"In: top-ups", r"\btop-up funding\b", r"money entering from outside",
           r"\bdeliberate top-ups?\b", r"top-ups? of this wallet"]
 # public surfaces the lint reads (data.json carries the rendered prose)
-LINT_TARGETS = ["template.html", "data.json", "template_legacy.html"]
+LINT_TARGETS = ["template.html", "data.json", "template_public.html"]
 
 
 def lint(text):

@@ -11,7 +11,7 @@ with the data already injected, in which case it runs verbatim), fails on ANY
 uncaught error, and then asserts the run produced actual signal in the
 recorded DOM structure.
 
-index.html (data.json):
+full.html (data.json — the full render the private edition shows):
   * the daily table container (#dailyT) got > 0 <tr> rows,
   * the hero/plain-English strip (#plainStrip) text contains a "$" figure,
   * the daily size-band mix produced > 0 band divs,
@@ -26,7 +26,7 @@ coupon.html (coupon_data.json):
 
 Loop 2 (2026-09-27): all of a page's scripts now run in ONE shared realm
 (tests/render_harness.js, as a browser does), with the page's own markup
-parsed into the shim's id tree (tests/pagehost.py). index.html additionally
+parsed into the shim's id tree (tests/pagehost.py). full.html additionally
 must finish with window.__renderErrors EMPTY on the real data (a section
 that degraded to "unavailable" on real data is red here), must have removed
 the fail-closed loading banner, and:
@@ -166,7 +166,7 @@ def _checks_coupon(p):
 
 # (page, injected data file, signal assertions). Each page is executed with
 # ITS OWN data block — coupon.html embeds coupon_data.json, never data.json.
-PAGES = [("index.html", "data.json", _checks_index),
+PAGES = [("full.html", "data.json", _checks_index),
          ("coupon.html", "coupon_data.json", _checks_coupon)]
 
 
@@ -188,14 +188,14 @@ def run_page(page, data_rel, checks, shim=None):
     assert p and "__probe_error" not in p, f"{page} probe failed: {p}"
     print(f"ok {page} {len(scripts)} script(s) executed clean in one realm "
           f"(daily_rows={p['daily_rows']}, band_divs={p['band_divs']})")
-    if page == "index.html":
+    if page == "full.html":
         errs = r["renderErrors"]
-        assert errs == [], f"index.html: sections degraded on REAL data: {errs}"
+        assert errs == [], f"full.html: sections degraded on REAL data: {errs}"
         ids = r["dump"]["ids"]
         assert ids.get("loadBanner", {}).get("removed"), \
-            "index.html: clean run did not remove the fail-closed loading banner"
+            "full.html: clean run did not remove the fail-closed loading banner"
         assert ids.get("renderBanner", {}).get("hidden", True), "page banner raised on real data"
-        print("ok index.html window.__renderErrors == [] · loading banner removed · page banner hidden")
+        print("ok full.html window.__renderErrors == [] · loading banner removed · page banner hidden")
     print(f"ok {page} signal: {checks(p)}")
     return 0
 
@@ -267,6 +267,41 @@ def check_stale_and_fail_closed():
     return 0
 
 
+def check_public_page():
+    """index.html — the one-screen public summary. Its payload is exactly
+    util.public_summary(data.json); it renders clean on real data, goes stale
+    past the threshold, degrades visibly on null data, and fails closed."""
+    import sys as _s
+    _s.path.insert(0, ROOT)
+    import util
+    D = json.load(open(os.path.join(ROOT, "data.json")))
+    built = open(os.path.join(ROOT, "index.html")).read()
+    want = json.dumps(util.public_summary(D)).replace("</", "<\\/")
+    assert "const D0=" + want + ";" in built, "index.html payload != util.public_summary(data.json) — rebuild the page"
+    data = open(os.path.join(ROOT, "data.json")).read()
+    gen = P.generated_ms(data)
+    MIN = 60000
+    r = P.run(built, data, [{"now": gen + 10 * MIN}, {"now": gen + 95 * MIN}])
+    for i in (0, 1):
+        assert not r[i]["uncaught"] and r[i]["renderErrors"] == [], (i, r[i]["uncaught"], r[i]["renderErrors"])
+    ids = r[0]["dump"]["ids"]
+    assert ids.get("loadBanner", {}).get("removed"), "index.html: clean run kept the loading banner"
+    assert _banner(r[0], "staleBanner").get("hidden", True), "index.html: stale banner up at +10 min"
+    assert not _banner(r[1], "staleBanner").get("hidden", True), "index.html: stale banner NOT up at +95 min"
+    assert ids["execSummary"]["text"] == D["exec_summary"]["text"], "index.html summary text != data.json"
+    for t in ("tBal", "t24", "t7", "t30"):
+        assert (ids[t]["text"] or "").startswith("$"), f"index.html tile {t} shows {ids[t]['text']!r}"
+    tpl = open(os.path.join(ROOT, "template_public.html")).read().replace("__STALE_MIN__", "90")
+    page = "<!doctype html>\n<html lang=\"en\">\n" + tpl + "\n</html>"
+    rn = P.run(page, data, [{"now": gen, "rawData": "null"}, {"now": gen, "rawData": "{\"facts\": "}])
+    assert not rn[0]["uncaught"] and rn[0]["renderErrors"], "null data: no section degraded, or one escaped"
+    assert not _banner(rn[0], "renderBanner").get("hidden", True), "null data did not raise the page banner"
+    assert rn[1]["uncaught"] and not _banner(rn[1], "loadBanner").get("removed"), "invalid JSON removed the loading banner"
+    print("ok index.html (public summary): payload == util.public_summary · clean on real data · "
+          "stale at +95 min · null data -> page banner · invalid JSON keeps the loading banner")
+    return 0
+
+
 def main():
     shim = None
     want = os.path.basename(sys.argv[1]) if len(sys.argv) > 1 else None
@@ -274,8 +309,10 @@ def main():
     assert pages, f"no known page matches {want!r} — known: {[p[0] for p in PAGES]}"
     failures = sum(run_page(page, data_rel, checks, shim)
                    for page, data_rel, checks in pages)
-    if want in (None, "index.html") and not failures:
+    if want in (None, "full.html") and not failures:
         failures += check_stale_and_fail_closed()
+    if want in (None, "index.html") and not failures:
+        failures += check_public_page()
     if failures:
         print(f"test_render_exec: FAIL ({failures} script(s) raised at runtime)")
         sys.exit(1)

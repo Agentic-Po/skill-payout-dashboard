@@ -24,7 +24,7 @@ A refactor that claims to be behaviour-preserving must exit 0.
 import json, os, re, shutil, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ARTIFACTS = ["exports/transfers-2026-09.csv", "exports/transfers-2026-08.csv", "data.json", "index.html", "legacy.html", "coupon.html",
+ARTIFACTS = ["exports/transfers-2026-09.csv", "exports/transfers-2026-08.csv", "data.json", "full.html", "index.html", "coupon.html",
              "coupon_data.json", "transfers_export.csv", "day_rates.json",
              "day_digests.json", "stats_history.json", "catalog.json", "DATASETS.md"]
 # code = anything whose change is the thing under test; data stays identical

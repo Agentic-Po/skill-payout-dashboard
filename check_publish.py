@@ -22,7 +22,7 @@ approved it, which is the `add -A` failure mode this file exists to close.
 
 WHAT THE ADDRESS SCAN IS FOR (revised 2026-08-30 after QA).
 The earlier rule was "a guard_private address must not appear in a public
-artifact". Applied to index.html / legacy.html / data.json as a whole that
+artifact". Applied to index.html / full.html / data.json as a whole that
 rule is WRONG, and loudly so: `facts.top_recipients` and `infer.creators` rank
 counterparties by USD received, which is an on-chain fact anyone can recompute
 from the very shards this repo publishes. Redacting a wallet from that ranking
@@ -45,7 +45,7 @@ Two complementary gates implement it:
       data.json:registry, which refresh.py auto-extends with top recipients
       and would therefore let a wallet exempt itself.
   (b) status-adjacency scan, on EVERY public artifact including index.html,
-      legacy.html, the whole of data.json and transfers_export.csv: an address
+      full.html, the whole of data.json and transfers_export.csv: an address
       appearing near a detector field or a review/flagged status token is a
       leak of monitoring status regardless of which file it lands in.
 """
@@ -58,7 +58,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # matched against the whole repo-relative path, so a pattern without a "/"
 # only ever matches a ROOT-level file.
 PUBLISH_EXTRA = [
-    "index.html", "legacy.html", "dashboard.html", "template.html", "template_legacy.html",
+    # index.html = one-screen public summary; full.html = the full render,
+    # committed + tested but excluded from Pages by _config.yml (2026-09-28)
+    "index.html", "full.html", "template.html", "template_public.html", "_config.yml",
     # coupon claim page: built artifact, its template, and the separate data
     # block it embeds (kept out of data.json so the v2 contract is untouched)
     "coupon.html", "template_coupon.html", "coupon_data.json",
@@ -136,7 +138,7 @@ LEAKED_NAME_RES = [re.compile("ja" + "son" + r"\s+o" + "ng", re.I),
                    re.compile("kat" + "herine" + r"\s+w" + "ebb", re.I)]
 
 # Every public/derived artifact gets the denied-field scan.
-DENIED_TARGETS = ["index.html", "legacy.html", "data.json", "catalog.json",
+DENIED_TARGETS = ["index.html", "full.html", "data.json", "catalog.json",
                   "DATASETS.md", "README.md", "stats_history.json",
                   "transfers_export.csv", "day_digests.json", "RESTATEMENTS.md",
                   # the coupon page is a public artifact like any other
@@ -473,7 +475,7 @@ def scan():
     # (c) structural walks — exact detector key names, and the label tripwire
     # (any unreviewed label/role/note/counterparty_label next to an address),
     # by parse. data.json and catalog.json are the two parseable public
-    # surfaces; index.html embeds a strict superset of data.json.
+    # surfaces; full.html embeds a strict superset of data.json, index.html a subset.
     _dj = os.path.join(HERE, "data.json")
     if os.path.exists(_dj):
         try:
@@ -495,7 +497,7 @@ def scan():
                 bad.append(f"{_rel} did not parse for the structural scan: {e}")
     # (d) retired-straggler per-entry detail — tx hashes and entries[] only.
     _rt = []
-    for rel in ("data.json", "index.html"):
+    for rel in ("data.json", "index.html", "full.html"):
         p = os.path.join(HERE, rel)
         if os.path.exists(p):
             _rt.append((rel, open(p, errors="replace").read()))

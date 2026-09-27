@@ -45,9 +45,12 @@ check(cli("success", "") == "UNHEALTHY", "CLI with an unreadable age must print 
 tpl = open(os.path.join(ROOT, "template.html")).read()
 check("const STALE_MIN=__STALE_MIN__;" in tpl, "template.html must take STALE_MIN from the __STALE_MIN__ placeholder")
 check(not re.search(r"const STALE_MIN=\d", tpl), "template.html hard-codes STALE_MIN")
-idx = open(os.path.join(ROOT, "index.html")).read()
-check(f"const STALE_MIN={T};" in idx, f"index.html does not render STALE_MIN={T}")
-check("__STALE_MIN__" not in idx, "index.html shipped an unsubstituted __STALE_MIN__")
+for page in ("full.html", "index.html"):
+    idx = open(os.path.join(ROOT, page)).read()
+    check(f"const STALE_MIN={T};" in idx, f"{page} does not render STALE_MIN={T}")
+    check("__STALE_MIN__" not in idx, f"{page} shipped an unsubstituted __STALE_MIN__")
+pt = open(os.path.join(ROOT, "template_public.html")).read()
+check("const STALE_MIN=__STALE_MIN__;" in pt, "template_public.html must take STALE_MIN from the placeholder")
 
 src = open(os.path.join(ROOT, "refresh.py")).read()
 for flag in ("_exec_degraded", "_cp_degraded"):
@@ -70,5 +73,5 @@ for f in fails:
 if fails:
     print(f"test_freshness: FAIL ({len(fails)})")
     sys.exit(1)
-print(f"ok health edges at {T - 1}/{T}/{T + 1} min; ok wiring (template, index.html, refresh.py, weekly.yml)")
+print(f"ok health edges at {T - 1}/{T}/{T + 1} min; ok wiring (templates, full.html, index.html, refresh.py, weekly.yml)")
 print("test_freshness: PASS")

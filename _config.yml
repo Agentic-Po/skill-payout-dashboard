@@ -1,0 +1,10 @@
+# GitHub Pages (Jekyll) publish list. The site is the one-screen public
+# summary (index.html) plus the data files. The full render (full.html) and
+# the coupon page stay committed and CI-tested but are not served — the full
+# edition lives behind Cloudflare Access and renders template.html /
+# template_coupon.html (served here) over data.json / coupon_data.json.
+exclude:
+  - full.html
+  - coupon.html
+  - tests/
+  - tools/

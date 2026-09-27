@@ -1,0 +1,105 @@
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Minds Treasury Wallet</title>
+<script>
+// fail-closed without the flash (same pattern as template.html): the loading
+// banner shows only if the page script has not finished within 5 s.
+document.documentElement.className+=" js";
+setTimeout(function(){var b=document.getElementById("loadBanner");if(b)b.classList.add("show");},5000);
+</script>
+<style>
+.js #loadBanner{display:none}.js #loadBanner.show{display:block}
+:root{--bg:#f7f7f5;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--ink3:#6f6e69;--line:#e6e5e0;--acc:#1a5fb0;--warn:#9a5800;--warnbg:#fdf6ec}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#121211;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--ink3:#9d9c96;--line:#2e2e2b;--acc:#3987e5;--warn:#e8a44a;--warnbg:#241c10}}
+:root[data-theme="dark"]{--bg:#121211;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--ink3:#9d9c96;--line:#2e2e2b;--acc:#3987e5;--warn:#e8a44a;--warnbg:#241c10}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+a{color:var(--acc)}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.wrap{max-width:760px;margin:0 auto;padding:28px 16px 40px}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:var(--ink2);font-size:13px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.banner{background:var(--warnbg);color:var(--warn);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin:0 0 14px;font-size:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin:16px 0}
+.lead{border-left:6px solid var(--acc)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:16px 0}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.tile .k{color:var(--ink3);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.tile .v{font-size:24px;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums}
+.tile .d{color:var(--ink2);font-size:13px}
+ul.links{margin:0;padding-left:18px}ul.links li{margin:4px 0}
+footer{color:var(--ink3);font-size:12px;margin-top:24px}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="banner" id="loadBanner" role="alert">This page did not finish loading — the figures below are not shown. Reload, or use the data files linked at the bottom.</div>
+  <div class="banner" id="staleBanner" role="alert" hidden></div>
+  <div class="banner" id="renderBanner" role="alert" hidden>Part of this page could not be displayed — do not rely on it until it recovers.</div>
+  <header>
+    <h1>Minds Treasury Wallet</h1>
+    <div class="sub mono"><a href="https://basescan.org/address/0xBD956171F5B50936f0Ad1C4db80c022bd2442519" target="_blank" rel="noopener">0xBD95…2519</a> on Base · <span id="gen">updated —</span></div>
+  </header>
+
+  <div class="card lead" id="execSummary"></div>
+
+  <section class="tiles" aria-label="Headline figures">
+    <div class="tile"><div class="k">Wallet balance</div><div class="v" id="tBal">—</div><div class="d" id="tBalD"></div></div>
+    <div class="tile"><div class="k">Out, last 24 h</div><div class="v" id="t24">—</div><div class="d" id="t24D"></div></div>
+    <div class="tile"><div class="k">Out, last 7 days</div><div class="v" id="t7">—</div><div class="d" id="t7D"></div></div>
+    <div class="tile"><div class="k">Out, last 30 days</div><div class="v" id="t30">—</div><div class="d" id="t30D"></div></div>
+  </section>
+
+  <div class="card">
+    <p style="margin:0 0 8px">This is the public summary. The full dashboard is internal to the Minds team.</p>
+    <ul class="links">
+      <li><a href="data.json">data.json</a> — every figure behind this page (versioned contract)</li>
+      <li><a href="transfers_export.csv" download>Per-transaction CSV</a> — last 7 days · <a href="https://github.com/Agentic-Po/skill-payout-dashboard/tree/main/exports" target="_blank" rel="noopener">full history by month</a></li>
+      <li><a href="https://github.com/Agentic-Po/skill-payout-dashboard/blob/main/DATASETS.md" target="_blank" rel="noopener">Data catalog</a> · <a href="catalog.json">catalog.json</a></li>
+    </ul>
+  </div>
+  <footer>Chain-recorded from Blockscout (Base). USD at the day's pinned market rate. Refreshed about every 30 minutes.</footer>
+</main>
+<script>
+const D0=/*__DATA__*/;
+const D=(D0&&typeof D0==="object")?D0:{};   // null/garbage data degrades per section, never throws
+const STALE_MIN=__STALE_MIN__;
+window.__renderErrors=[];
+function fail(where,e){window.__renderErrors.push(where+": "+(e&&e.message||e));document.getElementById("renderBanner").hidden=false;}
+// strict formatters: a missing or non-numeric figure throws, never prints "$NaN"
+function num(v){if(typeof v!=="number"||!isFinite(v))throw new Error("not a number: "+v);return v;}
+function usd(v){return "$"+num(v).toLocaleString("en-US",{maximumFractionDigits:0});}
+function int(v){return num(v).toLocaleString("en-US",{maximumFractionDigits:0});}
+function set(id,t){document.getElementById(id).textContent=t;}
+function section(name,fn){try{fn();}catch(e){fail(name,e);}}
+const SC=D.scope||{};
+const GEN_T=Date.parse(SC.generated_iso||"");
+function ageWords(ms){const m=ms/60000;return m<1?"just now":m<90?Math.round(m)+" min ago":m<2880?Math.round(m/60)+" h ago":Math.round(m/1440)+" days ago";}
+section("freshness",function(){
+  if(isNaN(GEN_T)){set("gen","updated "+(SC.generated||"?")+" UTC");return;}
+  set("gen","updated "+ageWords(Date.now()-GEN_T));
+  document.getElementById("gen").title=(SC.generated||"")+" UTC";
+  const ageM=(Date.now()-GEN_T)/60000,el=document.getElementById("staleBanner");
+  if(ageM>STALE_MIN){el.textContent="⚠ Data is "+ageWords(Date.now()-GEN_T).replace(" ago"," old")+" — the refresh pipeline has not published since "+SC.generated+" UTC. Treat all figures as stale.";el.hidden=false;}
+});
+section("summary",function(){
+  const ex=D.exec_summary||{};if(!ex.text)throw new Error("no summary text");
+  set("execSummary",ex.text);
+});
+section("balance",function(){
+  const b=D.balance_usd||{},t=D.balance||{};
+  set("tBal",usd(num(b.MOCA||0)+num(b.MENTE||0)));
+  set("tBalD",int(num(t.MOCA||0))+" MOCA"+(t.MENTE?" · "+int(t.MENTE)+" MENTE":""));
+});
+section("windows",function(){
+  const by={};(D.windows||[]).forEach(w=>by[w.label]=w);
+  [["24h","t24"],["7d","t7"],["30d","t30"]].forEach(([k,id])=>{
+    const w=by[k];if(!w)throw new Error("missing window "+k);
+    set(id,usd(w.out_usd));set(id+"D",int(w.out_tx)+" transfers · "+int(w.out_wallets)+" wallets");
+  });
+});
+document.getElementById("loadBanner").remove();
+</script>
+</body>

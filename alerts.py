@@ -56,7 +56,9 @@ from privlog import private_print, in_actions
 DRY_RUN = "--dry-run" in sys.argv[1:]
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-URL = "https://agentic-po.github.io/skill-payout-dashboard/"
+# "Open dashboard" opens the private edition when CONSOLE_URL (secret) is set;
+# the public summary otherwise. The console host is kept out of the repo.
+URL = os.environ.get("CONSOLE_URL") or "https://agentic-po.github.io/skill-payout-dashboard/"
 BIG_USD = 5000
 STATE_PATH = os.path.join(HERE, "alert_state.json")
 

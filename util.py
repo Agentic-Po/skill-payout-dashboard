@@ -34,3 +34,18 @@ def cooled(last_iso, now, hours):
     """True if no previous fire (last_iso empty) or it is at least `hours` old."""
     last = parse_dt(last_iso)
     return last is None or now - last >= timedelta(hours=hours)
+
+
+PUBLIC_WINDOWS = ("24h", "7d", "30d")
+PUBLIC_WINDOW_KEYS = ("label", "out_usd", "out_tx", "out_wallets", "in_usd")
+
+
+def public_summary(data):
+    """data.json -> the payload index.html (the one-screen public summary)
+    embeds: a strict subset, nothing computed that data.json does not carry."""
+    facts = data["facts"]
+    return {"scope": {k: data["scope"].get(k) for k in ("wallet", "generated", "generated_iso")},
+            "exec_summary": data["exec_summary"],
+            "balance": facts["balance"], "balance_usd": facts["balance_usd"],
+            "windows": [{k: w.get(k) for k in PUBLIC_WINDOW_KEYS}
+                        for w in facts["windows"] if w.get("label") in PUBLIC_WINDOWS]}

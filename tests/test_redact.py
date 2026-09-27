@@ -50,7 +50,7 @@ PROSE_DENIED = ["flagged for review", "wallets " + "monitored", " flagged ·", "
                 "gifted", "Implied " + "user spend", "top-up (" + "legacy)", "legacy " + "free top-up",
                 "Legacy $1", "looks unusual", "under review", "account" + "s flagged",
                 "revenue-" + "backed", "burn " + "growth", "reward " + "farm"]
-PUBLIC_ARTIFACTS = ("data.json", "index.html", "legacy.html", "coupon_data.json",
+PUBLIC_ARTIFACTS = ("data.json", "index.html", "full.html", "coupon_data.json",
                     "transfers_export.csv")
 
 
@@ -65,7 +65,7 @@ def _clean(rel):
 
 def main():
     # 1. public artifacts are clean
-    for rel in ("data.json", "index.html"):
+    for rel in ("data.json", "index.html", "full.html"):
         _clean(rel)
     D = json.load(open(os.path.join(ROOT, "data.json")))
     assert D.get("schema_version") == 4, "data.json is not the v4 contract"
@@ -84,20 +84,20 @@ def main():
         assert "wallets" not in lp and "repeat" not in json.dumps(lp), f"system_topup_public leaks per-wallet data: {lp}"
     print(f"ok {len(DETECTOR_KEYS)} detector/ledger key names absent from every public artifact; rewards_v2 / system_topup_public carry no cap or per-wallet data")
     # word-level prose checks on every page a reader can open (assembled strings);
-    # legacy.html is linked from the header, so the frozen view is policed too
-    for rel in ("index.html", "data.json", "legacy.html"):
+    # full.html is not served but is committed to a public repo, so it is policed too
+    for rel in ("index.html", "full.html", "data.json"):
         text = open(os.path.join(ROOT, rel), errors="replace").read()
         hits = [w for w in PROSE_DENIED if w.lower() in text.lower()]
         assert not hits, f"{rel}: monitoring-status / cap / paid-vs-free prose present: {hits}"
-    for rel in ("index.html", "data.json"):
+    for rel in ("index.html", "full.html", "data.json"):
         text = open(os.path.join(ROOT, rel), errors="replace").read()
-        # 'legacy' survives ONLY as the link to the frozen legacy.html view
-        stripped = text.replace("legacy.html", "").replace("legacy view (MOCA-only, old method)", "")
+        # the legacy view was retired 2026-09-28; no page may mention it
+        stripped = text
         n = len(re.findall("legacy", stripped, re.I))
         assert n == 0, f"{rel}: {n} 'legacy' mention(s) outside the legacy.html link"
         # the page never says 'creators' as a count of people — wallets only
         assert not re.search(r"\d\s+creators\b", text), f"{rel}: a count of 'creators' (should be creator wallets)"
-    print(f"ok prose: {len(PROSE_DENIED)} status/cap/paid-vs-free phrases absent; 'legacy' only in the legacy.html link; counts say creator wallets")
+    print(f"ok prose: {len(PROSE_DENIED)} status/cap/paid-vs-free phrases absent; no 'legacy' mentions; counts say creator wallets")
 
     # 2. CSV header: counterparty stays, its label column is gone
     with open(os.path.join(ROOT, "transfers_export.csv"), newline="") as fh:

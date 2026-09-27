@@ -177,7 +177,7 @@ PUBLIC = [
          row_schema="schema_version (3), scope, facts (incl. windows[].groups, float, creator_wallets, hourly[].g), infer, server, stripe_snap, insights, open_items, gaps, registry, sink, exec_summary",
          update_cadence="every refresh (~4x/hour)", expected_cadence_minutes=15,
          source_generated=lambda: _data_generated("data.json"),
-         provenance="refresh.py — the versioned contract; a strict subset of what index.html embeds",
+         provenance="refresh.py — the versioned contract; a strict subset of what full.html embeds",
          not_included="no per-wallet detector signals or monitoring-status counts (those stay in guard_private.json / alert_state.json), no cap figure, no paid-vs-free basis and no raw transfer rows"),
     dict(name="stats_history", path=["stats_history.json"], kind="derived", live=True,
          measure=lambda: _hist_stamps("stats_history.json"),

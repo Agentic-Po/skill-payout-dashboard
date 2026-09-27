@@ -220,7 +220,7 @@ def main():
     for k in ("grant_bleed", "crossed_5", "crossed_20", "share_7d_pct", "fences", "runaway"):
         assert k in check_publish.ORACLE_KEYS, f"{k} not on the structural denied list"
         assert any(k in pat for pat in check_publish.DENIED), f"{k} not on the text denied list"
-    for rel in ("data.json", "index.html", "coupon_data.json", "transfers_export.csv"):
+    for rel in ("data.json", "index.html", "full.html", "coupon_data.json", "transfers_export.csv"):
         p = os.path.join(ROOT, rel)
         if os.path.exists(p):
             text = open(p, errors="replace").read()

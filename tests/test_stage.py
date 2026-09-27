@@ -64,9 +64,10 @@ def main():
             print(f"ok {len(shard)} {d} shard file(s) staged individually")
         # The coupon page's own artifacts must be staged too — a new file that
         # is never committed is the failure mode PUBLISH_EXTRA exists to stop.
-        for f in ("coupon.html", "template_coupon.html", "coupon_data.json"):
+        for f in ("coupon.html", "template_coupon.html", "coupon_data.json",
+                  "index.html", "full.html", "template_public.html", "_config.yml"):
             assert f in files, f"{f} is not in the stage list — add it to PUBLISH_EXTRA"
-        print("ok coupon.html / template_coupon.html / coupon_data.json staged")
+        print("ok coupon + public summary + full render + Pages config staged")
     finally:
         shutil.rmtree(os.path.dirname(NESTED_PY), ignore_errors=True)
         for p in (STRAY, COUPON_STRAY):
