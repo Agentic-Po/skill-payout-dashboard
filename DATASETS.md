@@ -78,7 +78,7 @@ Rows, bytes and coverage are measured off the files, never asserted.
 
 **`data`** — schema_version (3), scope, facts (incl. windows[].groups, float, creator_wallets, hourly[].g), infer, server, stripe_snap, insights, open_items, gaps, registry, sink, exec_summary
 
-- provenance: refresh.py — the versioned contract; a strict subset of what index.html embeds
+- provenance: refresh.py — the versioned contract; a strict subset of what full.html embeds
 - not included: no per-wallet detector signals or monitoring-status counts (those stay in guard_private.json / alert_state.json), no cap figure, no paid-vs-free basis and no raw transfer rows
 
 **`stats_history`** — ts, recon, invoke, equip, growth, moca, creators, rate, balance, mente_balance, runway7, runway_adj (runway7/runway_adj = facts.float.days_7d_pace, total-outflow basis, since 2026-09-15)
@@ -110,11 +110,5 @@ they feed.
 
 ## peer repo — Agentic-Po/moca-ledger
 
-Fetched from `catalog.json` at build time: **330,653 rows · 83.4 MB across 3 datasets**.
-
-| Dataset | Rows | Size | Coverage |
-|---|---:|---:|---|
-| `ledger` | 330,586 | 83.4 MB | 2026-07-06 → 2026-09-27 |
-| `labels` | 66 | 4.4 KB | 2026-08-22 → 2026-08-22 |
-| `heartbeat` | 1 | 195 B | 2026-09-27 → 2026-09-27 |
+_peer catalog unavailable this run_ (not fetched).
 
