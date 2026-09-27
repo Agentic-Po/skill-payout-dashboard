@@ -44,7 +44,7 @@ Rows, bytes and coverage are measured off the files, never asserted.
 
 | Dataset | Path | Rows | Size | Coverage | Cadence |
 |---|---|---:|---:|---|---|
-| `day_rates` | `day_rates.json` | 159 | 43.0 KB | 2026-04-24 → 2026-09-26 | one immutable entry per token per day |
+| `day_rates` | `day_rates.json` | 159 | 43.5 KB | 2026-04-24 → 2026-09-26 | one immutable entry per token per day |
 
 **`day_rates`** — day_rates[symbol][YYYY-MM-DD] -> USD rate; day_rate_src[symbol][YYYY-MM-DD] -> 'implied'|'market' for priced days, and 'market-open'|'carry-forward'|'market-rejected'|'market-unbanded' stamps on days ABSENT from day_rates; plus open_day_rate (today, from market_open), market_open (today's running candle, never banked), market_rates (closed-day closes), market_rates_note, last_accepted_rate, recon, pending_rate, coupon.next_block (the coupon crawl's per-direction block cursor)
 
@@ -58,7 +58,7 @@ Rows, bytes and coverage are measured off the files, never asserted.
 | `coupon_data` | `coupon_data.json` | 1 | 20.1 KB | 2026-07-08 → 2026-09-27 | every refresh (~4x/hour) |
 | `transfers_export` | `transfers_export.csv` | 24,043 | 5.0 MB | 2026-09-20 → 2026-09-27 | trailing 7 days, rewritten every refresh (full history: transfers_monthly) |
 | `transfers_monthly` | `exports/` | 152,018 | 31.6 MB | 2026-04-24 → 2026-09-27 | open month rewritten every refresh; closed months byte-stable |
-| `data` | `data.json` | 1 | 197.1 KB | 2026-04-24 → 2026-09-27 | every refresh (~4x/hour) |
+| `data` | `data.json` | 1 | 197.9 KB | 2026-04-24 → 2026-09-27 | every refresh (~4x/hour) |
 | `stats_history` | `stats_history.json` | 2,141 | 601.4 KB | 2026-07-13 → 2026-09-27 | one append per refresh (~4x/hour) |
 
 **`coupon_data`** — schema_version, scope, summary, totals, buckets, daily, inflows, top, concentration, range
@@ -76,7 +76,7 @@ Rows, bytes and coverage are measured off the files, never asserted.
 - provenance: refresh.py, from transfers/ + transfers_in/ priced at the day-pinned rate — the full per-tx history
 - not included: no cognition_in rows and no SWARM-era rows; no counterparty labels (identity labels are private — see CONSUMERS.md)
 
-**`data`** — schema_version (3), scope, facts (incl. windows[].groups, float, creator_wallets, hourly[].g), infer, server, stripe_snap, insights, open_items, gaps, registry, sink, exec_summary
+**`data`** — schema_version (5), scope, facts (incl. windows[].groups, float, creator_wallets, hourly[].g), infer, server, stripe_snap, insights, open_items, gaps, registry, sink, exec_summary
 
 - provenance: refresh.py — the versioned contract; a strict subset of what full.html embeds
 - not included: no per-wallet detector signals or monitoring-status counts (those stay in guard_private.json / alert_state.json), no cap figure, no paid-vs-free basis and no raw transfer rows
