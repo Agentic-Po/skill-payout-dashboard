@@ -300,11 +300,13 @@ What each gate can and cannot prove, and where a figure lives.
 |---|---|---|
 | post-fetch code (facts, layer 2, render, CSV) | `tools/golden.py` — IDENTICAL or a key-path diff | nothing offline |
 | order of the two STATE writes | `tests/test_state_order.py` + `tests/state_write_order.json` (trace via `REFRESH_TRACE_STATE=path`; golden holds head's trace to it) | the coupon write only runs online — pinned by static checks |
-| pricing in the five loaders | `tests/test_pricing_parity.py` (all five on the real tree + fixtures) | — |
+| pricing in the five loaders | `tests/test_pricing_parity.py` (all five on the real tree + fixtures) | refresh.py's row quantity is rebuilt by the test (only `day_rate` is extracted), and inflows are compared for `alerts` only |
+| data.json shape, or a CLOSED day's figure | `tests/test_contract.py` + an entry in CONSUMERS.md (and a `schema_version` bump if a field changes meaning); `digests.enforce` hard-fails a repriced/vanished closed day unless `RESTATEMENTS.md` documents it | — |
 | fetch code (crawl, rates, balances, sink, PostHog) | **nothing offline** — offline reuses the previous run's fetched values; needs a pure-move review + a watched live run (a live run cannot prove equality: the chain moves). Record/replay is the next cycle's first item | |
 
 **Where a headline figure lives** (quick map — the glossary below has formulas):
-month-by-month card and all windows → `refresh.py:facts_window` → `data.json facts.windows[] / facts.monthly[]` → `test_page.py`, `test_parity.py`, `sanity.py` (EXACT);
+windows → `refresh.py:facts_window` → `data.json facts.windows[]` → `test_parity.py`, `sanity.py` (EXACT);
+month-by-month card → `facts_window` per month → `facts.monthly[]` → `test_page.py` (per-column closure, months = all-history, closed months = their days), `test_contract.py` (key set), `sanity.py` (section present);
 runway/float → `facts.float` → `test_parity.py`, `sanity.py` (BOUNDED 5%);
 day rates → `refresh.py` oracle + `day_rates.json` → `test_rate_stale.py`, `test_digests.py`, `sanity.py`;
 exec summary → `refresh.py` (`exec_summary`) → `test_parity.py` (to the cent).

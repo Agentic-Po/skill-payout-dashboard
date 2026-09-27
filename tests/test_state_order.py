@@ -53,6 +53,17 @@ def static_order(src):
                 fn = next((p for p in _up(n, parents) if isinstance(p, ast.FunctionDef)), None)
                 if not (fn and fn.name == "write_state"):
                     problems.append(f"line {n.lineno}: json.dump(STATE, ...) outside write_state()")
+        # any other touch of RATES_PATH (json.dump(dict(STATE), open(RATES_PATH,"w")),
+        # open(RATES_PATH,"w").write(...), ...) is a write that bypasses
+        # write_state — only its definition, the initial load and write_state
+        # itself may name it (QA loop 3)
+        if isinstance(n, ast.Name) and n.id == "RATES_PATH":
+            fn = next((p for p in _up(n, parents) if isinstance(p, ast.FunctionDef)), None)
+            top = next((p for p in _up(n, parents) if isinstance(p, (ast.Assign, ast.AnnAssign))), None)
+            is_def = top is not None and any(isinstance(t, ast.Name) and t.id in ("RATES_PATH", "STATE")
+                                             for t in getattr(top, "targets", [getattr(top, "target", None)]))
+            if not (fn and fn.name == "write_state") and not is_def:
+                problems.append(f"line {n.lineno}: RATES_PATH used outside write_state() — a write that bypasses the trace")
     calls.sort()
     return calls, problems
 

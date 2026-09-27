@@ -340,7 +340,7 @@ def check_runway(rep, D, rows, syms, gen, live_bal):
 
 # Sections the page cannot do without (council loop 2, 2026-09-27). A
 # HEADLINE section that is missing or empty BLOCKS the publish — the last good
-# page stays up, the stale banner (75 min) and the dead-man take over, which is
+# page stays up, the stale banner (freshness.STALE_MINUTES, 90 min) and the dead-man take over, which is
 # louder than a page quietly missing its core. A SECONDARY section only WARNs
 # (the page shows "unavailable" for it). Dry run before enabling: none of the
 # last 400 published data.json had any of these empty (0 false blocks).

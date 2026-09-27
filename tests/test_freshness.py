@@ -60,6 +60,10 @@ wk = open(os.path.join(ROOT, ".github", "workflows", "weekly.yml")).read()
 check('freshness.py health "$CONCLUSION" "$AGE_MIN"' in wk, "weekly.yml must call freshness.py health with AGE_MIN")
 check("/ 60 ))" in wk and "AGE_MIN=" in wk, "weekly.yml must compute the page age in minutes")
 check("-lt 48" not in wk, "weekly.yml still hard-codes the 48 h threshold")
+cpt = open(os.path.join(ROOT, "template_coupon.html")).read()
+check("__STALE_MIN__" in cpt and "ageH>2.5" not in cpt, "coupon template must use __STALE_MIN__, not a hard-coded 2.5 h")
+if os.path.exists(os.path.join(ROOT, "coupon.html")):
+    check("__STALE_MIN__" not in open(os.path.join(ROOT, "coupon.html")).read(), "coupon.html left __STALE_MIN__ unsubstituted")
 
 for f in fails:
     print("FAIL", f)

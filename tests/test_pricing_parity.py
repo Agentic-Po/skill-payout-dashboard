@@ -13,7 +13,10 @@ computed independently in five places:
 
 None of refresh / notify / alerts is importable (module-level crawl, freshness
 gates, Telegram), so their pricing code is extracted by AST and executed
-against the inputs below — the real statements, not a re-implementation.
+against the inputs below — the real statements, not a re-implementation, EXCEPT the
+refresh.py leg's row quantity (val = int/10**dec), which this test rebuilds itself
+(only day_rate is extracted from refresh.py) and its inflow rows (compared for
+alerts only) — documented as a blind spot in README (QA loop 3).
 sanity and digests take a root directory and are called directly.
 
 Inputs: (1) the REAL tree — every tracked-token row in transfers/ and
