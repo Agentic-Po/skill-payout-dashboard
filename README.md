@@ -121,8 +121,12 @@ plaintext `alert-state-*` entry only while no encrypted entry exists; the
 first save re-stores it encrypted. `.enc` files and private_log.json are
 gitignored and asserted never staged (`tests/test_state_crypt.py`, which
 also holds all three workflows' cache path lists to `state_crypt.FILES`).
-Rotating `STATE_KEY` = one cold cache (one duplicate alert). Generate with
-`openssl rand -base64 48`.
+Rotating `STATE_KEY`: FIRST delete every `alert-state-enc-*` cache entry
+(`gh cache list --key alert-state-enc-` then `gh cache delete <id>`), THEN set
+the new secret — an old entry under a new key fails its HMAC and BLOCKS every
+refresh until deleted. Result: one cold start (at most one duplicate alert).
+Generate with `openssl rand -base64 48`; the owner's copy lives in
+`~/.moca-ledger/state_key` (mode 600).
 
 **Quiet public logs (2026-09-27).** `privlog.private_print` is the ONE switch
 (no other module reads `GITHUB_ACTIONS`): fence/runaway metrics, first-ever

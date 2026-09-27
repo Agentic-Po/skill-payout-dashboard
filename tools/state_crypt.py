@@ -120,6 +120,9 @@ def encrypt(root=ROOT):
                 continue
             _atomic_write(p + ".enc", encrypt_bytes(data, key))
             done.append(f)
+        elif os.path.exists(p + ".enc"):
+            # plaintext gone this run: never re-save a stale restored blob
+            os.remove(p + ".enc")
     print(f"state_crypt: encrypted {', '.join(done) or 'nothing (no state files yet)'}")
     return done
 

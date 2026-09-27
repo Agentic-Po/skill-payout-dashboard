@@ -80,7 +80,7 @@ jobs:
         run: |
           curl -s -o /dev/null "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            --data-urlencode text="🔴 Skill Payout Dashboard: DAILY summary FAILED. Check https://github.com/${{ github.repository }}/actions"
+            --data-urlencode text="🔴 Skill Payout Dashboard: DAILY summary FAILED (if the decrypt step failed: check the STATE_KEY secret). Check https://github.com/${{ github.repository }}/actions"
       # Explicit save (replaces actions/cache's implicit post-step, which only
       # ran on job SUCCESS): runs whatever the job outcome, as long as the
       # decrypt succeeded — so a failed gate no longer discards this run's
