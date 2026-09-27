@@ -124,3 +124,13 @@ gains the two legs of `in_recycled_usd`, published apart — `in_collector_usd` 
 in_recycled_usd` and `in_external_usd + in_recycled_usd == in_usd`, each to the cent — `tests/test_contract.py` holds
 both. Why: the page headline still called all of `in_recycled_usd` "usage fees recycling back" after the v4 change, so
 $40,828 of reserve returns read as usage fees. No existing value changed.
+
+**Naming (2026-09-27)**: `in_external_usd` keeps its key name but means **treasury top-ups from Minds/Animoca's own
+wallets** — no inflow to this wallet is external money. Present it as "top-ups", never "external" or "new" funding.
+
+**CSV export (2026-09-27, CSV schema still v2 — same 13 columns)**: the full per-tx history moved to
+`exports/transfers-YYYY-MM.csv`, one file per UTC month (raw URL pattern as catalog.json; catalog entry
+`transfers_monthly`). **`transfers_export.csv` now holds the trailing 7 days only** — a consumer that pulled full
+history from it must read the monthly files. All files are sorted by (timestamp_utc, direction, tx_hash, log_index)
+(previously newest-first, OUT before IN), so a closed month is byte-stable. Why: the single file was 31 MB, +0.6 MB/day,
+and would have tripped the pipeline's 50 MB guard ~2026-10-27, failing every refresh.

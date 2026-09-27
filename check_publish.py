@@ -78,6 +78,9 @@ PUBLISH_EXTRA = [
     "stripe_snapshot.json", "posthog_cache.json",
     "swarm_era.json", "swarm_prices.json",
     "transfers_export.csv", "publish_allow_addrs.txt",
+    # per-tx export, one file per UTC month (2026-09-27; the single file was
+    # heading for the 50 MB guard) — same columns as transfers_export.csv
+    "exports/transfers-*.csv",
     # sanity.py (root *.py) is the monitor-of-the-monitor gate; tools/ holds
     # evidence scripts (detector replay) — code only, they write nothing
     "tools/*.py",
@@ -244,7 +247,7 @@ STRUCTURAL_LABELS = {
     "EIP-7702 delegator implementation the treasury EOA delegates to",
     "Swap counterparty — took 72k MENTE, returned 112k MOCA; venue unconfirmed",
     "Treasury reserve — internal; its inflows here are returns of treasury funds, not new money",
-    "Treasury reserve — funds moved out 2026-08-25 and returned 2026-09-04/11/18; inflows from here are returns, not external funding",
+    "Treasury reserve — funds moved out 2026-08-25 and returned 2026-09-04/11/18; inflows from here are returns of parked funds, not top-ups",
 }
 STRUCTURAL_LABEL_RES = [
     re.compile(r"^Funding wallet [A-Z]{1,2}$"),
@@ -436,7 +439,9 @@ def _status_adjacent(rel, text):
 
 def scan():
     bad = []
-    for rel in DENIED_TARGETS:
+    monthly = sorted(os.path.join("exports", f) for f in os.listdir(os.path.join(HERE, "exports"))
+                     if f.endswith(".csv")) if os.path.isdir(os.path.join(HERE, "exports")) else []
+    for rel in DENIED_TARGETS + monthly:
         p = os.path.join(HERE, rel)
         if not os.path.exists(p):
             continue

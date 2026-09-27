@@ -104,7 +104,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
 <div class="wrap">
   <header>
     <h1>Minds Treasury Wallet — On-chain Flows (MENTE + MOCA)</h1>
-    <div class="sub mono"><a href="https://basescan.org/address/0xBD956171F5B50936f0Ad1C4db80c022bd2442519" target="_blank">0xBD95…2519</a> on Base · <span id="gen" title="computed in your browser from the page's build stamp">updated —</span> · <a href="transfers_export.csv" download>per-transaction CSV export (__CSV_MB__)</a> · <a href="coupon.html" title="Coupon Distributor wallet — a separate wallet, out of scope for every figure on this page">Coupon claims →</a> · <a href="legacy.html" title="Original MOCA-only layout, old method — kept for continuity, sunsets after adoption">legacy view (MOCA-only, old method)</a> · <a href="https://github.com/Agentic-Po/skill-payout-dashboard/blob/main/DATASETS.md" target="_blank" title="Machine-computed data catalog — rows, sizes, coverage, provenance">data catalog</a> · <a href="https://docs.google.com/document/d/1fsbN5IG4YoZ6R23KKpe0LPjC3O2lfA1se7gpW8SuZaE/edit" target="_blank" title="Team-internal reading guide — access-controlled">team guide 🔒</a></div>
+    <div class="sub mono"><a href="https://basescan.org/address/0xBD956171F5B50936f0Ad1C4db80c022bd2442519" target="_blank">0xBD95…2519</a> on Base · <span id="gen" title="computed in your browser from the page's build stamp">updated —</span> · <a href="transfers_export.csv" download>per-transaction CSV — last 7 days (__CSV_MB__)</a> · <a href="https://github.com/Agentic-Po/skill-payout-dashboard/tree/main/exports" target="_blank" rel="noopener">full history by month</a> · <a href="coupon.html" title="Coupon Distributor wallet — a separate wallet, out of scope for every figure on this page">Coupon claims →</a> · <a href="legacy.html" title="Original MOCA-only layout, old method — kept for continuity, sunsets after adoption">legacy view (MOCA-only, old method)</a> · <a href="https://github.com/Agentic-Po/skill-payout-dashboard/blob/main/DATASETS.md" target="_blank" title="Machine-computed data catalog — rows, sizes, coverage, provenance">data catalog</a> · <a href="https://docs.google.com/document/d/1fsbN5IG4YoZ6R23KKpe0LPjC3O2lfA1se7gpW8SuZaE/edit" target="_blank" title="Team-internal reading guide — access-controlled">team guide 🔒</a></div>
   </header>
 
   <!-- ===================== NOW ===================== -->
@@ -161,7 +161,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
   <div class="card">
     <h2>Flow summary — rolling windows &amp; calendar months</h2>
     <p class="insight" id="ins-flows"></p>
-    <p class="note">USD values historical transfers at that day's token price (method in the scope box); raw token amounts are exact. Net = inflow − outflow. Inflow splits into <b>new funding</b> vs <b>internal returns</b> — MENTE recycled from the Cognition Collector (until the recycle leg stopped) plus the treasury reserve handing back funds it had parked; neither is new money. Tap a row for the split.</p>
+    <p class="note">USD values historical transfers at that day's token price (method in the scope box); raw token amounts are exact. Net = inflow − outflow. All inflow is our own treasury money. It splits into <b>top-ups</b> (deliberate refills from Minds/Animoca treasury wallets) vs <b>returns</b> — MENTE recycled from the Cognition Collector (until the recycle leg stopped) plus the treasury reserve handing back funds it had parked. Tap a row for the split.</p>
     <div class="scroll"><table id="winT"></table></div>
     <details style="margin-top:8px"><summary class="showmore" style="display:block">Calendar months (UTC)</summary><div class="scroll"><table id="monT"></table></div></details>
   </div>
@@ -183,7 +183,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
         <marker id="arrG" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--c-in)"/></marker>
       </defs>
       <g font-size="13" fill="var(--ink)">
-        <text x="150" y="26" text-anchor="middle" font-size="11" fill="var(--c-in)">value IN: Stripe fiat + treasury funding <tspan id="nExt" font-weight="700"></tspan></text>
+        <text x="150" y="26" text-anchor="middle" font-size="11" fill="var(--c-in)">value IN: treasury top-ups <tspan id="nExt" font-weight="700"></tspan></text>
         <line x1="150" y1="34" x2="150" y2="114" stroke="var(--c-in)" stroke-width="1.5" marker-end="url(#arrG)"/>
         <a href="https://debank.com/profile/0x1c5ebb794335b72d773df2fd8f80f3d1afbb75dd/history?chain=base&amp;token=" target="_blank" rel="noopener">
         <rect x="430" y="18" width="220" height="54" rx="8" fill="none" stroke="var(--ink3)" stroke-width="1.5"/>
@@ -285,7 +285,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
   <div class="card" id="srcCard">
     <h2>Inflow sources — all history</h2>
     <p class="insight" id="ins-sources"></p>
-    <p class="note">Where this wallet's funding comes from. Labels from the treasury ops map where confirmed; unlabeled sources are unidentified.</p>
+    <p class="note">Where this wallet's refills come from — every source is a Minds/Animoca treasury wallet. Labels from the treasury ops map where confirmed.</p>
     <div class="scroll"><table id="srcT"></table></div>
     <details style="margin-top:10px"><summary class="showmore" style="display:block" id="ledgerSum">Inflow ledger — every funding event ▾</summary>
     <p class="note">One row per UTC day × source wallet × token, newest first. Raw token amounts are exact; USD uses that day's oracle rate. <b>unlabeled</b> means treasury ops hasn't identified the sender yet.</p>
@@ -398,7 +398,7 @@ const FL=F.float||null;
  const u0=usd;
  const floatD=FL&&FL.days_7d_pace;
  document.getElementById("plainStrip").innerHTML=
-  `<b>Since ${F.range.from}:</b> this wallet sent out <b>${u0(wA.out_usd)}</b> — <b>${u0(wA.economy_out_usd??wA.out_usd)}</b> into the Minds economy${wA.ops_out_usd?` and ${u0(wA.ops_out_usd)} in treasury swaps/ops moves`:""} — and took in <b>${u0(wA.in_external_usd||0)}</b> of new funding${wA.in_recycled_usd?` plus ${u0(wA.in_recycled_usd)} of internal returns (not new money)`:""}. <a href="#registerCard" class="pill" style="border-color:var(--acc);color:var(--acc);font-weight:600">${openN} open item${openN===1?"":"s"} ↓</a>`
+  `<b>Since ${F.range.from}:</b> this wallet sent out <b>${u0(wA.out_usd)}</b> — <b>${u0(wA.economy_out_usd??wA.out_usd)}</b> into the Minds economy${wA.ops_out_usd?` and ${u0(wA.ops_out_usd)} in treasury swaps/ops moves`:""} — and was refilled with <b>${u0(wA.in_external_usd||0)}</b> of treasury top-ups${wA.in_recycled_usd?` plus ${u0(wA.in_recycled_usd)} of returns (collector recycling and reserve)`:""} — all our own treasury money. <a href="#registerCard" class="pill" style="border-color:var(--acc);color:var(--acc);font-weight:600">${openN} open item${openN===1?"":"s"} ↓</a>`
   +`<div class="sub" style="margin-top:6px">Changed 2026-09-27: inflow once labelled “usage fees recycling back” is now split into collector recycling${wA.in_collector_usd!=null?` (${u0(wA.in_collector_usd)})`:""} and reserve returns of treasury funds${wA.in_reserve_usd!=null?` (${u0(wA.in_reserve_usd)})`:""}; totals unchanged.</div>`;
 }
 // scope + reconciliation
@@ -494,9 +494,9 @@ if(CW&&CW.windows){
 // window + month tables (compact: USD out/in/net; per-token split via tooltip)
 function flowRows(ws){return ws.map(w=>{
  const grp=w.groups?"\n"+GK.filter(g=>w.groups[g]&&w.groups[g].n).map(g=>`${GL[g]||g}: $${w.groups[g].usd.toLocaleString()} (${w.groups[g].n} tx)`).join(" · "):"";
- const split=`MENTE $${w.out_usd_tok.MENTE.toLocaleString()} / MOCA $${w.out_usd_tok.MOCA.toLocaleString()}${grp}\nin: $${(w.in_external_usd??0).toLocaleString()} new funding + $${(w.in_recycled_usd??0).toLocaleString()} internal returns ($${(w.in_collector_usd??0).toLocaleString()} collector recycling · $${(w.in_reserve_usd??0).toLocaleString()} reserve returns)\nraw out: ${fmt(w.out_raw.MENTE)} MENTE · ${fmt(w.out_raw.MOCA)} MOCA\nraw in: ${fmt(w.in_raw.MENTE)} MENTE · ${fmt(w.in_raw.MOCA)} MOCA`;
+ const split=`MENTE $${w.out_usd_tok.MENTE.toLocaleString()} / MOCA $${w.out_usd_tok.MOCA.toLocaleString()}${grp}\nin: $${(w.in_external_usd??0).toLocaleString()} top-ups + $${(w.in_recycled_usd??0).toLocaleString()} returns ($${(w.in_collector_usd??0).toLocaleString()} collector recycling · $${(w.in_reserve_usd??0).toLocaleString()} reserve returns)\nraw out: ${fmt(w.out_raw.MENTE)} MENTE · ${fmt(w.out_raw.MOCA)} MOCA\nraw in: ${fmt(w.in_raw.MENTE)} MENTE · ${fmt(w.in_raw.MOCA)} MOCA`;
  return `<tr data-tip="${split.replace(/"/g,"&quot;")}"><td>${w.label}</td><td class="r mono">$${w.out_usd.toLocaleString()}</td><td class="r mono" style="color:var(--c-in)">$${(w.in_recycled_usd||0).toLocaleString()}</td><td class="r mono">$${(w.in_external_usd||0).toLocaleString()}</td><td class="r mono">${w.out_tx.toLocaleString()}</td><td class="r mono">${w.out_wallets.toLocaleString()}</td></tr>`;}).join("");}
-const flowHead=`<thead><tr><th>Period</th><th class="r">Out USD</th><th class="r">In: internal returns</th><th class="r">In: new funding</th><th class="r">Out tx</th><th class="r">Recipients</th></tr></thead>`;
+const flowHead=`<thead><tr><th>Period</th><th class="r">Out USD</th><th class="r">In: returns</th><th class="r">In: top-ups</th><th class="r">Out tx</th><th class="r">Recipients</th></tr></thead>`;
 document.getElementById("winT").innerHTML=flowHead+`<tbody>`+flowRows(F.windows)+`</tbody>`;
 document.getElementById("monT").innerHTML=flowHead+`<tbody>`+flowRows(F.monthly)+`</tbody>`;
 bindTips(document.getElementById("winT"));bindTips(document.getElementById("monT"));
@@ -737,7 +737,7 @@ if(DATA.sink&&DATA.sink.days){
        <b>Nothing new started.</b> One existing daily transfer changed destination: the transfer into Minds Treasury Distribution stopped on <b>${S.recycle_last}</b>, and on <b>${S.first}</b> the same daily transfer restarted pointing at ${shortA(S.addr)}.
        Outbound MENTE transactions from that wallet since ${S.first}: <b>${idle?"zero":S.out_n}</b> — these are the weekly MENTE→MOCA swaps tracked in the monitor above. Ownership is not verifiable on-chain, so treat the balance as <b>unreconciled</b> until the platform team confirms custody.
        At the current pace the sweep runs ~${f(perDay)} MENTE/day (~${usd(perDay)}/day) — a ceiling, not a forecast, since usage is falling.
-       While this continues, Minds Treasury Distribution receives nothing back, and the collector-recycling part of any “internal returns” figure elsewhere on this dashboard covers ${S.recycle_first}–${S.recycle_last} only (reserve returns of treasury funds are the rest).</p>`;
+       While this continues, Minds Treasury Distribution receives nothing back, and the collector-recycling part of any “returns” figure elsewhere on this dashboard covers ${S.recycle_first}–${S.recycle_last} only (reserve returns of treasury funds are the rest).</p>`;
 
   document.getElementById("sinkFoot").innerHTML=
     `Amounts and timing are on-chain facts; <b>control is not</b>. The collector is an EOA with EIP-7702 delegation to a <i>stateless</i> delegator, so no on-chain rule constrains the split — it is a script, and the destination wallet's owner is unverified.

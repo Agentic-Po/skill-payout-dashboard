@@ -27,6 +27,7 @@ import csv
 import inspect
 import json
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -140,6 +141,32 @@ def main():
     assert hdr == CSV_HEADER, f"CSV header drifted:\n  got  {hdr}\n  want {CSV_HEADER}"
     assert len(hdr) == 13 and "counterparty_label" not in hdr
     print("ok transfers_export.csv: exact 13-column header, no counterparty_label")
+
+    # 2b. exports/transfers-YYYY-MM.csv (2026-09-27): the full per-tx history,
+    # one file per UTC month — same header, every row in its own month,
+    # sorted (timestamp_utc, direction, tx_hash, log_index) so closed months
+    # are byte-stable; transfers_export.csv is the trailing 7 days of them
+    ex = os.path.join(ROOT, "exports")
+    months = sorted(f for f in os.listdir(ex) if f.endswith(".csv"))
+    assert months, "exports/ has no monthly CSV"
+    n_all, recent = 0, None
+    for f in months:
+        assert re.fullmatch(r"transfers-\d{4}-\d{2}\.csv", f), f"unexpected file in exports/: {f}"
+        with open(os.path.join(ex, f), newline="") as fh:
+            rd = csv.reader(fh)
+            assert tuple(next(rd)) == CSV_HEADER, f"{f}: header drifted"
+            rs = list(rd)
+        assert all(r[0][:7] == f[10:17] for r in rs), f"{f}: row outside its month"
+        keys = [(r[0], r[1], r[9], r[10]) for r in rs]
+        assert keys == sorted(keys), f"{f}: rows not in (ts, direction, tx, log_index) order"
+        n_all += len(rs)
+        recent = rs[-1][0] if rs else recent
+    with open(os.path.join(ROOT, "transfers_export.csv"), newline="") as fh:
+        rd = csv.reader(fh); next(rd); tail = list(rd)
+    assert len(tail) <= n_all and (not tail or tail[-1][0] == recent), \
+        "transfers_export.csv is not the tail of the monthly files"
+    print(f"ok exports/: {len(months)} monthly files, {n_all:,} rows, sorted, header exact; "
+          f"transfers_export.csv = last 7 days ({len(tail):,} rows)")
 
     # 3. catalog.json
     cat = json.load(open(os.path.join(ROOT, "catalog.json")))

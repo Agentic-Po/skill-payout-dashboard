@@ -24,7 +24,8 @@ GitHub Actions cron (3,18,33,48 * * * *  — 4x/hour, best-effort)
        │  recomputed each run; ships only the 40 rows it lists + pre-aggregated totals)
        ├─ writes data.json           ← THE versioned contract (schema_version 4)
        ├─ writes guard_private.json  ← private (gitignored, Actions cache only)
-       ├─ writes transfers_export.csv (per-tx audit: tx_hash + log_index + class)
+       ├─ writes exports/transfers-YYYY-MM.csv (per-tx audit, one file per UTC month,
+       │  sorted; closed months byte-stable) + transfers_export.csv (trailing 7 days)
        └─ catalog.build() → catalog.json + DATASETS.md (measured, never typed)
   └─ alerts.py   reads data.json → anomaly / ≥$5k / rebate-swap / retired-payout
   │              / creator-reward cap + sybil detectors (cap_detect.py)
@@ -265,7 +266,8 @@ entry. **If you are about to quote a number in a deck, quote the safe sentence.*
 - **Formula**: `refresh.py:facts_window` — `in_recycled_usd` = inflows from the collector (`in_collector_usd`) or the treasury reserve (`in_reserve_usd`); `in_external_usd = in_usd - in_recycled_usd`. Both identities hold to the cent (`tests/test_contract.py`).
 - **Source**: `transfers_in/`, priced day-pinned. **Coverage**: every window, `prev24`, every month.
 - **Bias**: classified by SOURCE ADDRESS only. Collector recycling stopped 2026-06-18, so recent `in_collector_usd` is 0; the reserve returned funds the treasury itself had parked there (2026-08-25 out, 09-04/11/18 back).
-- **Safe to say**: "Of $X lifetime inflow, $Y was new funding; the rest was our own money coming back — $C recycled from the collector before June and $R returned from the reserve." Never "usage fees recycling back" for the whole internal figure.
+- **Naming**: `in_external_usd` is a legacy key name — it is **treasury top-ups from Minds/Animoca's own wallets**, never external money (Po, 2026-09-27: all inbound refills are ours). The page says "top-ups" and "returns".
+- **Safe to say**: "Of $X lifetime inflow — all our own treasury money — $Y was deliberate top-ups and the rest came back: $C recycled from the collector before June and $R returned from the reserve." Never "usage fees recycling back" for the whole returns figure, and never "new" or "external" funding.
 
 ### wallet balance
 - **Formula**: `refresh.py:balance_at` — `eth_call` `balanceOf` per token at latest block, USD at the live rate; block-pinned copy at `RECON_BLOCK` drives the drift fence.
@@ -336,7 +338,6 @@ check cannot tell you which pipeline died. Full detail in
    see the table above
 2. Whether to rewrite public git history (pre-2026-08-29 commits contain old
    state files; content is stale but recoverable)
-3. transfers_export.csv monthly sharding before it nears the 50 MB tripwire —
-   **now urgent**: 31 MB on 2026-09-27, growing ~0.6 MB/day → trips ~27 Oct
-   (the refresh then fails and the page goes stale). A shape change is a
-   CONSUMERS.md contract change; the header link states the size meanwhile
+3. ~~transfers_export.csv monthly sharding~~ — done 2026-09-27: full history in
+   `exports/transfers-YYYY-MM.csv` (≤ 9 MB/month today, closed months byte-stable);
+   `transfers_export.csv` is the trailing 7 days

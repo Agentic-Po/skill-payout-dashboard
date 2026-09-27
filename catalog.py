@@ -149,9 +149,17 @@ PUBLIC = [
     dict(name="transfers_export", path=["transfers_export.csv"], kind="derived", live=True,
          measure=lambda: _csv_stamps("transfers_export.csv"),
          row_schema="timestamp_utc, direction, token, amount, rate_usd, rate_source, usd, size_band, counterparty, tx_hash, log_index, class_coarse, class_fine",
-         update_cadence="rewritten in full every refresh", expected_cadence_minutes=15,
+         update_cadence="trailing 7 days, rewritten every refresh (full history: transfers_monthly)", expected_cadence_minutes=15,
          provenance="refresh.py, from transfers/ + transfers_in/ priced at the day-pinned rate",
          not_included="no cognition_in rows and no SWARM-era rows; no counterparty labels since data.json schema_version 2 (identity labels are private — see CONSUMERS.md)"),
+    dict(name="transfers_monthly", path=["exports/"], kind="derived", live=True,
+         measure=lambda: [t for f in sorted(os.listdir(os.path.join(HERE, "exports")))
+                          if f.endswith(".csv") for t in _csv_stamps(os.path.join("exports", f))]
+                         if os.path.isdir(os.path.join(HERE, "exports")) else [],
+         row_schema="exports/transfers-YYYY-MM.csv — same 13 columns as transfers_export.csv, one file per UTC month, rows sorted by (timestamp_utc, direction, tx_hash, log_index)",
+         update_cadence="open month rewritten every refresh; closed months byte-stable", expected_cadence_minutes=15,
+         provenance="refresh.py, from transfers/ + transfers_in/ priced at the day-pinned rate — the full per-tx history",
+         not_included="no cognition_in rows and no SWARM-era rows; no counterparty labels (identity labels are private — see CONSUMERS.md)"),
     dict(name="day_rates", path=["day_rates.json"], kind="oracle", live=True,
          measure=lambda: _day_rate_stamps("day_rates.json"),
          row_schema="day_rates[symbol][YYYY-MM-DD] -> USD rate; day_rate_src[symbol][YYYY-MM-DD] -> 'implied'|'market' for priced days, and 'market-open'|'carry-forward'|'market-rejected'|'market-unbanded' stamps on days ABSENT from day_rates; plus open_day_rate (today, from market_open), market_open (today's running candle, never banked), market_rates (closed-day closes), market_rates_note, last_accepted_rate, recon, pending_rate, coupon.next_block (the coupon crawl's per-direction block cursor)",

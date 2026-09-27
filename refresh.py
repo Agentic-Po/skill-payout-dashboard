@@ -1891,7 +1891,7 @@ _rec_last = max((f["ts"][:10] for f in inflows if f["from"].lower() == RECYCLE_S
 _rec_share = round(facts["windows"][3]["in_recycled_usd"] / facts["windows"][3]["in_usd"] * 100) if facts["windows"][3]["in_usd"] else 0
 insights = {
     "diagram": "Every token here is a unit of cognition — this diagram is the economy; the rest of the page is its measurements.",
-    "flows": f"Outflow is the signal: ~${round(facts['windows'][1]['out_usd']/7):,}/day of distribution IS the ecosystem's activity. Inflow is manual treasury logistics keeping the wallet alive — {_rec_share}% of lifetime inflow was internal (usage fees recycled from the collector{f' until {_rec_last}' if _rec_last else ''}, plus reserve returns of treasury funds), not new money.",
+    "flows": f"Outflow is the signal: ~${round(facts['windows'][1]['out_usd']/7):,}/day of distribution IS the ecosystem's activity. Inflow is manual treasury logistics keeping the wallet alive — {_rec_share}% of lifetime inflow was returns (usage fees recycled from the collector{f' until {_rec_last}' if _rec_last else ''}, plus the reserve handing back parked funds); the rest was deliberate top-ups — all of it our own treasury money.",
     "daily": f"Watch the pulse, not the balance: distribution spikes mark campaigns and growth pushes; the current pace is ~${round(facts['windows'][1]['out_usd']/7):,}/day.",
     # no ratio here (2026-09-27): cognition spend and treasury outflow are two
     # different flows (different tokens, different start dates) — dividing one
@@ -2160,7 +2160,7 @@ registry = [
     # private (moca-ledger-private:labels/). Mimic warnings name no victim.
     _reg("0x4d3021a52b31ffafde3c46450d02c72807c3a178", f"{in_label('0x4d3021a52b31ffafde3c46450d02c72807c3a178')[0] or 'Funding wallet'} — manual MOCA top-ups", "Funding sources"),
     _reg("0xf605dbb5626dfc1448cee33e2e1221103021468f", f"{in_label('0xf605dbb5626dfc1448cee33e2e1221103021468f')[0] or 'Funding wallet'} — primary MENTE funder", "Funding sources"),
-    _reg(RESERVE, "Treasury reserve — funds moved out 2026-08-25 and returned 2026-09-04/11/18; inflows from here are returns, not external funding", "Treasury"),
+    _reg(RESERVE, "Treasury reserve — funds moved out 2026-08-25 and returned 2026-09-04/11/18; inflows from here are returns of parked funds, not top-ups", "Treasury"),
     _reg(SINK, "Minds Rebate wallet — receives the daily 40% MENTE sweep from the collector since 2026-06-19; DATops swaps its MENTE to MOCA on a weekly cadence", "Collector"),
     _reg("0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B", "EIP-7702 delegator implementation the treasury EOA delegates to", "Infrastructure"),
     _reg("0x45d0cEAd7c0a2E1a0528C4131A2d95DE9a394839", f"{in_label('0x45d0cEAd7c0a2E1a0528C4131A2d95DE9a394839')[0] or 'Funding wallet'} — early MENTE funder (Apr 2026)", "Funding sources"),
@@ -2267,22 +2267,40 @@ json.dump(STATE, open(RATES_PATH, "w"), indent=0)
 
 phase("registry+data.json")
 # --- per-tx export with rate provenance ---
-with open(os.path.join(HERE, "transfers_export.csv"), "w", newline="") as fh:
-    w = csv.writer(fh)
-    # class_coarse/class_fine speak classify_usd's canonical vocabulary so an
-    # auditor can tie every CSV row to the page fine_table and the Telegram
-    # digest without re-implementing the taxonomy; log_index completes the
-    # (tx_hash, log_index) primary key for multi-transfer transactions.
-    # schema v2: no counterparty_label column — identity labels are private.
-    w.writerow(["timestamp_utc", "direction", "token", "amount", "rate_usd", "rate_source", "usd", "size_band", "counterparty", "tx_hash", "log_index", "class_coarse", "class_fine"])
-    for r in rows:
-        w.writerow([r["ts"], "OUT", r["tok"], f"{r['val']:.6f}", f"{r['rate']:.8f}", r["rsrc"], f"{r['usd']:.4f}",
-                    BAND_LABEL[band(r["usd"], r["ts"])], r["to"], r["tx"],
-                    r.get("li", ""), r.get("cat", ""), r.get("fine", "")])
-    for f in inflows:
-        w.writerow([f["ts"], "IN", f["tok"], f"{f['val']:.6f}", f"{f['rate']:.8f}", f["rsrc"], f"{f['usd']:.4f}",
-                    "", f["from"], f["tx"], f.get("li", ""), "", ""])
-
+# Full history is published as ONE FILE PER UTC MONTH (exports/transfers-
+# YYYY-MM.csv, 2026-09-27). The single all-history file had reached 31 MB,
+# +0.6 MB/day, and would have tripped refresh.yml's 50 MB guard ~27 Oct,
+# failing every refresh. Rows are sorted by (timestamp, direction, tx_hash,
+# log_index) so a closed month is byte-stable run to run — only the open
+# month is rewritten. transfers_export.csv keeps its URL as the trailing
+# 7 days (the page's download link). Same 13-column header everywhere.
+CSV_HEADER = ["timestamp_utc", "direction", "token", "amount", "rate_usd", "rate_source", "usd", "size_band", "counterparty", "tx_hash", "log_index", "class_coarse", "class_fine"]
+# class_coarse/class_fine speak classify_usd's canonical vocabulary so an
+# auditor can tie every CSV row to the page fine_table and the Telegram
+# digest without re-implementing the taxonomy; log_index completes the
+# (tx_hash, log_index) primary key for multi-transfer transactions.
+# schema v2: no counterparty_label column — identity labels are private.
+_csv_rows = [[r["ts"], "OUT", r["tok"], f"{r['val']:.6f}", f"{r['rate']:.8f}", r["rsrc"], f"{r['usd']:.4f}",
+              BAND_LABEL[band(r["usd"], r["ts"])], r["to"], r["tx"],
+              r.get("li", ""), r.get("cat", ""), r.get("fine", "")] for r in rows]
+_csv_rows += [[f["ts"], "IN", f["tok"], f"{f['val']:.6f}", f"{f['rate']:.8f}", f["rsrc"], f"{f['usd']:.4f}",
+               "", f["from"], f["tx"], f.get("li", ""), "", ""] for f in inflows]
+_csv_rows.sort(key=lambda x: (x[0], x[1], x[9], str(x[10])))
+EXPORT_DIR = os.path.join(HERE, "exports")
+os.makedirs(EXPORT_DIR, exist_ok=True)
+_by_month = {}
+for x in _csv_rows:
+    _by_month.setdefault(x[0][:7], []).append(x)
+def _write_csv(path, rs):
+    tmp = path + ".tmp"
+    with open(tmp, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(CSV_HEADER)
+        w.writerows(rs)
+    os.replace(tmp, path)
+for _m, _rs in _by_month.items():
+    _write_csv(os.path.join(EXPORT_DIR, f"transfers-{_m}.csv"), _rs)
+_write_csv(os.path.join(HERE, "transfers_export.csv"), [x for x in _csv_rows if x[0] > cut7])
 phase("export_csv")
 # --- snapshot history (append-only; git history is the immutable trail) ---
 # NOT appended on --offline rebuilds: stats_history's timestamp cadence is
@@ -2453,7 +2471,7 @@ if mrows:
 tpl = open(os.path.join(HERE, "template.html")).read()
 # the header CSV link states its size — it is a 30+ MB download (audit F1)
 _csv_mb = os.path.getsize(os.path.join(HERE, "transfers_export.csv")) / 1e6
-tpl = tpl.replace("__CSV_MB__", f"{_csv_mb:.0f} MB")
+tpl = tpl.replace("__CSV_MB__", f"{_csv_mb:.0f} MB" if _csv_mb >= 1 else f"{_csv_mb:.1f} MB")
 out = os.path.join(HERE, "index.html")
 open(out, "w").write("<!doctype html>\n<html lang=\"en\">\n" + tpl.replace("/*__DATA__*/", _inline_json(data)) + "\n</html>")
 print("wrote", out, "| rows:", len(rows), "| range:", facts["range"], "| recon:", recon)
