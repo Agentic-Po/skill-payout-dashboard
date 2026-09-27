@@ -58,7 +58,7 @@ Rows, bytes and coverage are measured off the files, never asserted.
 | `coupon_data` | `coupon_data.json` | 1 | 20.1 KB | 2026-07-08 → 2026-09-27 | every refresh (~4x/hour) |
 | `transfers_export` | `transfers_export.csv` | 23,875 | 4.9 MB | 2026-09-20 → 2026-09-27 | trailing 7 days, rewritten every refresh (full history: transfers_monthly) |
 | `transfers_monthly` | `exports/` | 151,088 | 31.4 MB | 2026-04-24 → 2026-09-27 | open month rewritten every refresh; closed months byte-stable |
-| `data` | `data.json` | 1 | 199.0 KB | 2026-04-24 → 2026-09-27 | every refresh (~4x/hour) |
+| `data` | `data.json` | 1 | 197.0 KB | 2026-04-24 → 2026-09-27 | every refresh (~4x/hour) |
 | `stats_history` | `stats_history.json` | 2,120 | 594.9 KB | 2026-07-13 → 2026-09-27 | one append per refresh (~4x/hour) |
 
 **`coupon_data`** — schema_version, scope, summary, totals, buckets, daily, inflows, top, concentration, range
