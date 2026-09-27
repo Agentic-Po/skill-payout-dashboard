@@ -9,8 +9,7 @@ number-free status lines; the detail goes to its private destination
 only in the log, to private_log.json (encrypted Actions cache).
 
 Runs the entry points the workflows run, in a throwaway copy of the tree with
-no Telegram credentials (alerts/notify in --dry-run; ledger_watch needs the
-network and is covered statically):
+no Telegram credentials (alerts/notify in --dry-run):
 
   (a) GITHUB_ACTIONS=true: stdout+stderr (and GITHUB_OUTPUT) contain none of
       the deny list; ::error::/::warning:: annotations carry no digits
@@ -36,7 +35,7 @@ DENY_RE = [re.compile(r"heartbeat[^\n]*\d")]
 DETAIL = ["fences:", "edge: first-ever wallets", "creator rewards", "cap probe:", "grant bleed (private)",
           "cap detector heartbeat:", "private anomaly pass"]
 DETECTOR_MODULES = ["alerts.py", "cap_detect.py", "fences.py", "sanity.py", "notify.py", "alive_check.py",
-                    "ledger_watch.py", "state.py", "refresh.py"]
+                    "state.py", "refresh.py"]
 # reviewed static exemptions: public crawl/data-quality prints that merely
 # share a word with the deny list (module, phrase in the print)
 STATIC_OK = {("refresh.py", "newest banked block")}

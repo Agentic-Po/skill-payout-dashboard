@@ -51,8 +51,8 @@ documented healthchecks.io behaviour, which is exactly why `selftest.yml`
 pings `/fail`. **Verify this in the healthchecks UI rather than assuming it**;
 the whole point of the fail path is that it does not wait out the grace window.
 
-Set both checks to notify the same channel Po already watches
-(poc@animocabrands.com). Do **not** point them at the public Telegram group: a
+Set both checks to notify the same private channel the owner already watches
+(the owner's work email — recorded in the private notes, not here). Do **not** point them at the public Telegram group: a
 dead-man that is loud in a shared channel gets muted, and a muted dead-man is
 worse than none. After creating the new check, send a manual test ping and
 confirm the email arrives and is distinguishable from the other check's before

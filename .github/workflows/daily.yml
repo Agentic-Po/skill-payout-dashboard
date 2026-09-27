@@ -6,6 +6,7 @@ on:
 jobs:
   summary:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       # Detector state lives in the Actions cache, NOT the public repo, and

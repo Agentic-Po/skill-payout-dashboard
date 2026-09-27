@@ -89,7 +89,7 @@ in `stripe_snapshot.json`).
 | committed | data.json, index.html (public summary), full.html + coupon.html (not served by Pages, but readable in the repo — no identities in either), coupon_data.json, shards, CSV, day_rates.json, stats_history.json | public by design — no identities; names live only in the private edition |
 | Actions cache (`alert-state-enc-*`) | **encrypted only** (since 2026-09-27): alert_state.json.enc (via `state.py`, atomic single-writer), guard_private.json.enc, private_log.json.enc | detector state & per-wallet signal rows are **never** committed — publishing them hands abusers a calibration oracle. Any workflow in the repo can restore this cache, so it holds only `tools/state_crypt.py` blobs (AES-256-CBC/PBKDF2 via `openssl` + HMAC-SHA256, key = `STATE_KEY`). Worst case on cache loss: one duplicate alert, never silence. |
 | public Actions logs | number-free status only ("alerts: detectors ran", "SANITY: N exact ok …", "alert liveness: ok") | anyone can read a public repo's run logs (retention **7 days** as of 2026-09-27). Inside Actions every detector/monitoring detail line goes through `privlog.private_print` — withheld from the log, banked to private_log.json (encrypted cache, last 5,000 lines); locally it prints as before |
-| repo secrets | TELEGRAM_*, LEDGER_*, HEALTHCHECK_URL, POSTHOG_API_KEY, **STATE_KEY** | never in code or artifacts |
+| repo secrets | TELEGRAM_*, HEALTHCHECK_URL, CONSOLE_URL, POSTHOG_API_KEY, **STATE_KEY** | never in code or artifacts |
 
 CI enforces this in `check_publish.py`. `--scan` fails the run if per-wallet
 detector fields, **monitoring-status counts** (`flagged_n`, `monitored_n`,

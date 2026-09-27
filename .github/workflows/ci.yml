@@ -18,6 +18,7 @@ permissions:
 jobs:
   gates:
     runs-on: ubuntu-latest
+    timeout-minutes: 15   # ~4 min typical
     steps:
       - uses: actions/checkout@v4
         with:
