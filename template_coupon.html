@@ -141,7 +141,7 @@ const DATA = /*__DATA__*/;
   const t=Date.parse(stamp);
   if(!isNaN(t)){
     const ageH=(Date.now()-t)/3.6e6;
-    if(ageH>2.5) banner("⚠ Data is "+(ageH<48?Math.round(ageH)+" hours":Math.round(ageH/24)+" days")+" old — the refresh pipeline has not published since "+(SC.generated||stamp)+" UTC. Treat all figures as stale.","var(--warn)");
+    if(ageH*60>__STALE_MIN__) banner("⚠ Data is "+(ageH<48?Math.round(ageH)+" hours":Math.round(ageH/24)+" days")+" old — the refresh pipeline has not published since "+(SC.generated||stamp)+" UTC. Treat all figures as stale.","var(--warn)");
   }
   if(SC.complete===false) banner("⚠ Data incomplete: this refresh rendered from a cached/partial chain fetch — recent claims may be missing.","var(--warn)");
   if(box.children.length)document.body.insertBefore(box,document.body.firstChild);

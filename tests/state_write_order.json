@@ -1,0 +1,38 @@
+{
+ "source_order": [
+  "after_data_json",
+  "coupon_verify"
+ ],
+ "offline": [
+  {
+   "label": "after_data_json",
+   "phases_before": [
+    "setup+treasury_crawl",
+    "rates",
+    "balances",
+    "market_ohlcv",
+    "rate_oracle",
+    "cognition",
+    "layer1+digests+layer2",
+    "posthog",
+    "guided_view",
+    "sink_rebate"
+   ],
+   "keys": [
+    "coupon",
+    "day_rate_src",
+    "day_rates",
+    "last_accepted_rate",
+    "market_open",
+    "market_rates",
+    "market_rates_note",
+    "market_refused",
+    "open_day_rate",
+    "pending_rate",
+    "recon",
+    "sink",
+    "xcheck"
+   ]
+  }
+ ]
+}

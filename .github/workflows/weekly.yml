@@ -33,17 +33,18 @@ jobs:
           LAST_RUN=$(gh run list --workflow refresh.yml --limit 1 --json conclusion,updatedAt -R ${{ github.repository }})
           CONCLUSION=$(echo "$LAST_RUN" | jq -r '.[0].conclusion')
           LAST_COMMIT_TS=$(git log -1 --format=%ct -- index.html)
-          AGE_H=$(( ( $(date +%s) - LAST_COMMIT_TS ) / 3600 ))
+          # page age in MINUTES against the ONE threshold in freshness.py
+          # (the page's stale banner uses the same number)
+          AGE_MIN=$(( ( $(date +%s) - LAST_COMMIT_TS ) / 60 ))
+          AGE_H=$(( AGE_MIN / 60 ))
           STATS=$(grep -oE '"generated": "[^"]+"' index.html | head -1)
           INVOKES=$(grep -oE '"invoke": \{"n": [0-9]+' index.html | head -1 | grep -oE '[0-9]+$')
           echo "conclusion=$CONCLUSION" >> $GITHUB_OUTPUT
           echo "age_h=$AGE_H" >> $GITHUB_OUTPUT
+          echo "age_min=$AGE_MIN" >> $GITHUB_OUTPUT
           echo "invokes=$INVOKES" >> $GITHUB_OUTPUT
-          if [ "$CONCLUSION" = "success" ] && [ "$AGE_H" -lt 48 ]; then
-            echo "status=healthy" >> $GITHUB_OUTPUT
-          else
-            echo "status=UNHEALTHY" >> $GITHUB_OUTPUT
-          fi
+          echo "stale_min=$(python3 -c 'import freshness;print(freshness.STALE_MINUTES)')" >> $GITHUB_OUTPUT
+          echo "status=$(python3 freshness.py health "$CONCLUSION" "$AGE_MIN")" >> $GITHUB_OUTPUT
       - name: Weekly Telegram digest
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -66,7 +67,7 @@ jobs:
           if [ "${{ steps.health.outputs.status }}" != "healthy" ]; then
             curl -s -o /dev/null "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
               -d chat_id="$TELEGRAM_CHAT_ID" \
-              --data-urlencode text="🔴 Health check: last refresh run=${{ steps.health.outputs.conclusion }}, page age ${{ steps.health.outputs.age_h }}h — needs a look."
+              --data-urlencode text="🔴 Health check: last refresh run=${{ steps.health.outputs.conclusion }}, page age ${{ steps.health.outputs.age_min }} min (threshold ${{ steps.health.outputs.stale_min }} min) — needs a look."
           fi
       - name: Commit heartbeat (keeps Actions cron alive)
         if: always()

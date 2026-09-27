@@ -14,6 +14,10 @@ so any remaining difference is caused by the code change. JSON artifacts get a
 key-path diff so an INTENDED change (a new field, a relabel) can be reviewed
 line by line; everything else gets a unified-diff line count.
 
+It also records refresh.py's STATE (day_rates.json) write order on each side
+via REFRESH_TRACE_STATE and holds head's trace to tests/state_write_order.json
+(base code that predates the hook writes none; that is reported, not a diff).
+
 Exit 0 = byte-identical after normalisation; exit 1 = differences listed.
 A refactor that claims to be behaviour-preserving must exit 0.
 """
@@ -85,8 +89,12 @@ def main():
             open(p, "wb").write(blob)
         elif os.path.exists(p):
             os.remove(p)  # new on HEAD, absent on base
+    traces = {}
     for side in (a, b):
-        r = sh([sys.executable, "refresh.py", "--offline"], side)
+        tr = os.path.join(tmp, os.path.basename(side) + "-state-trace.jsonl")
+        r = subprocess.run([sys.executable, "refresh.py", "--offline"], cwd=side, capture_output=True,
+                           text=True, env=dict(os.environ, REFRESH_TRACE_STATE=tr))
+        traces[os.path.basename(side)] = [json.loads(l) for l in open(tr)] if os.path.exists(tr) else None
         if r.returncode != 0:
             print(f"FATAL: refresh.py --offline failed in {os.path.basename(side)}\n{r.stdout[-1500:]}\n{r.stderr[-1500:]}")
             sys.exit(2)
@@ -114,6 +122,24 @@ def main():
             print(f"DIFF {name}: {len(d)} changed line(s); {len(ta):,} -> {len(tb):,} bytes")
             for l in d[:int(os.environ.get("GOLDEN_SHOW", "0"))]:
                 print("   ", l[:220])
+    # STATE (day_rates.json) write order — load-bearing for crash safety.
+    # Base code older than the REFRESH_TRACE_STATE hook writes no trace, so the
+    # head trace is held to the committed expectation; when both sides trace,
+    # they must also agree with each other.
+    exp_p = os.path.join(ROOT, "tests", "state_write_order.json")
+    exp = json.load(open(exp_p))["offline"] if os.path.exists(exp_p) else None
+    if traces["head"] is None:
+        print("?? state write order: head wrote no REFRESH_TRACE_STATE trace")
+        diffs += 1
+    elif exp is not None and traces["head"] != exp:
+        print("DIFF state write order: head trace != tests/state_write_order.json")
+        diffs += 1
+    elif traces["base"] is not None and traces["base"] != traces["head"]:
+        print("DIFF state write order: base trace != head trace")
+        diffs += 1
+    else:
+        print(f"ok state write order ({len(traces['head'])} offline write(s)"
+              f"{'' if traces['base'] is not None else '; base predates the trace hook'})")
     print(f"golden: {'IDENTICAL' if not diffs else f'{diffs} artifact(s) differ'} vs {base} (scratch {tmp})")
     if not diffs:
         shutil.rmtree(tmp, ignore_errors=True)

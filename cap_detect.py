@@ -50,6 +50,12 @@ treasury float edge alert — pure like the rest, fed by alerts.py. PAGE.
 """
 from datetime import datetime, timedelta
 
+# pure helpers shared with fences.py (util.py); local names kept for callers
+# (assigned, not from-imported: `c["clock"][_iso(h)] = ...` would trip test_shadow)
+# (alerts.py calls cap_detect.hkt)
+import util
+HKT, hkt, _iso, _dt, _cooled = util.HKT, util.hkt, util.iso_min, util.parse_dt, util.cooled
+
 from classify import (UNITS, CAP_UNITS, CAP_USD_PER_CREATOR_HOUR, CAP_ON_UTC,
                       RESUMED_UTC, classify_usd, cap_usd_for, era_for)
 
@@ -65,17 +71,12 @@ COOLDOWN_H = {"straddle": 24, "saturated": 6, "fanout": 6, "rewards": 6}
 # crosses 2%, and this constant is the one switch.
 CREATOR_REWARD_TIER = "WARN"
 CREATOR_REWARD_PROMOTE_PCT = 2.0
-HKT = timedelta(hours=8)
 CAP_ON = datetime.fromisoformat(CAP_ON_UTC)
 # first FULL clock-hour under the cap: the 19:00Z hour on 09-14 held 12
 # pre-cap minutes, so a breach there would be a false positive
 CAP_HOUR0 = (CAP_ON if CAP_ON == CAP_ON.replace(minute=0, second=0, microsecond=0)
              else CAP_ON.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1))
 RESUMED = datetime.fromisoformat(RESUMED_UTC)
-
-
-def hkt(dt, fmt="%d %b %H:%M"):
-    return (dt + HKT).strftime(fmt) + " HKT"
 
 
 def hour_window(h):
@@ -86,14 +87,6 @@ def hour_window(h):
 
 def short(addr):
     return f"{addr[:6]}…{addr[-4:]}"
-
-
-def _iso(dt):
-    return dt.isoformat(timespec="minutes")
-
-
-def _dt(s):
-    return datetime.fromisoformat(s) if s else None
 
 
 def reward_rows(flow_rows):
@@ -188,11 +181,6 @@ def sweep(rrows, now):
             "rows": sum(1 for r in rrows if r["ts"] >= cut25),
             "rows_24h": sum(1 for r in rrows if r["ts"] > now - timedelta(hours=24)),
             "rows_7d": sum(1 for r in rrows if r["ts"] >= cut7d)}
-
-
-def _cooled(last_iso, now, hours):
-    last = _dt(last_iso)
-    return last is None or now - last >= timedelta(hours=hours)
 
 
 def evaluate(sw, state, now):

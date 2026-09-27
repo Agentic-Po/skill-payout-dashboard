@@ -52,6 +52,10 @@ import bisect
 import statistics
 from datetime import datetime, timedelta
 
+# pure helpers shared with cap_detect.py (util.py); local names kept for callers
+import util
+hkt, _iso, _dt, _cooled = util.hkt, util.iso_min, util.parse_dt, util.cooled
+
 # ---- known-incident windows, EXCLUDED from every baseline in this module ----
 # Half-open UTC day ranges [from, to). Applied as known today, also in the
 # replay: the point of the list is that an incident's own rows never become
@@ -96,7 +100,6 @@ BLEED_MIN_REF_DAYS = 14
 BLEED_MIN_SHARE_PCT = 10.0   # a new high under 10% is noise at small volumes
 BLEED_CROSSINGS = (5, 20)
 
-HKT = timedelta(hours=8)
 
 
 def incident(day):
@@ -109,18 +112,6 @@ def incident(day):
 
 def hour_of(dt):
     return dt.replace(minute=0, second=0, microsecond=0)
-
-
-def _iso(dt):
-    return dt.isoformat(timespec="minutes")
-
-
-def _dt(s):
-    return datetime.fromisoformat(s) if s else None
-
-
-def hkt(dt, fmt="%d %b %H:%M"):
-    return (dt + HKT).strftime(fmt) + " HKT"
 
 
 class Series:
@@ -230,11 +221,6 @@ def group_fences(series_by_group, state, now, label=None):
         else:
             fs[g] = {"above": bool(above), "last_alert": prev.get("last_alert")}
     return secs, state
-
-
-def _cooled(last_iso, now, hours):
-    last = _dt(last_iso)
-    return last is None or now - last >= timedelta(hours=hours)
 
 
 # ------------------------------------------------------ 2. runaway rule

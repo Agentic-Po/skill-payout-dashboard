@@ -86,6 +86,17 @@ jobs:
       # (council loop 1, 2026-09-27)
       - name: Decision-first page gates
         run: python3 tests/test_page.py
+      # Pipeline maintainability (council loop 3, 2026-09-27)
+      - name: STATE (day_rates.json) write-order gate
+        run: python3 tests/test_state_order.py
+      - name: Pricing parity across the five row loaders
+        run: python3 tests/test_pricing_parity.py
+      - name: One staleness threshold (freshness.py)
+        run: python3 tests/test_freshness.py
+      - name: Shared pure helpers (util.py)
+        run: python3 tests/test_util.py
+      - name: rpc_batch skips counted and logged
+        run: python3 tests/test_rpc_batch.py
       # Coupon crawl vs the private coupon ledger. CI has no access to that
       # repo, so this SKIPS clean here (exit 0, loud message) and is run
       # locally with COUPON_LEDGER_PATH set; the step exists so the skip is

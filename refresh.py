@@ -15,6 +15,8 @@ the append-only audit trail of every published figure.
 import csv, json, math, os, statistics, sys, time, urllib.request
 import posthog_source
 import shards
+import freshness
+import state as _state   # alert_state.json single writer (no import side effects)
 # taxonomy lives in classify.py — the ONE classifier shared with notify/alerts
 from classify import (band, classify_usd, pin_rate, era_for, BAND_LABEL, BAND_KEYS, STRIPE_FINE,
                       RETIRED, SYSTEM_TOPUP, RESUMED_UTC, PAUSED_UTC,
@@ -112,9 +114,8 @@ if PRIVATE_LABELS:
 # goes to PRIVATE_LABELS for the private guard file.
 _map_path = os.path.join(HERE, "wallet_mind_map.csv")
 if os.path.exists(_map_path):
-    import csv as _csv
     with open(_map_path, newline="") as _fh:
-        _rd = _csv.DictReader(_fh)
+        _rd = csv.DictReader(_fh)
         _cols = {c.lower().strip(): c for c in (_rd.fieldnames or [])}
         _wcol = next((_cols[k] for k in ("wallet", "wallet_address", "address") if k in _cols), None)
         _ncol = next((_cols[k] for k in ("mind_name", "name", "mind") if k in _cols), None)
@@ -138,6 +139,20 @@ STATE = json.load(open(RATES_PATH)) if os.path.exists(RATES_PATH) else {}
 STATE.setdefault("day_rates", {s: {} for s in TOKENS})
 STATE.setdefault("last_accepted_rate", {})
 STATE.setdefault("recon", {})
+
+
+def write_state(label):
+    """Persist STATE to day_rates.json. The ORDER of these writes is load-
+    bearing for crash-safety (see the two call sites), so each one is named.
+    REFRESH_TRACE_STATE=<path> appends one JSON line per write — the label,
+    the phases completed before it and STATE's top-level keys — for
+    tests/test_state_order.py and tools/golden.py. Unset: no extra I/O."""
+    json.dump(STATE, open(RATES_PATH, "w"), indent=0)
+    _trace = os.environ.get("REFRESH_TRACE_STATE")
+    if _trace:
+        with open(_trace, "a") as _fh:
+            _fh.write(json.dumps({"label": label, "phases_before": list(_PHASES),
+                                  "keys": sorted(STATE)}) + "\n")
 
 # Blockscout v2 circuit breaker (perf, 2026-08-31). get()'s retry ladder sleeps
 # 2+4+6 = 12s before giving up, and v2 outages are platform-wide: when it is
@@ -233,6 +248,22 @@ def rpc(method, params, tries=3):
                 time.sleep(1)
     raise last_err
 
+# rpc_batch skip telemetry (loop 3): every endpoint or item a batch gives up
+# on is COUNTED (by reason) and the first few are logged with context; the
+# totals ride the PHASE TIMING line. Control flow is unchanged — a skip still
+# falls through to the next endpoint / the single-call path.
+_RPC_BATCH_SKIPS = Counter()
+_RPC_BATCH_LOG_MAX = 5
+
+
+def _rpc_batch_skip(reason, url, what, detail):
+    _RPC_BATCH_SKIPS[reason] += 1
+    n = sum(_RPC_BATCH_SKIPS.values())
+    if n <= _RPC_BATCH_LOG_MAX:
+        print(f"rpc_batch skip [{reason}] {url.split('/')[2]} ({what}): {detail}"
+              + (" — further skips counted only" if n == _RPC_BATCH_LOG_MAX else ""))
+
+
 def rpc_batch(calls):
     """JSON-RPC 2.0 batch: one POST for many calls, results keyed by request id.
     Returns {id: result} and OMITS ids that errored — the caller must treat a
@@ -242,6 +273,7 @@ def rpc_batch(calls):
     one-at-a-time path, because a provider may cap or refuse batches."""
     payload = json.dumps([{"jsonrpc": "2.0", "id": n, "method": m, "params": p}
                           for n, (m, p) in enumerate(calls)]).encode()
+    what = f"{len(calls)}x {calls[0][0] if calls else '-'}"
     for url in RPC_ENDPOINTS:
         try:
             req = urllib.request.Request(url, data=payload,
@@ -249,12 +281,18 @@ def rpc_batch(calls):
             with urllib.request.urlopen(req, timeout=60) as r:
                 res = json.load(r)
             if not isinstance(res, list):
-                continue          # provider does not do batches — next endpoint
+                # provider does not do batches — next endpoint
+                _rpc_batch_skip("not-a-batch", url, what, str(res)[:120])
+                continue
             out = {e["id"]: e["result"] for e in res
                    if isinstance(e, dict) and e.get("result") is not None}
+            if len(out) < len(calls):
+                _rpc_batch_skip("items-dropped", url, what, f"{len(calls) - len(out)} of {len(calls)} "
+                                "returned no result (left for the single-call fallback)")
             if out:
                 return out
-        except Exception:
+        except Exception as e:
+            _rpc_batch_skip("error", url, what, f"{type(e).__name__}: {str(e)[:120]}")
             continue
     return {}
 
@@ -1425,7 +1463,6 @@ try:
                 _inc[f["ts"][:10]] += f["val"]
         _net = {d: _inc[d] - _out[d] for d in _bdays}
         # backward walk: bal at end of the newest cached day == pinned balance
-        _cached = [d for d in _bdays if d <= max(d2 for d2 in _bdays)]
         _bal = {}; _b = BALANCE_RECON[sym]
         for d in reversed(_bdays):
             _bal[d] = round(_b, 1)
@@ -1711,7 +1748,6 @@ runway7 = float_facts["days_7d_pace"]
 # "0 flagged" flip to "3 flagged" is the calibration oracle the invariant
 # forbids. They ride alert_state.json (private, Actions cache) for the
 # daily/weekly digest; check_publish.py denies the exact key names.
-import state as _state
 _state.update({"pattern_monitor": {"flagged_n": len(flagged), "monitored_n": len(grows),
                                    "at_risk_usd": at_risk, "ce_total_usd": ce_total,
                                    "ts": now.strftime("%Y-%m-%dT%H:%M")}})
@@ -2249,7 +2285,7 @@ else:
     _exec_sent.append(f"The wallet holds ${_bal_pub:,.2f}.")
 _exec_sent.append("Chain-recorded; size labels are inferred (±8% v1 · ±12% v2).")
 _exec_age_h = (datetime.now(timezone.utc) - now).total_seconds() / 3600
-_exec_degraded = _exec_age_h > 1.5            # same threshold as the page banner (90 min)
+_exec_degraded = _exec_age_h > freshness.STALE_MINUTES / 60   # the page banner's threshold (freshness.py)
 if _exec_degraded:
     _exec_sent.insert(0, f"Data is {round(_exec_age_h)} hours old — figures may lag.")
 exec_summary = {"text": " ".join(_exec_sent), "degraded": _exec_degraded,
@@ -2272,7 +2308,7 @@ data = {"schema_version": 4,
 # Strict subset of the public page, so it exposes nothing new.
 json.dump(data, open(os.path.join(HERE, "data.json"), "w"), default=str)
 
-json.dump(STATE, open(RATES_PATH, "w"), indent=0)
+write_state("after_data_json")
 
 phase("registry+data.json")
 # --- per-tx export with rate provenance ---
@@ -2480,6 +2516,7 @@ if mrows:
 tpl = open(os.path.join(HERE, "template.html")).read()
 # the header CSV link states its size — it is a 30+ MB download (audit F1)
 _csv_mb = os.path.getsize(os.path.join(HERE, "transfers_export.csv")) / 1e6
+tpl = tpl.replace("__STALE_MIN__", str(freshness.STALE_MINUTES))   # ONE threshold: freshness.py
 tpl = tpl.replace("__CSV_MB__", f"{_csv_mb:.0f} MB" if _csv_mb >= 1 else f"{_csv_mb:.1f} MB")
 out = os.path.join(HERE, "index.html")
 open(out, "w").write("<!doctype html>\n<html lang=\"en\">\n" + tpl.replace("/*__DATA__*/", _inline_json(data)) + "\n</html>")
@@ -2590,7 +2627,7 @@ if not OFFLINE:
     # Deliberately a SECOND write rather than moving the first one down: a
     # failure anywhere in this section must not cost the run its newly
     # computed closed-day rates.
-    json.dump(STATE, open(RATES_PATH, "w"), indent=0)
+    write_state("coupon_verify")
     phase("coupon_verify")
 
 # Addresses are lowercased throughout this section (rows.py's reasoning: the
@@ -2754,7 +2791,7 @@ if cp_totals["balance_moca"] is not None:
 else:
     _cs.append("Its live balance could not be read this run.")
 _cp_age_h = (datetime.now(timezone.utc) - now).total_seconds() / 3600
-_cp_degraded = _cp_age_h > 1.5          # same threshold as the page banner (90 min)
+_cp_degraded = _cp_age_h > freshness.STALE_MINUTES / 60   # the main page banner's threshold (freshness.py)
 if _cp_degraded:
     _cs.insert(0, f"Data is {round(_cp_age_h)} hours old — figures may lag.")
 cp_summary = {"text": " ".join(_cs), "degraded": _cp_degraded,
@@ -2789,7 +2826,7 @@ coupon_data = {
               "to": cp_claims[0]["ts"][:19] if cp_claims else None},
 }
 json.dump(coupon_data, open(os.path.join(HERE, "coupon_data.json"), "w"), default=str)
-cp_tpl = open(os.path.join(HERE, "template_coupon.html")).read()
+cp_tpl = open(os.path.join(HERE, "template_coupon.html")).read().replace("__STALE_MIN__", str(freshness.STALE_MINUTES))
 open(os.path.join(HERE, "coupon.html"), "w").write(
     "<!doctype html>\n<html lang=\"en\">\n"
     + cp_tpl.replace("/*__DATA__*/", _inline_json(coupon_data)) + "\n</html>")
@@ -2823,7 +2860,6 @@ phase("catalog")
 # digest reads it). Offline rebuilds are not scheduled refreshes and are
 # not recorded — they would fake the cadence/duration series.
 if not OFFLINE:
-    import state as _state
     _rr_now = datetime.now(timezone.utc).replace(tzinfo=None)
     _rr_cut = (_rr_now - timedelta(days=7)).isoformat(timespec="minutes")
     _rr = [r for r in (_state.load().get("refresh_runs") or [])
@@ -2845,9 +2881,10 @@ _PHASES["other"] = _ph_total - sum(_PHASES.values())
 COUPON_SLOW_S = 120
 _coupon_s = sum(v for k, v in _PHASES.items() if k.startswith("coupon"))
 if not OFFLINE and _coupon_s > COUPON_SLOW_S:
-    import state as _state
     _state.warn("refresh:coupon_slow", f"refresh: coupon leg took {_coupon_s:.0f}s this run "
                                        f"(warn floor {COUPON_SLOW_S}s) — check the coupon crawl before it drags the hourly")
-print("PHASE TIMING: total=%.1fs | %s" % (
+print("PHASE TIMING: total=%.1fs | %s | rpc_batch_skips=%d%s" % (
     _ph_total, " ".join("%s=%.1fs" % (k, v) for k, v in
-                        sorted(_PHASES.items(), key=lambda kv: -kv[1]))))
+                        sorted(_PHASES.items(), key=lambda kv: -kv[1])),
+    sum(_RPC_BATCH_SKIPS.values()),
+    "".join(" %s=%d" % kv for kv in sorted(_RPC_BATCH_SKIPS.items()))))

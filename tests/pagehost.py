@@ -37,6 +37,10 @@ def build_from_template(tpl_text):
     """refresh.py's render of index.html, with the /*__DATA__*/ slot left in."""
     csv = os.path.join(ROOT, "transfers_export.csv")
     mb = os.path.getsize(csv) / 1e6 if os.path.exists(csv) else 0.0
+    import sys
+    sys.path.insert(0, ROOT)
+    import freshness
+    tpl_text = tpl_text.replace("__STALE_MIN__", str(freshness.STALE_MINUTES))
     tpl = tpl_text.replace("__CSV_MB__", f"{mb:.0f} MB" if mb >= 1 else f"{mb:.1f} MB")
     return "<!doctype html>\n<html lang=\"en\">\n" + tpl + "\n</html>"
 

@@ -11,7 +11,9 @@ Telegram digest and alert channel.
 ## Pipeline
 
 ```
-GitHub Actions cron (3,18,33,48 * * * *  — 4x/hour, best-effort)
+Cloudflare Worker `dashboard-cron-worker` (:07/:37, POSTs workflow_dispatch —
+the real trigger; RUNBOOK §7) + GitHub Actions cron (3,18,33,48 * * * *,
+best-effort backup, delivers only a few % of slots under starvation)
   └─ refresh.py
        ├─ chain fetch: Blockscout v2 → eth_getLogs fallback → 24h cross-check
        │  (monthly shards in transfers/, transfers_in/, cognition_in/)
@@ -290,6 +292,30 @@ intended change must show only the keys it meant to touch. It cannot see the
 fetch legs (balances, rates, sink and PostHog are reused from the previous
 data.json offline) — those need a live run.
 
+## Changing the pipeline safely (council loop 3, 2026-09-27)
+
+What each gate can and cannot prove, and where a figure lives.
+
+| Change touches | Proven by | Blind spot |
+|---|---|---|
+| post-fetch code (facts, layer 2, render, CSV) | `tools/golden.py` — IDENTICAL or a key-path diff | nothing offline |
+| order of the two STATE writes | `tests/test_state_order.py` + `tests/state_write_order.json` (trace via `REFRESH_TRACE_STATE=path`; golden holds head's trace to it) | the coupon write only runs online — pinned by static checks |
+| pricing in the five loaders | `tests/test_pricing_parity.py` (all five on the real tree + fixtures) | — |
+| fetch code (crawl, rates, balances, sink, PostHog) | **nothing offline** — offline reuses the previous run's fetched values; needs a pure-move review + a watched live run (a live run cannot prove equality: the chain moves). Record/replay is the next cycle's first item | |
+
+**Where a headline figure lives** (quick map — the glossary below has formulas):
+month-by-month card and all windows → `refresh.py:facts_window` → `data.json facts.windows[] / facts.monthly[]` → `test_page.py`, `test_parity.py`, `sanity.py` (EXACT);
+runway/float → `facts.float` → `test_parity.py`, `sanity.py` (BOUNDED 5%);
+day rates → `refresh.py` oracle + `day_rates.json` → `test_rate_stale.py`, `test_digests.py`, `sanity.py`;
+exec summary → `refresh.py` (`exec_summary`) → `test_parity.py` (to the cent).
+**Do not touch without a council:** `classify.py`, digest sealing (`digests.enforce`), the oracle backward walk, the STATE write order, the legacy taxonomy, `runway_adj` (public field in `stats_history`).
+
+**One freshness threshold** — `freshness.py` `STALE_MINUTES = 90`: the page stale banner and coupon banner (`__STALE_MIN__` substituted at render), the exec-summary / coupon "data is N hours old" prefix, and the weekly health check (now in minutes; was 48 h). The daily staleness fail-loud (3 h, `daily.yml`) is deliberately looser — a coarse backstop, not a banner. `daily.yml` scheduled 01:30 UTC actually starts ~06:14 UTC (GitHub cron delay; only `refresh.yml` is Worker-triggered).
+
+**Pricing parity — owner decisions pinned in the allow-list** (the test fails if one stops diverging, so the list cannot rot): (1) `notify`/`alerts` divide token quantities by `1e18` rather than `10**18` — ≤ 2 ulp (~1e-16 relative) on ~18.6K rows, no visible effect; (2) rows dated AFTER the open day: four loaders carry the open-day rate forward, `refresh.py` carries the last closed day (cannot occur while the open day is today); (3) a token with no closed rates yet: four loaders apply the open-day rate, `refresh.py` the live rate (bootstrap only).
+
+**Other:** `util.py` holds the shared pure helpers (`hkt`, `iso_min`, `parse_dt`, `cooled`; no I/O, no STATE — `test_util.py`); `notify.hkt` stays separate because it also accepts strings. `rpc_batch` no longer drops a batch item silently: skips are counted by reason, the first five logged, and `rpc_batch_skips=N` rides the PHASE TIMING line.
+
 ## Figures glossary
 
 Every exec-facing number, with the formula that produces it, what it is
@@ -333,7 +359,7 @@ entry. **If you are about to quote a number in a deck, quote the safe sentence.*
 - **Bias**: per wallet, never per creator; never appended to `stats_history.json`; no hourly figure of any kind.
 - **Safe to say**: "N creator wallets were paid in the window; the top wallet took X% of it."
 
-### `in_usd` split — new funding vs internal returns
+### `in_usd` split — refills vs returns
 - **Formula**: `refresh.py:facts_window` — `in_recycled_usd` = inflows from the collector (`in_collector_usd`) or the treasury reserve (`in_reserve_usd`); `in_external_usd = in_usd - in_recycled_usd`. Both identities hold to the cent (`tests/test_contract.py`).
 - **Source**: `transfers_in/`, priced day-pinned. **Coverage**: every window, `prev24`, every month.
 - **Bias**: classified by SOURCE ADDRESS only. Collector recycling stopped 2026-06-18, so recent `in_collector_usd` is 0; the reserve returned funds the treasury itself had parked there (2026-08-25 out, 09-04/11/18 back).

@@ -438,7 +438,7 @@ function stampGen(){const e=document.getElementById("gen");if(!e)return;if(isNaN
 // re-checked every 60 s and whenever the tab becomes visible again): visible
 // even when the pipeline is fully dead, because this runs in the viewer's
 // browser. The banner elements are static markup (hidden until needed).
-const STALE_MIN=90;   // QA over 976 runs: 75 flickered ~1x/day on healthy pages, 90 ~0.5x/day, each a genuinely late page
+const STALE_MIN=__STALE_MIN__;   // QA over 976 runs: 75 flickered ~1x/day on healthy pages, 90 ~0.5x/day, each a genuinely late page
 function checkStale(){
  const el=document.getElementById("staleBanner");if(!el)return;
  const stamp=STAMP, t=GEN_T;
