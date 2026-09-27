@@ -30,8 +30,8 @@ parsed into the shim's id tree (tests/pagehost.py). index.html additionally
 must finish with window.__renderErrors EMPTY on the real data (a section
 that degraded to "unavailable" on real data is red here), must have removed
 the fail-closed loading banner, and:
-  * stale banner: hidden at build+74 min; shown after the 60 s re-check
-    once the (fake) clock passes build+75 min; shown on visibilitychange
+  * stale banner: hidden at build+89 min; shown after the 60 s re-check
+    once the (fake) clock passes build+90 min; shown on visibilitychange
     after a clock jump that fires no timer;
   * fail-closed: invalid inlined JSON, a syntax error in the script, or a
     null data block leaves the loading banner up (and never throws past
@@ -212,20 +212,20 @@ def check_stale_and_fail_closed():
     gen = P.generated_ms(data)
     MIN = 60000
     runs = [
-        {"now": gen + 74 * MIN},                                        # 0 fresh
-        {"now": gen + 74 * MIN, "after": [{"advance": 2 * MIN}]},       # 1 interval re-check
-        {"now": gen + 10 * MIN, "after": [{"setNow": gen + 80 * MIN},
+        {"now": gen + 89 * MIN},                                        # 0 fresh
+        {"now": gen + 89 * MIN, "after": [{"advance": 2 * MIN}]},       # 1 interval re-check
+        {"now": gen + 10 * MIN, "after": [{"setNow": gen + 95 * MIN},
                                           {"visibility": "visible"}]},  # 2 tab re-shown
-        {"now": gen + 10 * MIN, "after": [{"setNow": gen + 80 * MIN}]},  # 3 no timer, no event
+        {"now": gen + 10 * MIN, "after": [{"setNow": gen + 95 * MIN}]},  # 3 no timer, no event
         {"now": gen, "rawData": "{\"facts\": "},                       # 4 invalid JSON
         {"now": gen, "rawData": "null"},                                # 5 no data at all
     ]
     r = P.run(page, data, runs)
-    assert _banner(r[0], "staleBanner").get("hidden", True), "stale banner up at build+74 min"
+    assert _banner(r[0], "staleBanner").get("hidden", True), "stale banner up at build+89 min"
     assert not _banner(r[1], "staleBanner").get("hidden", True), \
-        "stale banner NOT raised by the 60 s re-check after build+75 min"
+        "stale banner NOT raised by the 60 s re-check after build+90 min"
     assert not _banner(r[2], "staleBanner").get("hidden", True), \
-        "stale banner NOT raised on visibilitychange after build+75 min"
+        "stale banner NOT raised on visibilitychange after build+90 min"
     assert _banner(r[3], "staleBanner").get("hidden", True), \
         "stale banner changed with no timer and no event (test is not measuring the trigger)"
     for i in (0, 1, 2):
@@ -235,10 +235,11 @@ def check_stale_and_fail_closed():
     # invalid inlined JSON: the script never parses -> loading banner stays
     assert r[4]["uncaught"], "invalid JSON did not fail the script?"
     assert not _banner(r[4], "loadBanner").get("removed"), "invalid JSON removed the loading banner"
-    # null data: every data section degrades, nothing escapes, banner stays
+    # null data: every data section degrades to "unavailable", nothing
+    # escapes, and the PAGE banner (not the loading banner) says so — the
+    # script did finish, so the loading banner goes (QA F1)
     assert not r[5]["uncaught"], f"null data escaped renderSection: {r[5]['uncaught']}"
     assert r[5]["renderErrors"], "null data rendered with zero errors?"
-    assert not _banner(r[5], "loadBanner").get("removed"), "null data removed the loading banner"
     assert not _banner(r[5], "renderBanner").get("hidden", True), "null data did not raise the page banner"
     # syntax error in the script -> loading banner stays
     broken = page.replace("renderSection(\"Headline strip\"", "renderSection((\"Headline strip\"", 1)
@@ -246,17 +247,23 @@ def check_stale_and_fail_closed():
     rb = P.run(broken, data, [{"now": gen}])[0]
     assert rb["uncaught"] and not _banner(rb, "loadBanner").get("removed"), \
         "a syntax error removed the loading banner"
-    # static: banner visible by default in markup; removal is the LAST
-    # statement of the last script and conditional on zero errors
+    # static: banner visible by default in markup (with JS on it is hidden by
+    # a <head> class and shown if the script has not finished in 5 s — QA F2:
+    # no alarming flash on slow loads); removal is the LAST statement of the
+    # last script, unconditional (QA F1: a failed SECTION raises its own
+    # banner; only a script that never reaches its end keeps this one)
     st = P.parse_static(page).tree
     lb = st.get("loadBanner")
     assert lb and "hidden" not in lb["attrs"], "loading banner missing from markup or hidden by default"
     last = P.scripts_of(page)[-1].strip().splitlines()[-1].strip()
-    assert re.fullmatch(r'if\(window\.__renderErrors\.length===0\)\{const lb=document\.getElementById\("loadBanner"\);if\(lb\)lb\.remove\(\);\}', last), \
-        f"last statement is not the conditional banner removal: {last!r}"
-    print("ok stale banner: hidden at +74 min, raised by the 60 s re-check and by "
-          "visibilitychange past +75 min · fail-closed: invalid JSON / syntax error / null "
-          "data keep the loading banner; removal is the last, zero-error-conditional statement")
+    assert re.fullmatch(r'\{const lb=document\.getElementById\("loadBanner"\);if\(lb\)lb\.remove\(\);\}', last), \
+        f"last statement is not the loading-banner removal: {last!r}"
+    head = page.split("</head>")[0] if "</head>" in page else page.split("<style>")[0] + page.split("</style>")[0]
+    assert 'className+=" js"' in head and ".js #loadBanner{display:none}" in head \
+        and "classList.add(\"show\")" in head, "no-flash <head> guard for the loading banner is missing"
+    print("ok stale banner: hidden at +89 min, raised by the 60 s re-check and by "
+          "visibilitychange past +90 min · fail-closed: invalid JSON / syntax error / null "
+          "data keep the loading banner; removal is the script's last statement; no-flash head guard present")
     return 0
 
 

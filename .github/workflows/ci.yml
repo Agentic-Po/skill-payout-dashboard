@@ -54,7 +54,7 @@ jobs:
       # rendered figure (checkout is shallow, so fetch main's tip first)
       - name: Figure parity vs main
         run: |
-          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          git fetch --no-tags --depth=1 --force origin +main:refs/remotes/origin/main
           python3 tests/test_figure_parity.py origin/main
       - name: Accessibility + contrast gate
         run: python3 tests/test_a11y.py

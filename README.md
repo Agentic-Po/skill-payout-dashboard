@@ -149,7 +149,7 @@ is a broader surface than repo secrets — treat its contents accordingly.
   rewards are < 2% of outflow (0.4% today; `cap_detect.CREATOR_REWARD_TIER`
   is the deliberate switch), private state only; a heartbeat older than 2h
   turns the workflow red via `alive_check.py`
-- **Degradation**: data-source incomplete flips, stale-page banners (75 min, see "Page render safety")
+- **Degradation**: data-source incomplete flips, stale-page banners (90 min, see "Page render safety")
   (client-side, works when the pipeline is fully dead), daily >3h staleness
   fail-loud, weekly dead-man health check
 
@@ -246,7 +246,8 @@ blocks). Now:
   markup, visible by default; the script's LAST statement removes it only if
   `window.__renderErrors` is empty. A syntax error, invalid inlined JSON or an
   uncaught throw leaves it up.
-- **Stale banner** at **75 min** past `scope.generated_iso` (was 2.5 h),
+- **Stale banner** at **90 min** past `scope.generated_iso` (was 2.5 h; 75 min
+  would flash ~1x/day on healthy pages per a 976-run replay),
   re-checked every 60 s and on `visibilitychange`; a page with no readable
   build time says its freshness cannot be checked.
 - **Accessibility.** Creator-window tabs and the USD/count toggle are

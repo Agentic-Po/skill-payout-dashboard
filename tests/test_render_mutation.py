@@ -191,8 +191,10 @@ def main():
         if errs:
             if rb.get("hidden", True):
                 failures.append(f"{where}: {errs} failed but the page banner is hidden")
-            if lb.get("removed"):
-                failures.append(f"{where}: {errs} failed but the loading banner was removed")
+            # a failed SECTION shows its own banner; the loading banner is only
+            # for a script that never finished (QA F1: no triple banner)
+            if not lb.get("removed"):
+                failures.append(f"{where}: {errs} section(s) failed but the script-level loading banner stayed up")
         else:
             if not lb.get("removed"):
                 failures.append(f"{where}: clean run left the loading banner up")

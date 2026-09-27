@@ -1,7 +1,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Minds Treasury Wallet — MENTE + MOCA</title>
+<script>
+// fail-closed without the flash: with JS on, the loading banner stays hidden
+// unless the page script has not finished within 5 s (then it shows). With JS
+// off, or a script that never runs, it is visible from the start.
+document.documentElement.className+=" js";
+setTimeout(function(){var b=document.getElementById("loadBanner");if(b)b.classList.add("show");},5000);
+</script>
 <style>
+.js #loadBanner{display:none}.js #loadBanner.show{display:block}
 :root{
   --bg:#f7f7f5; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#6f6e69;
   --line:#e6e5e0; --acc:#1a5fb0;
@@ -66,7 +74,7 @@ h1{font-size:21px;margin:0;letter-spacing:-.01em}
 /* band chips (loop 2): the band hue is a left stripe; the text is body ink on
    the surface, so contrast is >= 4.5:1 by construction in both themes
    (tests/test_a11y.py computes it from these tokens) */
-.bandchip{display:inline-block;font-size:10px;font-weight:650;padding:1px 7px 1px 5px;border-radius:4px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-left:7px solid var(--chip,var(--line));font-variant-numeric:tabular-nums}
+.bandchip{display:inline-block;font-size:10px;font-weight:650;padding:1px 7px 1px 5px;border-radius:4px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-left:12px solid var(--chip,var(--line));font-variant-numeric:tabular-nums}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;color:var(--ink3);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
 td{padding:7px 8px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
@@ -340,7 +348,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <div class="scroll"><table id="gapsT"></table></div>
   </details>
 </main>
-<div class="tip" id="tip"></div>
+<div class="tip" id="tip" role="tooltip"></div>
 <script>
 const DATA = /*__DATA__*/;
 // ---- render isolation (council loop 2, 2026-09-27) ----
@@ -372,7 +380,7 @@ function renderSection(name,cardId,fn){
    // wipe the WHOLE card: no figure written before the throw survives
    const p=`<p class="unavail" role="status">${UNAVAIL}</p>`;
    if(c.tagName==="DETAILS"){c.innerHTML=`<summary class="unavail-sum">${escHtml(name)}</summary>`+p;c.open=true;}
-   else c.innerHTML=p;
+   else c.innerHTML=`<h2>${escHtml(name)}</h2>`+p;
    c.style.display="";c.hidden=false;
   }
   raisePageBanner();
@@ -407,7 +415,7 @@ function bindTips(root,focusable){root.querySelectorAll("[data-tip],[data-tiphtm
  const T=()=>el.dataset.tiphtml||el.dataset.tip, H=()=>!!el.dataset.tiphtml;
  el.addEventListener("mousemove",e=>{if(!pinned)showTip(e,T(),H())});
  el.addEventListener("mouseleave",hideTip);
- el.addEventListener("focus",e=>{const r=el.getBoundingClientRect();showTip({clientX:r.left+40,clientY:r.top+20},T(),H())});
+ el.addEventListener("focus",e=>{el.setAttribute("aria-describedby","tip");const r=el.getBoundingClientRect();showTip({clientX:r.left+40,clientY:r.top+20},T(),H())});
  el.addEventListener("blur",()=>{pinned=null;tip.style.opacity=0;});
  el.addEventListener("click",e=>{if(pinned===el){pinned=null;tip.style.opacity=0;}else{pinned=el;showTip(e,T(),H());}});
 });}
@@ -426,11 +434,11 @@ const hkt=iso=>{const t=Date.parse(iso);return isNaN(t)?iso:new Date(t+8*3.6e6).
 function ageWords(ms){const m=Math.round(ms/6e4);if(m<1)return"just now";if(m<90)return m+" min ago";const h=Math.round(m/60);if(h<48)return h+" h ago";return Math.round(h/24)+" d ago";}
 function stampGen(){const e=document.getElementById("gen");if(!e)return;if(isNaN(GEN_T)){e.textContent="updated "+(SC.generated||"?")+" UTC";return;}
  e.textContent="Updated "+hkt(SC.generated_iso).slice(11)+" · "+ageWords(Date.now()-GEN_T);e.title=(SC.generated||"")+" UTC";}
-// ---- freshness & degradation banners (council 2026-08-28; loop 2: 75 min,
+// ---- freshness & degradation banners (council 2026-08-28; loop 2: 90 min,
 // re-checked every 60 s and whenever the tab becomes visible again): visible
 // even when the pipeline is fully dead, because this runs in the viewer's
 // browser. The banner elements are static markup (hidden until needed).
-const STALE_MIN=75;
+const STALE_MIN=90;   // QA over 976 runs: 75 flickered ~1x/day on healthy pages, 90 ~0.5x/day, each a genuinely late page
 function checkStale(){
  const el=document.getElementById("staleBanner");if(!el)return;
  const stamp=STAMP, t=GEN_T;
@@ -614,7 +622,8 @@ if(CW&&CW.windows){
  render();
  document.getElementById("creatorTabs").addEventListener("click",e=>{const b=e.target&&e.target.closest?e.target.closest("[data-tab]"):e.target;const t=b&&b.dataset&&b.dataset.tab;if(!t||!CW.windows[t])return;cur=t;try{localStorage.setItem("cwTab",t);}catch(x){}
   // a tab click re-renders in place; a failure here wipes the card like a load failure
-  renderSection("Top creator wallets","creatorCard",render);});
+  renderSection("Top creator wallets","creatorCard",render);
+  const nb=document.querySelector('#creatorTabs [data-tab="'+cur+'"]');if(nb&&nb.focus)nb.focus();});
 }});
 // window + month tables (compact: USD out/in/net; per-token split via tooltip)
 function flowRows(ws){return ws.map(w=>{
@@ -1077,5 +1086,8 @@ document.getElementById("gT").innerHTML=`<tbody><tr><td style="padding:14px;colo
 });
 // FAIL-CLOSED: the static loading banner goes only when every section above
 // finished with zero errors. Keep this the LAST statement of the script.
-if(window.__renderErrors.length===0){const lb=document.getElementById("loadBanner");if(lb)lb.remove();}
+// the script reached its end, so the page DID load: the loading banner goes
+// either way — a failed section already raised its own, more precise banner
+// (renderSection); a script that dies before this line leaves it in place
+{const lb=document.getElementById("loadBanner");if(lb)lb.remove();}
 </script>

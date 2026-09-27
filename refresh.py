@@ -2216,7 +2216,7 @@ for _r in registry:
 # facts_window values the page renders — the page only injects the text,
 # never recomputes it (tests/test_parity.py holds the sentences' $ figures
 # to facts_window values to the cent). Degraded-aware: if the page's
-# staleness banner would show (data age > 2.5h — only possible on an
+# staleness banner would show (data age > 90 min — only possible on an
 # --offline rebuild of old state, since a live run stamps generated=now),
 # the block leads with a "Data is N hours old" sentence. Deliberately NO
 # anomaly/detector content beyond what the pattern panel already publishes
@@ -2249,7 +2249,7 @@ else:
     _exec_sent.append(f"The wallet holds ${_bal_pub:,.2f}.")
 _exec_sent.append("Chain-recorded; size labels are inferred (±8% v1 · ±12% v2).")
 _exec_age_h = (datetime.now(timezone.utc) - now).total_seconds() / 3600
-_exec_degraded = _exec_age_h > 2.5            # same threshold as the page banner
+_exec_degraded = _exec_age_h > 1.5            # same threshold as the page banner (90 min)
 if _exec_degraded:
     _exec_sent.insert(0, f"Data is {round(_exec_age_h)} hours old — figures may lag.")
 exec_summary = {"text": " ".join(_exec_sent), "degraded": _exec_degraded,
@@ -2754,7 +2754,7 @@ if cp_totals["balance_moca"] is not None:
 else:
     _cs.append("Its live balance could not be read this run.")
 _cp_age_h = (datetime.now(timezone.utc) - now).total_seconds() / 3600
-_cp_degraded = _cp_age_h > 2.5          # same threshold as the page banner
+_cp_degraded = _cp_age_h > 1.5          # same threshold as the page banner (90 min)
 if _cp_degraded:
     _cs.insert(0, f"Data is {round(_cp_age_h)} hours old — figures may lag.")
 cp_summary = {"text": " ".join(_cs), "degraded": _cp_degraded,
