@@ -102,7 +102,7 @@ DEPENDS = {
     "open_items": {"Open items", "Headline strip"},
     "gaps": {"Data gaps"},
     "registry": {"Address registry"},
-    "sink": {"Collector sweep", "Headline tiles", "Flow diagram"},
+    "sink": {"Collector sweep", "Flow diagram"},
     "exec_summary": {"Executive summary"},
     "facts.windows": {"Headline strip", "Headline tiles", "Flow summary", "Flow diagram"},
     "facts.monthly": {"Month by month", "Flow summary"},

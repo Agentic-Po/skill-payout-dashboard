@@ -28,7 +28,7 @@ last count — the LIVE numbers are always each repo's machine-generated
    `ops` · `micro` — the six partition every row and close on `out_usd`.
 4. **Respect freshness**: call `rows.require_fresh(catalog, dataset, max_age_h)`
    before publishing anything derived; it raises on stale data.
-5. **Snapshot feeds**: `data.json` (schema_version 4 — see §v4 below) is the dashboard's full
+5. **Snapshot feeds**: `data.json` (schema_version 5 — see §v5 below) is the dashboard's full
    rendered dataset — same URL pattern as catalog.json. `transfers_export.csv`
    is the per-tx audit surface (tx_hash + log_index + canonical class).
    **schema_version 1 → 2 (2026-08-30)**: `transfers_export.csv` dropped the
@@ -124,6 +124,14 @@ gains the two legs of `in_recycled_usd`, published apart — `in_collector_usd` 
 in_recycled_usd` and `in_external_usd + in_recycled_usd == in_usd`, each to the cent — `tests/test_contract.py` holds
 both. Why: the page headline still called all of `in_recycled_usd` "usage fees recycling back" after the v4 change, so
 $40,828 of reserve returns read as usage fees. No existing value changed.
+
+**schema_version 4 → 5 (2026-09-28, "40% interpretation moves private")**: removed `sink.contract`,
+`sink.share_median`, `sink.share_cum`, `sink.recycle_share_cum`. Added `sink.series[].o` (MENTE arriving at the
+collector that day in single transfers ≥ 10,000 — treasury/ops funding moves, not user spend) and
+`sink.chain_verified_through` (UTC timestamp up to which both sweep legs are proven by an eth_getLogs scan; days after
+it are Blockscout-only). `series` is otherwise unchanged: `i` intake, `r` old-route recycle to the treasury, `s` sweep
+to the Rebate wallet, per UTC day. Why: the contractual rate and any shortfall are internal; the public feed keeps the
+on-chain facts they are computed from. Consumers that read `sink.contract` must compute from `series` instead.
 
 **Naming (2026-09-27)**: `in_external_usd` keeps its key name but means **treasury refills from Minds/Animoca's own
 wallets** — no inflow to this wallet is external money. Present it as "refills" (not "top-ups", which names Stripe packs delivered out), never "external" or "new" funding.

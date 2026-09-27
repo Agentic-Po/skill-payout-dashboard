@@ -68,8 +68,20 @@ def main():
     for rel in ("data.json", "index.html", "full.html"):
         _clean(rel)
     D = json.load(open(os.path.join(ROOT, "data.json")))
-    assert D.get("schema_version") == 4, "data.json is not the v4 contract"
-    print("ok data.json schema_version == 4")
+    assert D.get("schema_version") == 5, "data.json is not the v5 contract"
+    print("ok data.json schema_version == 5")
+    # the 40% sweep interpretation is private (Po, 2026-09-28): public data
+    # carries raw daily flows only; the private edition computes the audit
+    S = D.get("sink") or {}
+    leaked = [k for k in ("contract", "share_median", "share_cum", "recycle_share_cum") if k in S]
+    assert not leaked, f"sink carries private 40% interpretation keys: {leaked}"
+    for row in S.get("series") or []:
+        assert set(row) <= {"d", "i", "o", "r", "s"}, f"sink.series row has unexpected keys: {sorted(row)}"
+    for rel in ("index.html", "full.html", "data.json"):
+        t = open(os.path.join(ROOT, rel), errors="replace").read()
+        for w in ("40% of collected", "contractual term", "Contract audit", "sweep vs 40", "% of collector intake"):
+            assert w not in t, f"{rel}: 40% interpretation text {w!r} is public"
+    print("ok sink: raw daily flows only; no 40% interpretation keys or text on any public artifact")
     for rel in PUBLIC_ARTIFACTS:
         p = os.path.join(ROOT, rel)
         if not os.path.exists(p):

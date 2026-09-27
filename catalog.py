@@ -174,7 +174,7 @@ PUBLIC = [
          not_included="pre-migration SWARM only; not reconciled against the MOCA/MENTE ledger and not part of any economy figure"),
     dict(name="data", path=["data.json"], kind="derived", live=True,
          measure=lambda: _data_stamps("data.json"),
-         row_schema="schema_version (3), scope, facts (incl. windows[].groups, float, creator_wallets, hourly[].g), infer, server, stripe_snap, insights, open_items, gaps, registry, sink, exec_summary",
+         row_schema="schema_version (5), scope, facts (incl. windows[].groups, float, creator_wallets, hourly[].g), infer, server, stripe_snap, insights, open_items, gaps, registry, sink, exec_summary",
          update_cadence="every refresh (~4x/hour)", expected_cadence_minutes=15,
          source_generated=lambda: _data_generated("data.json"),
          provenance="refresh.py — the versioned contract; a strict subset of what full.html embeds",

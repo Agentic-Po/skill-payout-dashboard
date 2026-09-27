@@ -1981,6 +1981,8 @@ try:
     if OFFLINE:
         raise RuntimeError("offline — sink/rebate reused from prior data.json below")
     SINK_GENESIS_BLOCK = 47_400_000  # 2026-06-16, safely before the sink's first sweep (Jun 19)
+    SINK_XC_BUDGET = 50_000          # per-run cap on the chain cross-check (~25 calls; steady state ~3)
+    SINK_XC_LAG = 30                 # never bank the reorg-able tip as scanned
     # The sink leg used to be uncached "because it's small (~1 tx/day)". Small
     # in ROWS, not in work: every run re-walked its whole v2 history, and on any
     # v2 500 the fallback rescanned ~3.3M blocks from genesis with eth_getLogs.
@@ -2044,6 +2046,39 @@ try:
                    for i in rpc_transfer_fallback(SINK, direction, [TOKENS["MENTE"]["addr"]],
                                                   _resume, _head, skip_keys=seen)]
             xcheck_done(_xn, _head)
+        else:
+            # Chain cross-check, EVERY run (2026-09-28). Blockscout's index has
+            # silently dropped sink sweeps: 26/27 Sep 2026 showed 275 and 18,147
+            # MENTE where the chain has 94,911 and 86,726 — enough to overstate
+            # the 40% audit's shortfall by ~80K MENTE. eth_getLogs from a banked
+            # cursor, skipping keys already held, adds only what the index
+            # missed. History from the sink's genesis was seeded once, locally
+            # (2026-09-28); each run then scans from the banked cursor — about
+            # one run's worth of blocks plus overlap — capped at SINK_XC_BUDGET.
+            _xn = "sink_xc_" + direction
+            try:
+                # no cursor (fresh STATE) -> re-verify the last day only, like
+                # every other leg; history was seeded once from the sink's genesis
+                _xs = xcheck_from(_xn, max(SINK_GENESIS_BLOCK,
+                                           max([r.get("blk", 0) for r in cached] + [0]) - XCHECK_WINDOW))
+                _tip = int(rpc("eth_blockNumber", []), 16) - SINK_XC_LAG
+                _xe = min(_tip, _xs + SINK_XC_BUDGET)
+                if _xe >= _xs:
+                    _have = seen | {r["k"] for r in acc}
+                    _miss = [_sink_row(i["timestamp"],
+                                       int(i["total"]["value"]) / 10 ** DECIMALS["MENTE"],
+                                       (i["from"] if direction == "to" else i["to"])["hash"],
+                                       i.get("block_number", 0), key(i))
+                             for i in rpc_transfer_fallback(SINK, direction, [TOKENS["MENTE"]["addr"]],
+                                                            _xs, _xe, skip_keys=_have)]
+                    if _miss:
+                        print(f"sink {direction}: {len(_miss)} transfer(s) the index missed, added from the chain")
+                    acc += _miss
+                    xcheck_done(_xn, _xe)
+            except Exception as _xe_err:
+                # never let the cross-check blank the section: the cursor is
+                # untouched, so the next run retries the same span
+                print(f"sink {direction}: chain cross-check skipped this run ({type(_xe_err).__name__})")
         merged, _mk = list(cached), set(seen)
         for r in acc:
             if r["k"] not in _mk:
@@ -2112,17 +2147,8 @@ try:
 
     _sdays, _rdays = sorted(_sd), sorted(_rd)
     if _sdays:
-        # the sweep tracks the PRIOR day's intake far more tightly than same-day
-        # (stdev ~10pp vs ~32pp), so the rate is stated on a T-1 basis.
-        _sh = []
-        for d in _sdays:
-            _p = (datetime.strptime(d, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-            if _ci.get(_p):
-                _sh.append(_sd[d] / _ci[_p])
-        _cum_i = sum(v for d, v in _ci.items() if d >= _sdays[0])
-        # old route measured on the same cumulative basis, so the two are comparable
-        _rdaily = [d for d in _rdays if d >= "2026-05-21"]           # its daily-cadence phase
-        _rwin = sum(v for d, v in _ci.items() if _rdays and _rdays[0] <= d <= _rdays[-1])
+        # (sweep-rate ratios moved to the private edition, 2026-09-28)
+        _rdaily = [d for d in _rdays if d >= "2026-05-21"]           # old route's daily-cadence phase
         # one continuous series across the boundary: intake vs each route
         _all_days = sorted(set(list(_ci) + _rdays + _sdays))
         _all_days = [d for d in _all_days if _rdays and d >= _rdays[0]]
@@ -2138,49 +2164,48 @@ try:
                            for d in _all_days],
                 "boundary": _sdays[0],
                 "out_n": len(_out), "out_total": round(sum(r["val"] for r in _out), 2),
-                "share_median": round(statistics.median(_sh) * 100, 1) if _sh else None,
-                "share_cum": round(sum(_sd.values()) / _cum_i * 100, 1) if _cum_i else None,
                 "recycle_total": round(sum(_rd.values()), 2), "recycle_n": len(_rdays),
                 "recycle_first": _rdays[0] if _rdays else None,
                 "recycle_last": _rdays[-1] if _rdays else None,
-                "recycle_share_cum": round(sum(_rd.values()) / _rwin * 100, 1) if _rwin else None,
                 "recycle_span_days": (datetime.strptime(_rdays[-1], "%Y-%m-%d")
                                       - datetime.strptime(_rdays[0], "%Y-%m-%d")).days + 1 if _rdays else None,
                 "collector_bal": round(_bal, 2) if _bal else None,
                 "rate": _mrate,
                 "intake_pre": round(statistics.mean(_pre)) if _pre else None,
                 "intake_post": round(statistics.mean(_post)) if _post else None}
+        # How far the sweep legs are proven against the chain (eth_getLogs
+        # cursor, both directions). Days after this are Blockscout-only and may
+        # be missing transfers; consumers must say so.
+        try:
+            _xc = min(STATE["xcheck"].get("sink_xc_to") or 0, STATE["xcheck"].get("sink_xc_from") or 0)
+            sink["chain_verified_through"] = block_ts(_xc)[:19] if _xc else None
+        except Exception:
+            sink["chain_verified_through"] = None
 
-        # --- contract audit -------------------------------------------------
-        # DATops is owed a contractual 40% of cognition spend. The old route
-        # delivered 39.7% against total collector intake over ~7 weeks, which is
-        # what validates that denominator; the same base is used for both routes.
-        CONTRACT = 0.40
-        _base_new = _cum_i
-        _base_old = _rwin
-        _exp_new, _got_new = _base_new * CONTRACT, sum(_sd.values())
-        _by_month = {}
-        for d, v in _sd.items():
-            _by_month.setdefault(d[:7], [0.0, 0.0])[0] += v
-        for d, v in _ci.items():
-            if d >= _sdays[0]:
-                _by_month.setdefault(d[:7], [0.0, 0.0])[1] += v
-        sink["contract"] = {
-            "rate": CONTRACT * 100,
-            "old_pct": round(sum(_rd.values()) / _base_old * 100, 1) if _base_old else None,
-            "new_pct": round(_got_new / _base_new * 100, 1) if _base_new else None,
-            "expected": round(_exp_new), "actual": round(_got_new),
-            "variance": round(_got_new - _exp_new),
-            "variance_usd": round((_got_new - _exp_new) * _mrate),
-            "months": [{"m": m, "pct": round(v[0] / v[1] * 100, 1), "short": round(v[1] * CONTRACT - v[0])}
-                       for m, v in sorted(_by_month.items()) if v[1]],
-        }
 except Exception as e:
     print("sink fetch failed:", e)
 if OFFLINE:
     # the sink has no local cache (small, ~1 tx/day) — reuse the previous
     # run's published block wholesale, rebate monitor included.
     sink = PREV.get("sink")
+# Public/private split (2026-09-28, Po): the sink block publishes the raw daily
+# on-chain flows only — intake `i`, one-off inflows `o` (single transfers
+# >= SINK_ONE_OFF_MIN MENTE: treasury/ops funding moves, not user spend), the
+# old-route recycle `r` and the Rebate sweep `s`. The 40% contractual term,
+# expected-vs-delivered and the shortfall are computed only in the private
+# edition (treasury-console, behind Cloudflare Access). Applied on both the
+# live and the offline path, so a reused PREV block is stripped too.
+SINK_ONE_OFF_MIN = 10_000
+SINK_PRIVATE_KEYS = ("contract", "share_median", "share_cum", "recycle_share_cum")
+if sink:
+    for _k in SINK_PRIVATE_KEYS:
+        sink.pop(_k, None)
+    _oo = defaultdict(float)
+    for c in (cog if "cog" in dir() else []):
+        if c["val"] >= SINK_ONE_OFF_MIN:
+            _oo[c["ts"][:10]] += c["val"]
+    for _row in sink.get("series") or []:
+        _row["o"] = round(_oo.get(_row["d"], 0), 1)
 
 phase("sink_rebate")
 # ================= ADDRESS REGISTRY =================
@@ -2300,7 +2325,10 @@ exec_summary = {"text": " ".join(_exec_sent), "degraded": _exec_degraded,
 # facts.cognition.funding_split / rewards_v2.cap_on_utc + implied_user_spend
 # / server.subsidy_ratio removed; facts.float, facts.creator_wallets,
 # facts_window.groups, hourly.g added. See CONSUMERS.md §5.
-data = {"schema_version": 4,
+# schema_version 5 (2026-09-28): sink.contract / share_median / share_cum /
+# recycle_share_cum removed (the 40% interpretation moved to the private
+# edition); sink.series[].o and sink.chain_verified_through added.
+data = {"schema_version": 5,
         "scope": scope, "facts": facts, "infer": infer, "server": server, "stripe_snap": stripe_snap,
         "insights": insights, "open_items": open_items, "gaps": gaps, "registry": registry, "sink": sink,
         "exec_summary": exec_summary}

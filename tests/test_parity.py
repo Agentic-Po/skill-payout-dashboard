@@ -287,9 +287,9 @@ def main():
     # the pre/post-redaction parity proof: the sums recomputed from raw shards
     # must still match the published page to the cent, so redaction provably
     # touched labels only, never money.
-    assert D.get("schema_version") == 4, \
-        f"schema_version {D.get('schema_version')!r} != 4 — 2026-09-18 contract not in force"
-    print("ok schema_version == 3 (grouped, status-free contract)")
+    assert D.get("schema_version") == 5, \
+        f"schema_version {D.get('schema_version')!r} != 5 — 2026-09-28 contract not in force"
+    print("ok schema_version == 5 (grouped, status-free, no 40% interpretation)")
     gen = datetime.fromisoformat(D["scope"]["generated_iso"].replace("Z", ""))
     byw = {w["label"]: w for w in D["facts"]["windows"]}
 
