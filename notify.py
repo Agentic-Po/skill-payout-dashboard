@@ -299,7 +299,7 @@ if mode == "weekly":
     _ver = (f" Verified Stripe net: ${_ss.get('net_usd', 0):,.0f} ({_ss['period'][0]}→{_ss['period'][1]}, one-time snapshot)."
             if _ss.get("net_usd") and _ss.get("period") else "")
     _flag_s = f"{_PM['flagged_n']} wallet(s) flagged for private review" if _PM else "pattern monitor state not banked"
-    health.append(f"<i>Paste-ready:</i> This week: {w7d['invoke']:,} invokes and {w7d['equip']:,} equips across {w7d['creators']:,} creator wallets, ${w7d['g_usd']['skill_rewards']:,.2f} of skill rewards paid — {_flag_s}. ${w7d['g_usd']['topups_delivered']:,.2f} of flows were Stripe-pack-sized deliveries (size-inferred; may include coupon-delivered credits — not verified revenue).{_ver}")
+    health.append(f"<i>Paste-ready:</i> This week: {w7d['invoke']:,} invokes and {w7d['equip']:,} equips across {w7d['creators']:,} creator wallets, ${w7d['g_usd']['skill_rewards']:,.2f} of skill rewards paid — {_flag_s}. ${w7d['g_usd']['topups_delivered']:,.2f} of flows were Pack-sized credit deliveries (size-inferred; may include $10 new-user grants and coupon-delivered credits — not verified revenue).{_ver}")
     # --- ops footer (Cycle-3 Loop 3, item 3) ---
     # DIGEST-ONLY, no new public fields. Cadence comes from data already
     # public (stats_history.json timestamps — one snapshot per successful
@@ -449,7 +449,7 @@ else:
                                     f" <i>({mix(W['tiers_credit'], INCENT_LABEL)})</i>" if W["tiers_credit"] else ""),
                   "  · " + usd_line("top-ups delivered", "qty_topup", W,
                                     f" <i>({W['g_n']['topups_delivered']:,} paid: {mix(W['tiers_topup'])})</i>" if W["tiers_topup"]
-                                    else " <i>(Stripe-pack-sized, size-inferred)</i>")]
+                                    else " <i>(pack-sized; $10 grants overlap purchases, size-inferred)</i>")]
     if W["g_n"]["ops"]:
         body_lines.append(f"  · <i>excluded {W['g_n']['ops']:,} non-standard transfer(s) ≈ ${W['g_usd']['ops']:,.0f} "
                           f"— swaps/treasury moves, not user top-ups</i>")

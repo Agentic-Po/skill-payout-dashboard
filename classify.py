@@ -52,6 +52,14 @@ V2_TOL = 0.12          # ±12% keeps $0.005 (0.0044-0.0056) and $0.05 (0.044-0.0
 
 STRIPE_FINE = tuple(f"stripe ${p}" for p in PACKS)
 
+
+def fine_label(fine):
+    """Public display text; legacy machine keys stay compatible with CSV consumers."""
+    if fine == "stripe $10":
+        return "$10 credits (new-user grant or purchased pack)"
+    return fine
+
+
 # ---- the one era table (UTC). The ROW timestamp selects the era. ----
 # Boundaries are data-derived from the chain (last v1 rows 13:54:17Z /
 # 13:54:59Z on 08-21; first v2 rows 14:19:11Z equip, 14:20:11Z invoke on

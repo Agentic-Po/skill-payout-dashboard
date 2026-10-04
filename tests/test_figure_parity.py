@@ -21,6 +21,7 @@ prints the diff and exits 0.
   python3 tests/test_figure_parity.py [BASE_REF]      (default origin/main)
 """
 import os
+from collections import Counter
 import subprocess
 import sys
 
@@ -32,6 +33,28 @@ def base_template(ref):
     r = subprocess.run(["git", "-C", P.ROOT, "show", f"{ref}:template.html"],
                        capture_output=True, text=True)
     return r.stdout if r.returncode == 0 else None
+
+
+# Reviewed display-only equivalents for the grant/purchase ambiguity correction.
+# Exact phrases only: an altered amount or any unrelated text still fails parity.
+DISPLAY_EQUIVALENTS = {
+    "$10 credits (new-user grant or purchased pack)": "stripe $10",
+    "Historical $3 credits mix new-user grants and internal top-ups; new-user top-ups are now $10. The $10 size overlaps purchased packs, so its purpose remains ambiguous without a recorded payment type.":
+        "The $3 bucket mixes new-user credits and internal top-ups — the internal top-ups sheet is the authoritative split.",
+    "may include $10 new-user grants and coupon-delivered credits": "may include coupon-delivered credits",
+    "Pack-sized on-chain credit deliveries (including possible $10 grants)": "Stripe-sized on-chain outflow",
+    "includes credit deliveries (“top-ups delivered”), which mix purchased packs and grants. New-user top-ups are now $10; a $10-sized transfer alone cannot distinguish a grant from a purchase.": "",
+}
+
+
+def display_canonical(multiset):
+    out = Counter()
+    for (kind, text), count in multiset.items():
+        for new, old in DISPLAY_EQUIVALENTS.items():
+            text = text.replace(new, old)
+        if text.strip():
+            out[(kind, text)] += count
+    return out
 
 
 def main():
@@ -57,7 +80,7 @@ def main():
     res = [P.run(pg, data, [{"now": now}])[0] for pg in pages]
     for name, r in zip((ref, "working"), res):
         assert not r["uncaught"], f"{name} template raised on real data: {r['uncaught']}"
-    a, b = (P.digit_multiset(pg, r) for pg, r in zip(pages, res))
+    a, b = (display_canonical(P.digit_multiset(pg, r)) for pg, r in zip(pages, res))
     only_a, only_b = a - b, b - a
     print(f"{ref}: {sum(a.values())} digit-bearing text nodes · working: {sum(b.values())}")
     if not only_a and not only_b:

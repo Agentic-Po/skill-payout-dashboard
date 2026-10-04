@@ -142,3 +142,15 @@ wallets** — no inflow to this wallet is external money. Present it as "refills
 history from it must read the monthly files. All files are sorted by (timestamp_utc, direction, tx_hash, log_index)
 (previously newest-first, OUT before IN), so a closed month is byte-stable. Why: the single file was 31 MB, +0.6 MB/day,
 and would have tripped the pipeline's 50 MB guard ~2026-10-27, failing every refresh.
+
+
+### Additive display clarification — 2026-10-04 (schema 5 unchanged)
+
+`infer.fine_table[].label` is optional display text, with `fine` as fallback.
+The legacy machine category `stripe $10` means a size band, not a verified
+purchase. Its display label is now `$10 credits (new-user grant or purchased
+pack)` because current new-user top-ups are $10. `topups_delivered` therefore
+includes ambiguous $10 grants as well as pack-sized deliveries. Neither it
+nor `server.stripe_out_usd` is revenue. Classification keys, amounts, CSV schema
+and historical group allocations are unchanged; no unconfirmed grant-change
+date is applied retroactively. A purpose split requires recorded payment types.

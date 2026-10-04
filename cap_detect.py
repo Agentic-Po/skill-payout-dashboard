@@ -219,8 +219,8 @@ def evaluate(sw, state, now):
                 hits[key] = _iso(now)
                 cap, era = cap_usd_for(h_iso), era_for(h_iso)["name"]
                 if _dt(h_iso) >= CAP_HOUR0:
-                    why = (f"(cap ${cap:.2f}/creator/h) — engine cap is NOT enforcing; "
-                           f"pause rewards and check backend cap config")
+                    why = (f"(cap ${cap:.2f}/creator/h) — wallet-level cap amount exceeded; verify payout type and user/hour scope; "
+                           f"check backend cap config before requesting a pause")
                 else:
                     why = (f"— no engine cap existed in the {era} era (cap-equivalent ${cap:.2f}/creator/h); "
                            f"the shape alone is the 21-Aug farm signal — review the wallet")
