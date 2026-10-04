@@ -20,7 +20,7 @@ from util import public_summary   # index.html payload (public summary)
 import state as _state   # alert_state.json single writer (no import side effects)
 from privlog import private_print   # quiet public Actions logs (2026-09-27)
 # taxonomy lives in classify.py — the ONE classifier shared with notify/alerts
-from classify import (band, classify_usd, pin_rate, era_for, BAND_LABEL, BAND_KEYS, STRIPE_FINE,
+from classify import (fine_label, band, classify_usd, pin_rate, era_for, BAND_LABEL, BAND_KEYS, STRIPE_FINE,
                       RETIRED, SYSTEM_TOPUP, RESUMED_UTC, PAUSED_UTC,
                       GROUP_KEYS, GROUP_LABEL, GROUP_TO, group_for)
 from datetime import datetime, timezone, timedelta
@@ -1657,7 +1657,7 @@ for r in rows:
 _fine_grp = {}
 for r in rows:
     _fine_grp.setdefault(r["fine"], r["grp"])
-fine_table = sorted(({"fine": k, "group": _fine_grp.get(k), "n": v["n"], "usd": round(v["usd"], 2)}
+fine_table = sorted(({"fine": k, "label": fine_label(k), "group": _fine_grp.get(k), "n": v["n"], "usd": round(v["usd"], 2)}
                      for k, v in fine_agg.items()), key=lambda x: -x["usd"])
 
 def gap_entropy(gaps):

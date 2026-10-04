@@ -480,3 +480,22 @@ Rebate wallet -> treasury reserve; refills are a manual owner budget request).
 2. Pricing unification across the five loaders — approved; next cycle, behind
    `tests/test_pricing_parity.py`.
 3. Unexplained ~88K MENTE balance-vs-transfers gap (~$1,250) — not a burn.
+
+
+### Current reward and grant clarification (2026-10-04)
+
+Creator rewards remain $0.05 per equip (50% of $0.10) and $0.005 per invoke
+(50% of $0.01). $1 system top-ups are outside skill counters. The configured
+$4 hourly amount corresponds to 80 equips, 800 invokes, or a mixture; the
+existing detector is wallet-scoped, not a verified combined-user total.
+The cap check uses the exact nominal limit (with only floating-point epsilon),
+not the former 5% allowance. Cap messages ask for payout-type and user/hour-scope verification rather than
+asserting that engine enforcement failed from chain size alone.
+
+New-user top-ups are now $10. This overlaps the purchased-pack size band.
+The optional `infer.fine_table[].label` makes that ambiguity visible while
+preserving existing machine keys, CSV columns and numerical history. The
+exact grant cutover has not been confirmed; no historical $3 grants are
+reclassified by assuming a date. Real-data cap tests check parity against
+measured reward units, rather than assuming live production never has a
+finding; failures never print private alert bodies into public CI logs.

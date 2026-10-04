@@ -65,11 +65,16 @@ def _lines_ok(secs):
 
 def main():
     h = NOW.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
+    # At the nominal limit ordinary rewards are legal; one more equip is over.
+    exact, _, _ = run(burst(A, h + timedelta(minutes=2), 80))
+    assert not any("CAP BREACH" in str(section) for section in exact), "exactly $4 must not breach"
+    over, _, _ = run(burst(A, h + timedelta(minutes=2), 81))
+    assert any("CAP BREACH" in str(section) for section in over), "81 equips must exceed $4"
     # 1. C1 — 85 equips in one clock-hour
     secs, st, sw = run(burst(A, h + timedelta(minutes=2), 85))
     c1 = [s for s in secs if "CAP BREACH" in s[1]]
     assert len(c1) == 1 and "🟠" in c1[0][1] and "85 equip-units" in c1[0][1], secs
-    assert "NOT enforcing" in c1[0][1], "a cap-era breach must claim the engine cap failed"
+    assert "verify payout type and user/hour scope" in c1[0][1], "a chain-size breach must request scope verification"
     assert f"${85 * EQ:,.2f}" in c1[0][1] and f"cap ${CAP_USD_PER_CREATOR_HOUR:.2f}" in c1[0][1]
     assert not [s for s in secs if "straddle" in s[1]], "C2 must not fire alongside a C1 for the same creator"
     _lines_ok(secs)
@@ -159,7 +164,7 @@ def main():
     _lines_ok(secs)
     print("ok pre-cap window (14:19Z-19:12Z) fires C1/C4 with the 'no engine cap existed' wording")
 
-    # 8. real shards: quiet, probe populated
+    # 8. real shards: detectors agree with measured rewards, never assume live data is quiet
     D = json.load(open(os.path.join(ROOT, "data.json")))
     dr = json.load(open(os.path.join(ROOT, "day_rates.json")))
     toks = {a.lower(): s for s, a in D["scope"]["tokens"].items()}
@@ -180,13 +185,15 @@ def main():
     rr = cd.reward_rows(real)
     sw = cd.sweep(rr, now)
     secs, st = cd.evaluate(sw, {}, now)
-    assert not secs, f"real shards fired: {secs}"
+    expected_breach = any(u > cd.BREACH_UNITS for c in sw["creators"].values()
+                          for u, _ in c["clock"].values())
+    got_breach = any("CAP BREACH" in str(section) for section in secs)
+    assert got_breach == expected_breach, "real reward cap result disagrees with measured clock-hour units"
     pr = cd.probe(sw, now)
-    assert pr["rows"] >= 100 and pr["top_clock_units_24h"] < cd.BREACH_UNITS and pr["cap_usd"] == CAP_USD_PER_CREATOR_HOUR, pr
+    assert pr["rows"] >= 100 and pr["cap_usd"] == CAP_USD_PER_CREATOR_HOUR, "real reward probe missing or inconsistent"
     tbl = cd.cap_table(sw)
     assert tbl and all("clock" not in v for v in tbl.values())
-    print(f"ok real shards: nothing fires · probe rows {pr['rows']} · top clock-hour {pr['top_clock_units_24h']} units "
-          f"(${pr['top_clock_usd_24h']}) · {len(tbl)} creators in the private table")
+    print("ok real shards: measured cap parity and populated private probe")
 
     # 9. message hygiene: 25 fan-out sections + one 🔴 runway section compose
     # under 4000 chars with the 🔴 kept first (C1 is 🟠 since loop 2 — WARN)
