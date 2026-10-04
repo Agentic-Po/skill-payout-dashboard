@@ -65,6 +65,11 @@ def _lines_ok(secs):
 
 def main():
     h = NOW.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
+    # At the nominal limit ordinary rewards are legal; one more equip is over.
+    exact, _, _ = run(burst(A, h + timedelta(minutes=2), 80))
+    assert not any("CAP BREACH" in str(section) for section in exact), "exactly $4 must not breach"
+    over, _, _ = run(burst(A, h + timedelta(minutes=2), 81))
+    assert any("CAP BREACH" in str(section) for section in over), "81 equips must exceed $4"
     # 1. C1 — 85 equips in one clock-hour
     secs, st, sw = run(burst(A, h + timedelta(minutes=2), 85))
     c1 = [s for s in secs if "CAP BREACH" in s[1]]
@@ -185,7 +190,7 @@ def main():
     got_breach = any("CAP BREACH" in str(section) for section in secs)
     assert got_breach == expected_breach, "real reward cap result disagrees with measured clock-hour units"
     pr = cd.probe(sw, now)
-    assert pr["rows"] >= 100 and pr["cap_usd"] == CAP_USD_PER_CREATOR_HOUR, pr
+    assert pr["rows"] >= 100 and pr["cap_usd"] == CAP_USD_PER_CREATOR_HOUR, "real reward probe missing or inconsistent"
     tbl = cd.cap_table(sw)
     assert tbl and all("clock" not in v for v in tbl.values())
     print("ok real shards: measured cap parity and populated private probe")

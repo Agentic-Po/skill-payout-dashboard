@@ -19,8 +19,8 @@ knowing the rule does not let a farmer earn more than the cap; what stays
 private is the per-creator STATE (alert_state.json / guard_private.json).
 
 Alerts (all edge-triggered, HKT in text):
-  C1 CAP BREACH      one creator > 84 units in a UTC clock-hour (5% slack)
-  C2 CAP STRADDLE    rolling-60-min > 84 units without a C1 for that creator
+  C1 CAP BREACH      one creator > 80 units in a UTC clock-hour (floating-point epsilon only)
+  C2 CAP STRADDLE    rolling-60-min > 80 units without a C1 for that creator
   C3 CAP SATURATED   one creator >= 72 units (90%) in >= 3 of the trailing 24 clock-hours
   C4 CAP FAN-OUT     >= 5 creators each >= 40 units, or >= 10 creators each
                      >= 20 units, in the same clock-hour
@@ -59,7 +59,7 @@ HKT, hkt, _iso, _dt, _cooled = util.HKT, util.hkt, util.iso_min, util.parse_dt, 
 from classify import (UNITS, CAP_UNITS, CAP_USD_PER_CREATOR_HOUR, CAP_ON_UTC,
                       RESUMED_UTC, classify_usd, cap_usd_for, era_for)
 
-BREACH_UNITS = CAP_UNITS * 1.05          # 84
+BREACH_UNITS = CAP_UNITS + 1e-9          # exact cap; only absorb float summation noise
 SAT_UNITS = CAP_UNITS * 0.90             # 72
 FANOUT_TIERS = ((5, 40.0), (10, 20.0))   # (creators, units each)
 POOL_FLOOR_UNITS = 400.0                 # ≈ $20 at policy prices

@@ -488,7 +488,8 @@ Creator rewards remain $0.05 per equip (50% of $0.10) and $0.005 per invoke
 (50% of $0.01). $1 system top-ups are outside skill counters. The configured
 $4 hourly amount corresponds to 80 equips, 800 invokes, or a mixture; the
 existing detector is wallet-scoped, not a verified combined-user total.
-Cap messages ask for payout-type and user/hour-scope verification rather than
+The cap check uses the exact nominal limit (with only floating-point epsilon),
+not the former 5% allowance. Cap messages ask for payout-type and user/hour-scope verification rather than
 asserting that engine enforcement failed from chain size alone.
 
 New-user top-ups are now $10. This overlaps the purchased-pack size band.
