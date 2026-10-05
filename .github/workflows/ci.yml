@@ -34,6 +34,8 @@ jobs:
         run: python3 tests/test_redact.py
       - name: Publish allowlist regression
         run: python3 tests/test_stage.py
+      - name: Telegram digest delivery bounds
+        run: python3 tests/test_telegram_digest.py
       - name: Digest/page parity
         run: python3 tests/test_parity.py
       - name: Shadowed-import gate
