@@ -11,6 +11,7 @@ Env vars: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID.
 """
 import json, os, sys, urllib.request, urllib.parse
 import shards
+from telegram_digest import digest_parts
 from privlog import private_print
 from datetime import datetime, timezone, timedelta
 
@@ -462,7 +463,8 @@ else:
                    f"  · {cum['invoke']:,} invokes · {cum['equip']:,} equips · {cum['creators']:,} creator wallets paid",
                    "  · " + usd_line("paid to creator wallets", "qty_ce", cum)]
     msg = "\n".join(body_lines + health)
-    assert len(msg) < 4000, f"digest message is {len(msg)} chars — Telegram's limit is 4096"
+    # Preserve the complete daily/weekly report in bounded parts.
+    # Individual lines have complete HTML tags, so boundaries stay valid.
 _restated = _ST.get("mente_restated_v1")
 
 if DRY_RUN:
@@ -481,23 +483,23 @@ if mode == "hourly":
                       public="notify: hourly digest rate-limited, skipping", src="notify")
         raise SystemExit(0)
 
-body = urllib.parse.urlencode({
-    "chat_id": os.environ["TELEGRAM_CHAT_ID"],
-    "text": msg,
-    "parse_mode": "HTML",
-    "disable_web_page_preview": "true",
-    "reply_markup": json.dumps({"inline_keyboard": [[{"text": "📊 Open dashboard", "url": URL}]]}),
-}).encode()
-req = urllib.request.Request(
-    f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage",
-    data=body)
-# Liveness bookkeeping (item 4): record the ATTEMPT's outcome either way.
-# On failure record-then-reraise — the workflow step is continue-on-error,
-# so the raise can't kill the refresh, but alive_check.py turns 3 consecutive
-# failures into a red run.
+# Only a fully delivered report consumes warning/state markers.
 try:
-    with urllib.request.urlopen(req, timeout=30) as r:
-        print("telegram:", r.status)
+    for part in digest_parts(msg):
+        body = urllib.parse.urlencode({
+            "chat_id": os.environ["TELEGRAM_CHAT_ID"],
+            "text": part,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": "true",
+            "reply_markup": json.dumps({"inline_keyboard": [[{"text": "📊 Open dashboard", "url": URL}]]}),
+        }).encode()
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage",
+            data=body)
+        with urllib.request.urlopen(req, timeout=30) as response:
+            result = json.load(response)
+            if not result.get("ok"):
+                raise RuntimeError("telegram_digest_delivery_failed")
 except Exception:
     _state.record_send("digest", False, now)
     raise
