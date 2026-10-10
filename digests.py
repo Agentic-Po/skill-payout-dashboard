@@ -19,11 +19,12 @@ record. The ledger (day_digests.json) is append-only:
   * unseen day            -> sealed (sha + first_written_iso banked)
   * same sha              -> ok, nothing written
   * DIFFERENT sha         -> DigestMismatch, both values printed — the build
-                             HARD FAILS, unless the day is listed as a
-                             "## YYYY-MM-DD" heading in RESTATEMENTS.md, in
-                             which case the sha is updated and a loud
-                             RESTATED line is printed. Documenting the
-                             restatement in that file IS the approval gate.
+                             HARD FAILS, unless RESTATEMENTS.md authorizes
+                             that exact prior-to-new digest transition.
+                             Only historical 2026-08-22 keeps its legacy
+                             heading approval. New headings alone never
+                             authorize a correction. Applied corrections
+                             emit a loud RESTATED line.
   * sealed day vanished   -> DigestMismatch too: a closed day losing all its
                              rows is a repricing to zero, not a non-event.
 
@@ -75,11 +76,61 @@ def day_sha(record):
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
+# The sole historical blanket approval predates exact-pair authorizations.
+# New dated headings cannot inherit that policy by losing their metadata.
+_LEGACY_RESTATEMENTS = frozenset({"2026-08-22"})
+
+
+def parse_exact_restatements(path=RESTATEMENTS_PATH):
+    """Strict public audit entries authorizing one specific digest transition."""
+    if not os.path.exists(path):
+        return {}
+    text = open(path).read()
+    dated = re.findall(r"^##\s+(\d{4}-\d{2}-\d{2})\s*$", text, re.M)
+    headings = set(dated)
+    if len(dated) != len(headings):
+        raise DigestMismatch("duplicate dated restatement heading")
+    def unique_fields(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate authorization field")
+            result[key] = value
+        return result
+    blocks = list(re.finditer(r"^```digest-transition\n(.*?)\n```\s*$", text, re.M | re.S))
+    if text.count("```digest-transition") != len(blocks):
+        raise DigestMismatch("malformed exact digest authorization")
+    exact = {}
+    for block in blocks:
+        try:
+            entry = json.loads(block.group(1), object_pairs_hook=unique_fields)
+            if not isinstance(entry, dict) or set(entry) != {"day", "old_sha", "new_sha"}:
+                raise ValueError("invalid fields")
+            day = entry["day"]
+            from datetime import date
+            if date.fromisoformat(day).isoformat() != day:
+                raise ValueError("invalid day")
+            if not all(isinstance(entry[k], str) and re.fullmatch(r"[0-9a-f]{64}", entry[k])
+                       for k in ("old_sha", "new_sha")) or entry["old_sha"] == entry["new_sha"]:
+                raise ValueError("invalid digest pair")
+            prior = re.findall(r"^##\s+(\d{4}-\d{2}-\d{2})\s*$", text[:block.start()], re.M)
+            if not prior or prior[-1] != day or day in exact:
+                raise ValueError("invalid audit heading")
+        except (ValueError, TypeError, KeyError):
+            raise DigestMismatch("invalid exact digest authorization") from None
+        exact[day] = entry
+    if headings - _LEGACY_RESTATEMENTS - set(exact):
+        raise DigestMismatch("dated restatement requires exact old/new digests")
+    return exact
+
+
 def parse_restatements(path=RESTATEMENTS_PATH):
-    """Days approved for restatement: literal '## YYYY-MM-DD' headings."""
+    """Grandfathered legacy approvals only; new audit dates require exact pairs."""
+    parse_exact_restatements(path)
     if not os.path.exists(path):
         return set()
-    return set(re.findall(r"^##\s+(\d{4}-\d{2}-\d{2})\s*$", open(path).read(), re.M))
+    headings = set(re.findall(r"^##\s+(\d{4}-\d{2}-\d{2})\s*$", open(path).read(), re.M))
+    return headings & _LEGACY_RESTATEMENTS
 
 
 def load_ledger(path=LEDGER_PATH):
@@ -112,14 +163,17 @@ def _days_between(day, today):
 
 
 def enforce(records, ledger_path=LEDGER_PATH, restatements_path=RESTATEMENTS_PATH,
-            now_iso=None):
+            now_iso=None, allow_new_seals=True):
     """Seal new closed days; hard-fail on any resealed day that changed.
 
     records: {day: record} from day_record() for every closed day with OUT
     rows this run. Raises DigestMismatch (both shas in the message) on a
     non-restated change; returns the (possibly updated) ledger otherwise.
     """
+    if not isinstance(allow_new_seals, bool):
+        raise ValueError("new-seal permission must be boolean")
     led = load_ledger(ledger_path)
+    exact = parse_exact_restatements(restatements_path)
     restated = parse_restatements(restatements_path)
     changed = sealed = ok = 0
     # yesterday gets a one-day grace before sealing: indexer lag can add
@@ -130,12 +184,21 @@ def enforce(records, ledger_path=LEDGER_PATH, restatements_path=RESTATEMENTS_PAT
         sha = day_sha(records[day])
         ent = led.get(day)
         if ent is None:
+            if not allow_new_seals:
+                continue
             if today and _days_between(day, today) < 2:
                 continue
             led[day] = {"sha": sha, "first_written_iso": now_iso}
             sealed += 1
         elif ent.get("sha") == sha:
             ok += 1
+        elif day in exact:
+            approval = exact[day]
+            if ent.get("sha") != approval["old_sha"] or sha != approval["new_sha"]:
+                raise DigestMismatch(f"{day}: digest does not match exact authorized transition")
+            print(f"RESTATED {day}: digest {ent['sha']} -> {sha} (exact authorized transition)")
+            led[day] = {**ent, "sha": sha, "previous_sha": ent["sha"], "restated_iso": now_iso}
+            changed += 1
         elif day in restated:
             print(f"RESTATED {day}: digest {ent.get('sha')} -> {sha} "
                   f"(approved via RESTATEMENTS.md '## {day}')")
@@ -221,14 +284,34 @@ def records_for_closed_days(rows, today):
     return {d: day_record(d, rs) for d, rs in by_day.items()}
 
 
+def new_seal_permission(offline_cache_only, own_complete, previous):
+    """Sealing evidence is stricter than legacy offline financial completeness."""
+    if not offline_cache_only:
+        return own_complete is True
+    scope = previous.get("scope") or {}
+    coverage = scope.get("source_coverage") or {}
+    return coverage.get("treasury_complete") is True
+
+
+def seed_from_disk(root=HERE, now_iso=None):
+    """CLI production entry point: missing own-Treasury proof cannot seal days."""
+    from datetime import datetime, timezone
+    data = json.load(open(os.path.join(root, "data.json")))
+    allow_new = new_seal_permission(True, False, data)
+    rows, today = rows_from_disk(root)
+    return enforce(records_for_closed_days(rows, today),
+                   ledger_path=os.path.join(root, "day_digests.json"),
+                   restatements_path=os.path.join(root, "RESTATEMENTS.md"),
+                   now_iso=now_iso or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                   allow_new_seals=allow_new)
+
+
 if __name__ == "__main__":
     import sys
     from datetime import datetime, timezone
     if "--seed" not in sys.argv:
         raise SystemExit("usage: digests.py --seed   (refresh.py calls enforce() directly)")
-    rows, today = rows_from_disk()
-    recs = records_for_closed_days(rows, today)
     try:
-        enforce(recs, now_iso=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        seed_from_disk()
     except DigestMismatch as e:
         raise SystemExit(f"FATAL: {e}")

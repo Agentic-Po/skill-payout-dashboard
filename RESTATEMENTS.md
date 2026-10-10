@@ -7,13 +7,19 @@ the day complete. If a later run recomputes a **different** digest for a
 sealed day, the build **hard-fails** — silently republishing changed history
 is the one failure this repo is not allowed to have.
 
-The only way past that failure is this file: add a `## YYYY-MM-DD` heading
-for the affected day with a short explanation of what changed and why. The
-next run then updates the seal, prints a loud `RESTATED` line in the build
-log, and the change ships with its documentation already public. An
-undocumented restatement is treated as corruption; a documented one is an
-audit event. Remove nothing from this file — it is the append-only public
-record of every time history moved.
+New corrections require a dated audit heading and a strict `digest-transition`
+JSON block containing the exact prior and replacement SHA-256 values. Only
+that old-to-new pair may update the seal. Once applied, any later mismatch
+fails again. Missing or malformed metadata fails closed; a dated heading
+alone cannot approve a correction. The historical 2026-08-22 authorization
+below retains its original behavior. Remove nothing from this file.
+
+New days are sealed only when both Treasury directions have verified coverage.
+Already sealed days continue to be checked even while current coverage is
+incomplete. The `digests.py --seed` entry point also requires the saved
+own-Treasury coverage flag to be explicitly `true`. Offline refresh uses
+the same rule: a legacy or default financial `scope.complete` value does
+not permit a new seal when own-Treasury evidence is missing. The existing one-day sealing grace remains in effect.
 
 Digests are aggregates only (counts, dollar totals, rates). No transfer
 rows, no counterparty addresses.
@@ -50,3 +56,22 @@ the creator-reward taxonomy became era-aware (v2 sizes $0.05 equip / $0.005
 invoke from 2026-09-14T14:19Z; $1 after 2026-08-21T13:55Z is a legacy free
 top-up under growth) — this changes fine classes only, every affected row
 stays economy-side, and no sealed digest moved.
+
+## 2026-10-08
+
+Missing history was recovered after Treasury coverage catch-up. The prior
+snapshot first sealed this day at 2026-10-10T00:50:55Z before full coverage
+was verified: 6,697 outgoing transfers, $26,062.52. Verified canonical
+history adds 4,253 transfers, giving 10,950 transfers and $37,470.74.
+The MOCA daily rate remains 0.0092414; this corrects missing rows, not prices.
+All 167 other previously sealed days reproduce their existing digests.
+The recovered October 8 identities also match the independent MOCA ledger.
+
+The public pending OUT proof at commit
+`bf33803b54c8d00df6e598893a73601a341710ff` covers blocks 52334190–52423989,
+anchored at 2026-10-10T13:02:05Z. Its chunk checksums, contiguous coverage,
+and canonical cutoff header were verified before authorizing this pair.
+
+```digest-transition
+{"day":"2026-10-08","old_sha":"13fec99a13cfe801a812852472af6647069b1a72ed85cbce3cee23f0e0a6a6c6","new_sha":"0f16f71f094c95e93d0333ba01e80c39042ef5c71fff52f24a9d75a501c1ae05"}
+```

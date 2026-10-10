@@ -1580,7 +1580,8 @@ for _d in sorted(_dig_records):
                                  f"implied retirement ({IMPLIED_NEEDS_MARKET_FROM})")
 try:
     _digests.enforce(_dig_records,
-                     now_iso=now.strftime("%Y-%m-%dT%H:%M:%SZ"))
+                     now_iso=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                     allow_new_seals=_digests.new_seal_permission(OFFLINE, data_complete, PREV))
 except _digests.DigestMismatch as e:
     raise SystemExit(f"FATAL: {e}")
 

@@ -87,7 +87,10 @@ def main():
 
         # 3. same tamper + RESTATEMENTS.md heading -> passes, RESTATED line, sha updated
         json.dump(bad, open(led_path, "w"))
-        open(rst_path, "w").write(f"# Restatements\n\n## {victim}\n\ntest restatement\n")
+        exact = {"day": victim, "old_sha": "0" * 64,
+                 "new_sha": digests.day_sha(records[victim])}
+        open(rst_path, "w").write(f"# Restatements\n\n## {victim}\n\n"
+                                  "```digest-transition\n" + json.dumps(exact) + "\n```\n")
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             digests.enforce(records, ledger_path=led_path, restatements_path=rst_path,
@@ -111,7 +114,156 @@ def main():
             assert victim in str(e)
             print(f"ok vanished sealed day {victim} -> DigestMismatch")
 
+    test_exact_and_coverage()
     print("test_digests: PASS")
+
+
+def test_exact_and_coverage():
+    day = "2026-10-08"
+    old = {"day": day, "out_tx": 6697, "out_usd": 26062.52,
+           "economy_out_usd": 26062.52, "ops_out_usd": 0.0,
+           "rates": {"MOCA": 0.0092414}}
+    new = {**old, "out_tx": 10950, "out_usd": 37470.74, "economy_out_usd": 37470.74}
+    authorization = digests.parse_exact_restatements()[day]
+    assert authorization["old_sha"] == digests.day_sha(old)
+    assert authorization["new_sha"] == digests.day_sha(new)
+    assert day not in digests.parse_restatements(), "exact day acquired blanket approval"
+
+    # Authenticate the documented new SHA against actual verified pending rows,
+    # not merely an embedded duplicate record.
+    import shards, public_scan
+    pending_dir = os.path.join(ROOT, "pending_scans")
+    public_scan.validate_store(pending_dir)
+    data = json.load(open(os.path.join(ROOT, "data.json")))
+    desc = public_scan.descriptor(data["scope"]["wallet"], "from", data["scope"]["tokens"].values())
+    sid = public_scan.scan_id(desc)
+    manifest = json.load(open(os.path.join(pending_dir, sid + ".json")))
+    cached = shards.load(os.path.join(ROOT, "transfers"))
+    by_id = {(r["transaction_hash"].lower(), int(r["log_index"])): r for r in cached}
+    for part in manifest["chunks"]:
+        for row in json.load(open(os.path.join(pending_dir, sid, part["file"]))):
+            by_id.setdefault((row["transaction_hash"].lower(), int(row["log_index"])), row)
+    original_load = shards.load
+    try:
+        shards.load = lambda path: list(by_id.values())
+        canonical, today = digests.rows_from_disk(ROOT)
+    finally:
+        shards.load = original_load
+    rec = digests.records_for_closed_days(canonical, today)[day]
+    assert rec == new and digests.day_sha(rec) == authorization["new_sha"]
+
+    with tempfile.TemporaryDirectory() as td:
+        lp = os.path.join(td, "ledger.json")
+        rp = os.path.join(td, "audit.md")
+        def audit(entry=authorization):
+            return f"## {day}\n\n```digest-transition\n" + json.dumps(entry) + "\n```\n"
+        def run(record=new, stored=None, text=None, allow=True):
+            json.dump({day: {"sha": stored or authorization["old_sha"],
+                            "first_written_iso": "2026-10-10T00:50:55Z"}}, open(lp, "w"))
+            open(rp, "w").write(audit() if text is None else text)
+            return digests.enforce({day: record}, ledger_path=lp, restatements_path=rp,
+                                   now_iso="2026-10-10T14:00:00Z", allow_new_seals=allow)
+        def blocked(**kwargs):
+            try:
+                run(**kwargs)
+            except digests.DigestMismatch:
+                return
+            raise AssertionError("unauthorized digest transition passed")
+        accepted = run()
+        assert accepted[day]["sha"] == authorization["new_sha"]
+        assert accepted[day]["previous_sha"] == authorization["old_sha"]
+        # Once applied, old or any different future aggregate cannot reseal.
+        blocked(record=old, stored=authorization["new_sha"])
+        blocked(stored="a" * 64)
+        for field, value in [("out_tx", 10951), ("out_usd", 37470.75),
+                             ("rates", {"MOCA": 0.0092415})]:
+            blocked(record={**new, field: value})
+        for text in [f"## {day}\n", audit().replace("new_sha", "replacement"),
+                     audit()[:-5], audit().replace(authorization["old_sha"], "b" * 64),
+                     audit().replace(authorization["new_sha"], "c" * 64),
+                     audit().replace('"day":', '"day": "2026-10-08", "day":'),
+                     audit() + f"\n## {day}\n"]:
+            blocked(text=text)
+        # Existing seals remain guarded while partial. New seals await proof.
+        blocked(record={**new, "out_tx": 1}, allow=False)
+        json.dump({}, open(lp, "w")); open(rp, "w").write("")
+        assert digests.enforce({day: new}, ledger_path=lp, restatements_path=rp,
+                              now_iso="2026-10-10T14:00:00Z", allow_new_seals=False) == {}
+        # Existing API callers retain the default behavior (offline compatibility).
+        assert day in digests.enforce({day: new}, ledger_path=lp, restatements_path=rp,
+                                     now_iso="2026-10-10T14:00:00Z")
+        # Historical 08/22 authorization retains its old semantics.
+        legacy = "2026-08-22"
+        json.dump({legacy: {"sha": "a" * 64}}, open(lp, "w"))
+        open(rp, "w").write(f"## {legacy}\n")
+        assert digests.enforce({legacy: new}, ledger_path=lp, restatements_path=rp)[legacy]["sha"] == digests.day_sha(new)
+        # The producer gates new seals on its own pair, not aggregate subsidiaries.
+        import ast
+        tree = ast.parse(open(os.path.join(ROOT, "refresh.py")).read())
+        calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+                 and isinstance(n.func, ast.Attribute) and n.func.attr == "enforce"]
+        assert len(calls) == 1
+        kw = next(k for k in calls[0].keywords if k.arg == "allow_new_seals")
+        assert ast.unparse(kw.value) == "_digests.new_seal_permission(OFFLINE, data_complete, PREV)"
+        # Execute the actual flag initializer and enforce argument in a
+        # minimal production namespace, so an undefined flag cannot pass AST QA.
+        import types
+        flag_assignment = next(n for n in tree.body if isinstance(n, ast.Assign)
+                               and any(isinstance(t, ast.Name) and t.id == "OFFLINE" for t in n.targets))
+        for offline in (False, True):
+            for own in (False, True):
+                for saved in (None, False, 1, True):
+                    previous = {"scope": {"complete": True,
+                                "source_coverage": {"treasury_complete": saved}}}
+                    ns = {"sys": types.SimpleNamespace(argv=["refresh.py"] + (["--offline"] if offline else [])),
+                          "_digests": digests, "data_complete": own, "PREV": previous}
+                    exec(compile(ast.Module(body=[flag_assignment], type_ignores=[]), "refresh.py", "exec"), ns)
+                    got = eval(compile(ast.Expression(kw.value), "refresh.py", "eval"), ns)
+                    assert got == ((saved is True) if offline else own)
+        for legacy_scope in ({}, {"complete": True}, {"complete": False}):
+            assert not digests.new_seal_permission(True, True, {"scope": legacy_scope})
+        for own in (None, False, 1, True):
+            prior = {"scope": {"complete": True,
+                     "source_coverage": {"treasury_complete": own}}}
+            assert digests.new_seal_permission(True, True, prior) == (own is True)
+            assert digests.new_seal_permission(False, own, prior) == (own is True)
+        # Offline financial defaultTrue is not evidence: execute actual seal
+        # gating with a legacy-complete snapshot and verify no file is banked.
+        json.dump({}, open(lp, "w")); open(rp, "w").write("")
+        permission = digests.new_seal_permission(True, True, {"scope": {"complete": True}})
+        assert digests.enforce({day: new}, ledger_path=lp, restatements_path=rp,
+                              now_iso="2026-10-10T14:00:00Z", allow_new_seals=permission) == {}
+    # Exercise the actual CLI entry function with disk evidence and real
+    # ledger writes. Row acquisition is synthetic; permission is never mocked.
+    with tempfile.TemporaryDirectory() as td:
+        original_rows = digests.rows_from_disk
+        row = {"ts": day + "T12:00:00", "tok": "MOCA", "rate": 1,
+               "usd": 2, "cat": "economy", "tx": "test", "li": 0}
+        digests.rows_from_disk = lambda root: ([row], "2026-10-10")
+        try:
+            for flag in (False, None, 1, True):
+                coverage = {} if flag is None else {"treasury_complete": flag}
+                json.dump({"scope": {"complete": False, "source_coverage": coverage}},
+                          open(os.path.join(td, "data.json"), "w"))
+                lp = os.path.join(td, "day_digests.json")
+                if os.path.exists(lp): os.remove(lp)
+                result = digests.seed_from_disk(td, "2026-10-10T14:00:00Z")
+                assert bool(result) == (flag is True)
+            json.dump({"scope": {"source_coverage": {"treasury_complete": False}}},
+                      open(os.path.join(td, "data.json"), "w"))
+            json.dump({day: {"sha": "a" * 64}}, open(lp, "w"))
+            try:
+                digests.seed_from_disk(td, "2026-10-10T14:00:00Z")
+                raise AssertionError("partial CLI bypassed existing seal mismatch")
+            except digests.DigestMismatch:
+                pass
+        finally:
+            digests.rows_from_disk = original_rows
+        cli = ast.parse(open(os.path.join(ROOT, "digests.py")).read())
+        main_if = next(n for n in cli.body if isinstance(n, ast.If))
+        assert any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                   and n.func.id == "seed_from_disk" for n in ast.walk(main_if))
+    print("ok exact one-time correction, canonical evidence, mutation guards, partial/CLI sealing and legacy compatibility")
 
 
 if __name__ == "__main__":
