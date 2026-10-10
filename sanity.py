@@ -50,8 +50,8 @@ measurement is WARN-batched on a new 30-day high and NEVER paged: it is a
 number to watch until the platform answers the account-to-wallet question,
 not a sybil claim (see fences.py).
 """
-import json, os, sys, time, urllib.request
-from datetime import datetime, timedelta
+import json, math, os, re, subprocess, sys, time, urllib.request
+from datetime import datetime, timedelta, timezone
 
 import shards
 import fences
@@ -276,6 +276,146 @@ def _dexscreener_price(token_addr, anchor):
     return float(best["priceUsd"])
 
 
+# Public observation clocks are not block coverage clocks. Offline runs validate
+# metadata/arithmetic but cannot authenticate an absent immutable Git object;
+# the online publication gate always verifies prior provenance. A shallow online
+# checkout adds a bounded dependency on this repo's own immutable public GitHub
+# data.json/coupon_data.json, with no credentials or redirect support.
+# Public observation clocks are not block coverage clocks. Historical finance
+# binds to an immutable public artifact; online observations retain the existing
+# independent latest-balance/quote tolerances.
+_PRIOR_LIMIT = 2 * 1024 * 1024
+
+def _observation_time(value):
+    if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ', value):
+        raise ValueError('invalid observation clock')
+    return datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ')
+
+
+def _prior_document(root, commit, filename='data.json'):
+    if not isinstance(commit,str) or not re.fullmatch(r'[0-9a-f]{40}',commit) or filename not in ('data.json','coupon_data.json'):
+        raise ValueError('invalid immutable public reference')
+    try:
+        raw = subprocess.check_output(['git','show',commit+':'+filename],cwd=root,stderr=subprocess.DEVNULL,timeout=5)
+    except subprocess.CalledProcessError:
+        # A shallow checkout may lack the prior object. Only this project's
+        # fixed public file at the immutable revision is eligible; no redirects.
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self,*args,**kwargs):
+                raise ValueError('redirected immutable public reference')
+        url='https://raw.githubusercontent.com/Agentic-Po/skill-payout-dashboard/'+commit+'/'+filename
+        opener=urllib.request.build_opener(NoRedirect())
+        with opener.open(urllib.request.Request(url,headers={'User-Agent':'skill-payout-dashboard-sanity/1.0'}),timeout=10) as response:
+            if response.geturl()!=url:raise ValueError('unexpected immutable reference URL')
+            raw=response.read(_PRIOR_LIMIT+1)
+    if len(raw)>_PRIOR_LIMIT:raise ValueError('oversized immutable public reference')
+    value=json.loads(raw)
+    if not isinstance(value,dict):raise ValueError('invalid immutable public document')
+    return value
+
+
+def _authenticate_treasury_complete(root, scope):
+    """Bind the new online own-source flag to durable directional proofs."""
+    from public_scan import descriptor, scan_id, validate_store, require_coverage, PublicScanner
+    directory=os.path.join(root,'pending_scans')
+    validate_store(directory)
+    pending=scope['source_coverage']['pending']
+    if not isinstance(pending,list):raise ValueError('missing directional proofs')
+    legs=[]
+    for direction in ('from','to'):
+        desc=descriptor(scope['wallet'],direction,list(scope['tokens'].values()))
+        matches=[leg for leg in pending if isinstance(leg,dict) and leg.get('descriptor')==desc]
+        if len(matches)!=1:raise ValueError('missing or duplicate directional proof')
+        with open(os.path.join(directory,scan_id(desc)+'.json')) as source:state=json.load(source)
+        if PublicScanner.proof(state)!=matches[0]:raise ValueError('published proof differs from checkpoint')
+        legs.append(matches[0])
+    require_coverage({'scope':{'complete':True,'source_coverage':{'coverage_ok':True,'pending':legs}}})
+
+
+def check_observations(rep,D,syms,offline,root):
+    """Return the comparable current observation and retained-runway flag."""
+    scope=D['scope'];obs=scope.get('balance_observations')
+    treasury_complete=(scope.get('source_coverage') or {}).get('treasury_complete')
+    # Overall coverage may be incomplete only because a subsidiary is stale.
+    # Fresh Treasury valuations keep the original online check and its provider
+    # WARN/SKIP behavior, with no new observation requirements.
+    if isinstance(obs,dict) and 'retained_from' in obs and (treasury_complete is True or scope.get('complete') is True):
+        rep.blocks.append('BLOCK EXACT contradictory retained financial provenance')
+        return D,False
+    if treasury_complete is True or (treasury_complete is None and scope.get('complete') is True):
+        if treasury_complete is True and not offline:
+            try:_authenticate_treasury_complete(root,scope)
+            except Exception:rep.blocks.append('BLOCK EXACT Treasury completion proof invalid')
+        return D,False
+    if obs is None:
+        if not offline and (treasury_complete is False or scope.get('complete') is False):
+            rep.blocks.append('BLOCK EXACT balance observation evidence missing')
+        return D,False
+    try:
+        required={'started_iso','rate','rate_src','balance','balance_usd','rate_observed_iso','balance_observed_iso'}
+        if not isinstance(obs,dict) or set(obs) not in (required,required|{'retained_from'}):raise ValueError()
+        start=_observation_time(obs['started_iso']);built=_observation_time(scope['build_generated_iso'])
+        financial=_observation_time(scope['generated_iso'])
+        if start>built or financial>built or built>datetime.now(timezone.utc).replace(tzinfo=None):raise ValueError()
+        for field in required-{'started_iso'}:
+            if not isinstance(obs[field],dict) or set(obs[field])!=set(syms):raise ValueError()
+        for sym in syms:
+            for field in ('rate','balance','balance_usd'):
+                n=obs[field][sym]
+                if type(n) not in (int,float) or not math.isfinite(n) or n<0 or (field=='rate' and n<=0):raise ValueError()
+            if obs['rate_src'][sym] not in ('blockscout','dexscreener'):raise ValueError()
+            for field in ('rate_observed_iso','balance_observed_iso'):
+                if not start<=_observation_time(obs[field][sym])<=built:raise ValueError()
+            rep.exact('observed '+sym+' balance arithmetic',obs['balance_usd'][sym],round(obs['balance'][sym]*obs['rate'][sym],0))
+        retained='retained_from' in obs
+        if not retained:raise ValueError()
+        if retained:
+            ref=obs['retained_from']
+            if not isinstance(ref,dict) or set(ref)!={'commit','generated_iso'} or not re.fullmatch(r'[0-9a-f]{40}',ref.get('commit','')):raise ValueError()
+            if _observation_time(ref['generated_iso'])>start:raise ValueError()
+            rep.exact('retained financial clock',scope['generated_iso'],ref['generated_iso'])
+            if offline:
+                rep.skip('immutable prior financial artifact','offline (online provenance check required)')
+            else:
+                prior=_prior_document(root,ref['commit'])
+                rep.exact('immutable prior financial clock',ref['generated_iso'],prior['scope']['generated_iso'])
+                for field in ('wallet','tokens'):
+                    rep.exact('retained source '+field,scope[field],prior['scope'][field])
+                for field in ('balance','balance_usd','rate','rate_src'):
+                    rep.exact('retained '+field,D['facts'][field],prior['facts'][field])
+        observed=dict(D,facts=dict(D['facts'],rate=obs['rate'],balance=obs['balance'],balance_usd=obs['balance_usd']))
+        return (observed if retained else D),retained
+    except (KeyError,TypeError,ValueError,OSError,subprocess.SubprocessError):
+        rep.blocks.append('BLOCK EXACT balance observation or immutable prior evidence invalid/unavailable')
+        return D,False
+
+
+def check_coupon_valuation(rep,root,offline):
+    path=os.path.join(root,'coupon_data.json')
+    if not os.path.exists(path):return
+    try:
+        with open(path) as document:current=json.load(document)
+        ref=current.get('scope',{}).get('valuation_from')
+        if ref is None:
+            if not offline and current.get('scope',{}).get('complete') is False:raise ValueError()
+            return
+        if not isinstance(ref,dict) or set(ref)!={'commit','generated_iso'} or not re.fullmatch(r'[0-9a-f]{40}',ref.get('commit','')):raise ValueError()
+        stamp=_observation_time(ref['generated_iso'])
+        if not offline and (stamp>_observation_time(current['scope']['build_generated_iso']) or _observation_time(current['scope']['build_generated_iso'])>datetime.now(timezone.utc).replace(tzinfo=None)):raise ValueError()
+        rep.exact('retained coupon clock',current['scope']['generated_iso'],ref['generated_iso'])
+        if offline:
+            rep.skip('immutable prior coupon artifact','offline (online provenance check required)');return
+        prior=_prior_document(root,ref['commit'],'coupon_data.json')
+        rep.exact('immutable prior coupon clock',ref['generated_iso'],prior['scope']['generated_iso'])
+        for field in ('wallet','token'):
+            rep.exact('retained coupon source '+field,current['scope'][field],prior['scope'][field])
+        for field in ('rate','rate_src'):
+            rep.exact('retained coupon '+field,current['scope'][field],prior['scope'][field])
+        for field in ('balance_moca','balance_usd'):
+            rep.exact('retained coupon '+field,current['totals'][field],prior['totals'][field])
+    except (KeyError,TypeError,ValueError,OSError,subprocess.SubprocessError):
+        rep.blocks.append('BLOCK EXACT coupon immutable prior evidence invalid/unavailable')
+
 def check_balance(rep, D, syms, offline):
     """balance_usd vs an independent eth_call x the published live rate; the
     live rate itself vs an independent quote. Both online-only."""
@@ -455,8 +595,10 @@ def run(root=HERE, offline=False, bank=True, queue_warns=True):
     check_windows(rep, D, rows, ins, syms, gen)
     check_days(rep, D, rows, root, gen)
     check_prices(rep, dr, syms, gen)
-    live_bal = check_balance(rep, D, syms, offline)
-    check_runway(rep, D, rows, syms, gen, live_bal)
+    observed, retained = check_observations(rep,D,syms,offline,root)
+    live_bal = check_balance(rep, observed, syms, offline)
+    check_runway(rep, D, rows, syms, gen, {} if retained else live_bal)
+    check_coupon_valuation(rep,root,offline)
     check_peer(rep, root)
     repeat, series = anomaly_pass(rows, gen)
     # loop 2, item 3: the slow-bleed measurement — private, WARN on a new

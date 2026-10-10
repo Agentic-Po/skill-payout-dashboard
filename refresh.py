@@ -12,7 +12,7 @@ Historical day rates are persisted in day_rates.json and never recomputed, so
 closed days cannot reprice on later runs. Git history of the hourly commits is
 the append-only audit trail of every published figure.
 """
-import csv, json, math, os, statistics, sys, time, urllib.request
+import csv, json, math, os, statistics, subprocess, sys, time, urllib.request
 import posthog_source
 import shards
 import freshness
@@ -701,6 +701,9 @@ try:
 except (OSError, ValueError):
     _SEALED = set()
 RATE, RATE_SRC, BALANCE, DECIMALS = {}, {}, {}, {}
+_RATE_OBSERVED, _BALANCE_OBSERVED = {}, {}
+_OBSERVATIONS_STARTED = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+_BALANCE_OBSERVATIONS = None
 if OFFLINE:
     # the run that published data.json already validated these — reuse them
     for sym in TOKENS:
@@ -765,6 +768,8 @@ for sym, t in ([] if OFFLINE else list(TOKENS.items())):
                 STATE["last_accepted_rate"][sym] = r2
         except Exception as e:
             print(sym, "dexscreener fallback failed:", e)
+    if RATE_SRC[sym] in ("blockscout", "dexscreener"):
+        _RATE_OBSERVED[sym] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 phase("rates")
 BALANCE = {}
 def balance_at(addr, sym, block="latest", holder=WALLET):
@@ -810,6 +815,7 @@ if OFFLINE:
 for sym, t in ([] if OFFLINE else list(TOKENS.items())):
     try:
         BALANCE[sym] = balance_at(t["addr"], sym)
+        _BALANCE_OBSERVED[sym] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     except Exception as e:
         print(sym, "balance fetch failed:", e)
         BALANCE[sym] = None
@@ -932,10 +938,18 @@ except Exception as e:
     print("market rate fetch failed:", e)
 
 phase("market_ohlcv")
+if not OFFLINE:
+    _BALANCE_OBSERVATIONS = {
+        "started_iso": _OBSERVATIONS_STARTED,
+        "rate": dict(RATE), "rate_src": dict(RATE_SRC), "balance": dict(BALANCE),
+        "balance_usd": {s: round(BALANCE[s]*RATE[s],0) if BALANCE.get(s) is not None else None for s in TOKENS},
+        "rate_observed_iso": dict(_RATE_OBSERVED), "balance_observed_iso": dict(_BALANCE_OBSERVED)}
+    _BALANCE_BASE_COMMIT = subprocess.check_output(["git","rev-parse","HEAD"],cwd=HERE,text=True).strip()
 if not OFFLINE and not data_complete:
     with open(os.path.join(HERE,"data.json")) as previous:
         _LAST_GOOD = json.load(previous)
     _FINANCE_NOW = datetime.strptime(_LAST_GOOD["scope"]["generated_iso"],"%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    _BALANCE_OBSERVATIONS["retained_from"] = {"commit": _BALANCE_BASE_COMMIT, "generated_iso": _LAST_GOOD["scope"]["generated_iso"]}
     RATE = dict(_LAST_GOOD["facts"]["rate"])
     RATE_SRC = dict(_LAST_GOOD["facts"]["rate_src"])
     BALANCE = dict(_LAST_GOOD["facts"]["balance"])
@@ -1888,6 +1902,11 @@ float_facts = {
                    if _drv else None),
 }
 facts["float"] = float_facts
+if not OFFLINE and not data_complete:
+    # These valuation facts belong to the retained financial clock, not the
+    # separately captured current observations. Preserve rounding too.
+    for _field in ("balance", "balance_usd", "rate", "rate_src"):
+        facts[_field] = _LAST_GOOD["facts"][_field]
 runway7 = float_facts["days_7d_pace"]
 
 # C4 (2026-09-15): the pattern monitor's status counts (flagged / monitored /
@@ -2506,7 +2525,10 @@ if globals().get("_RPC_SCAN_INVALID"):
     raise RuntimeError("invalid public scan proof; publication stopped")
 if not OFFLINE and _PUBLIC_SCANNER is not None:
     data["scope"]["build_generated_iso"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if not data_complete:
+        data["scope"]["balance_observations"] = _BALANCE_OBSERVATIONS
     data["scope"]["source_coverage"] = {"coverage_ok":bool(data_complete and all(leg.get("complete") for leg in _PUBLIC_SCANNER.last.values())),"pending":list(_PUBLIC_SCANNER.last.values()),"last_good_sections":dict(_LAST_GOOD_SECTION_CLOCKS)}
+    data["scope"]["source_coverage"]["treasury_complete"] = bool(data_complete)
     data["scope"]["complete"] = data["scope"]["source_coverage"]["coverage_ok"]
 json.dump(data, open(os.path.join(HERE, "data.json"), "w"), default=str)
 
@@ -2717,7 +2739,14 @@ if not OFFLINE:
             cp_full = _cache
         else:
             cp_full_in = _cache
+    # Coupon valuation has its own clock and quote. Copies prevent either
+    # coupon branch from mutating the already serialized Treasury facts.
+    RATE, RATE_SRC = dict(RATE), dict(RATE_SRC)
     if cp_complete:
+        now = datetime.now(timezone.utc)
+        cut7 = (now-timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
+        RATE["MOCA"] = _BALANCE_OBSERVATIONS["rate"]["MOCA"]
+        RATE_SRC["MOCA"] = _BALANCE_OBSERVATIONS["rate_src"]["MOCA"]
         for path,staged,months in _COUPON_STAGE:
             shards.save(path,staged,months=months)
     else:
@@ -2870,6 +2899,9 @@ cp_totals = {
                    if CP_BAL is not None and cp_moca_7d > 0 else None),
     "excluded_in_tx": cp_excluded_in,
 }
+if not OFFLINE and not cp_complete:
+    for _field in ("balance_moca", "balance_usd"):
+        cp_totals[_field] = _LAST_COUPON["totals"][_field]
 # in - out must equal the as-of balance exactly (MOCA has no event-less burn
 # class); a nonzero delta means a lost or phantom shard row and must be LOUD,
 # never silently published (house rule 8)
@@ -2938,6 +2970,8 @@ if globals().get("_RPC_SCAN_INVALID"):
     raise RuntimeError("invalid public scan proof; publication stopped")
 if not OFFLINE and _PUBLIC_SCANNER is not None:
     coupon_data["scope"]["build_generated_iso"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if not cp_complete:
+        coupon_data["scope"]["valuation_from"] = {"commit": _BALANCE_BASE_COMMIT, "generated_iso": _LAST_COUPON["scope"]["generated_iso"]}
     coupon_data["scope"]["source_coverage"] = {"coverage_ok":bool(cp_complete and all(leg.get("complete") for leg in _PUBLIC_SCANNER.last.values())),"pending":list(_PUBLIC_SCANNER.last.values())}
 json.dump(coupon_data, open(os.path.join(HERE, "coupon_data.json"), "w"), default=str)
 cp_tpl = open(os.path.join(HERE, "template_coupon.html")).read().replace("__STALE_MIN__", str(freshness.STALE_MINUTES))
