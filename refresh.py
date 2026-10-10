@@ -2527,13 +2527,20 @@ registry = [
     _reg("0xd8506866faadfdcfb9600479ba7dc652a203f111", "known mimic — do not copy", "Warnings", True),
     _reg("0x9a95a47a4f90c9c14ae8e3a9c37e822ed0e5a07f", "known mimic — do not copy", "Warnings", True),
 ]
+# Curated additions require the same pre-reviewed public exemptions as the
+# publication guard. Factual rankings remain complete; private monitoring
+# membership never controls whether a candidate enters this registry.
+from check_publish import _allow_addrs as _registry_allow_addrs
+_registry_reviewed = _registry_allow_addrs()
 _have = {r["addr"].lower() for r in registry}
 for _c in top_recip[:10]:                      # material outflow counterparties
-    if _c["addr"].lower() not in _have and not _c["label"]:
+    if (_c["addr"].lower() in _registry_reviewed
+            and _c["addr"].lower() not in _have and not _c["label"]):
         registry.append(_reg(_c["addr"], f"Top recipient — ${_c['usd']:,.0f} over {_c['n']} transfers · unlabeled", "Recipients"))
         _have.add(_c["addr"].lower())
 for _c in in_sources[:10]:                     # material funding counterparties
-    if _c["addr"].lower() not in _have and not _c["label"]:
+    if (_c["addr"].lower() in _registry_reviewed
+            and _c["addr"].lower() not in _have and not _c["label"]):
         registry.append(_reg(_c["addr"], f"Inflow source — ${_c['usd']:,.0f} over {_c['n']} transfers · unlabeled", "Funding sources"))
         _have.add(_c["addr"].lower())
 for _a, _l in KNOWN.items():                   # anything labeled but not yet surfaced
