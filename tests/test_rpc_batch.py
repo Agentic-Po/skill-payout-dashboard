@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validated batch recovery preserves exact timestamps and single fallback."""
 import ast,io,json,os,sys,time,unittest
+from urllib.error import HTTPError,URLError
 from collections import Counter
 from contextlib import redirect_stdout
 ROOT=os.path.dirname(os.path.dirname(__file__));sys.path.insert(0,ROOT)
@@ -20,7 +21,7 @@ def harness(reply):
   result=reply(req.full_url,payload)
   if isinstance(result,Exception):raise result
   return Resp(json.dumps(result))
- ns={'json':json,'time':time,'Counter':Counter,'RPC_ENDPOINTS':['https://a.invalid','https://b.invalid','https://c.invalid'],'urllib':type('U',(),{'request':type('R',(),{'Request':Req,'urlopen':staticmethod(fetch)})}),'_network_timeout':lambda cap:cap,'_RPC_BATCH_SKIPS':Counter(),'_RPC_BATCH_LOG_MAX':5}
+ ns={'json':json,'time':time,'Counter':Counter,'RPC_ENDPOINTS':['https://a.invalid','https://b.invalid','https://c.invalid'],'urllib':type('U',(),{'request':type('R',(),{'Request':Req,'urlopen':staticmethod(fetch)})}),'_network_timeout':lambda cap:cap,'_network_sleep':lambda delay:None,'_RPC_BATCH_SKIPS':Counter(),'_RPC_BATCH_LOG_MAX':5}
  for name in ('_rpc_batch_skip','rpc_batch'):exec(fns[name],ns)
  return ns,seen,timeouts
 class BatchTests(unittest.TestCase):
@@ -41,10 +42,10 @@ class BatchTests(unittest.TestCase):
   self.assertEqual(self.run_batch(ns),{0:block(0)})
  def test_dead_batch_endpoints_not_repeated_or_disable_singles(self):
   ns,seen,_=harness(lambda u,p:TimeoutError('secret-address') if u.endswith('a.invalid') else [{'id':i['id'],'result':block(i['id'])} for i in p])
-  self.run_batch(ns);self.run_batch(ns);self.assertEqual(sum(u.endswith('a.invalid') for u,p in seen),1)
-  self.assertEqual(ns['RPC_ENDPOINTS'][0],'https://a.invalid');self.assertEqual(ns['_RPC_BATCH_WORK']['calls'],3)
+  self.run_batch(ns);self.run_batch(ns);self.assertEqual(sum(u.endswith('a.invalid') for u,p in seen),2)
+  self.assertEqual(ns['RPC_ENDPOINTS'][0],'https://a.invalid');self.assertEqual(ns['_RPC_BATCH_WORK']['calls'],4)
  def test_all_failed_empty_and_log_cap_preserved(self):
-  ns,seen,_=harness(lambda u,p:TimeoutError('private-detail'));self.assertEqual(self.run_batch(ns),{});self.assertEqual(self.run_batch(ns),{});self.assertEqual(len(seen),3)
+  ns,seen,_=harness(lambda u,p:TimeoutError('private-detail'));self.assertEqual(self.run_batch(ns),{});self.assertEqual(self.run_batch(ns),{});self.assertEqual(len(seen),6)
   with redirect_stdout(io.StringIO()) as out:
    for i in range(12):ns['_rpc_batch_skip']('error','https://a.invalid','1x block','TimeoutError')
   self.assertLessEqual(out.getvalue().count('rpc_batch skip'),5);self.assertEqual(ns['_RPC_BATCH_SKIPS']['error'],15)
@@ -91,6 +92,53 @@ class BatchTests(unittest.TestCase):
   self.assertIn('RPC ACQUISITION: single_roundtrips=%d batch_roundtrips=%d batch_seconds=%.1f batch_results=%d',src)
  def test_empty_calls_no_requests(self):
   ns,seen,_=harness(lambda u,p:None);self.assertEqual(self.run_batch(ns,[]),{});self.assertFalse(seen)
+class TransientRetryTests(unittest.TestCase):
+ def quiet(self,ns,c=calls):
+  with redirect_stdout(io.StringIO()):return ns['rpc_batch'](c)
+ def test_exact_payload_successful_transient_retry_stays_preferred(self):
+  for failure in [HTTPError('https://a.invalid',code,'private-body',{},None) for code in (429,500,502,599)]+[TimeoutError('private-detail'),URLError(TimeoutError('private-detail'))]:
+   count=[0]
+   def reply(url,payload):
+    count[0]+=1
+    return failure if count[0]==1 else [{'id':p['id'],'result':block(p['id'])} for p in payload]
+   ns,seen,tm=harness(reply);pauses=[];ns['_network_sleep']=pauses.append
+   self.assertEqual(self.quiet(ns),{i:block(i) for i in range(3)})
+   self.assertEqual(len(seen),2);self.assertEqual(seen[0],seen[1]);self.assertEqual(pauses,[0.2]);self.assertTrue(all(t<=5 for t in tm))
+   self.assertFalse(ns['_RPC_BATCH_DEAD'][('eth_getBlockByNumber',)]);self.assertEqual(ns['_RPC_GOOD_ENDPOINTS'][('batch',('eth_getBlockByNumber',))],'https://a.invalid')
+ def test_permanent_and_schema_failures_receive_no_retry(self):
+  for failure in [HTTPError('https://a.invalid',code,'private-body',{},None) for code in (400,401,403,404)]+[URLError('DNS failure'),ConnectionError('private-detail'),[{'id':True,'result':block(0)}],{'error':{}}]:
+   ns,seen,_=harness(lambda url,payload:failure);pauses=[];ns['_network_sleep']=pauses.append
+   self.assertEqual(self.quiet(ns),{});self.assertEqual(len(seen),3);self.assertFalse(pauses)
+ def test_missing_only_payload_is_identical_across_retry(self):
+  count=[0]
+  def reply(url,payload):
+   if url.endswith('a.invalid'):return [{'id':0,'result':block(0)}]
+   count[0]+=1
+   return TimeoutError() if count[0]==1 else [{'id':p['id'],'result':block(p['id'])} for p in payload]
+  ns,seen,_=harness(reply);self.assertEqual(self.quiet(ns),{i:block(i) for i in range(3)})
+  self.assertEqual([p['id'] for p in seen[1][1]],[1,2]);self.assertEqual(seen[1],seen[2])
+ def test_retry_recomputes_timeout_and_backoff_expiry_no_socket(self):
+  ns,seen,tm=harness(lambda url,payload:TimeoutError())
+  remaining=[5,1];ns['_network_timeout']=lambda cap:min(cap,remaining.pop(0))
+  ns['RPC_ENDPOINTS']=ns['RPC_ENDPOINTS'][:1]
+  self.assertEqual(self.quiet(ns),{});self.assertEqual(tm,[5,1]);self.assertEqual(len(seen),2)
+  from public_scan import BudgetExpired
+  ns,seen,_=harness(lambda url,payload:TimeoutError())
+  def exhausted(cap):raise BudgetExpired('active or ordinary deadline expired')
+  def expired(delay):
+   ns['_network_timeout']=exhausted
+   raise BudgetExpired('active or ordinary deadline expired')
+  ns['_network_sleep']=expired
+  self.assertEqual(self.quiet(ns),{})
+  self.assertEqual(len(seen),1)
+ def test_network_deadline_expired_after_backoff_no_second_socket(self):
+  from public_scan import BudgetExpired
+  ns,seen,_=harness(lambda url,payload:TimeoutError());remaining=[True]
+  def timeout(cap):
+   if not remaining[0]:raise BudgetExpired('ordinary deadline expired')
+   return cap
+  ns['_network_timeout']=timeout;ns['_network_sleep']=lambda delay:remaining.__setitem__(0,False)
+  self.assertEqual(self.quiet(ns),{});self.assertEqual(len(seen),1)
 class MethodHealthTests(unittest.TestCase):
  def test_failure_isolated_both_method_orders(self):
   for failed,working in [('eth_getBlockByNumber','eth_getLogs'),('eth_getLogs','eth_getBlockByNumber')]:
