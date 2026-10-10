@@ -315,42 +315,66 @@ def _rpc_batch_skip(reason, url, what, detail):
 
 
 def rpc_batch(calls):
-    """JSON-RPC 2.0 batch: one POST for many calls, results keyed by request id.
-    Returns {id: result} and OMITS ids that errored — the caller must treat a
-    missing id as "not fetched" and fall back, never as a value. Endpoint order
-    and the Blockscout-last rule are the same as rpc().
-    Batching is an optimisation only: every caller below still has a working
-    one-at-a-time path, because a provider may cap or refuse batches."""
-    payload = json.dumps([{"jsonrpc": "2.0", "id": n, "method": m, "params": p}
-                          for n, (m, p) in enumerate(calls)]).encode()
-    what = f"{len(calls)}x {calls[0][0] if calls else '-'}"
+    """Retain validated partial results; alternatives fetch only missing ids."""
+    if not calls:
+        return {}
+    out = {}
+    dead = globals().setdefault("_RPC_BATCH_DEAD", set())
+    stats = globals().setdefault("_RPC_BATCH_WORK", Counter())
     preferred = globals().setdefault("_RPC_GOOD_ENDPOINTS", {}).get("batch")
     endpoints = ([preferred] if preferred in RPC_ENDPOINTS else []) + [u for u in RPC_ENDPOINTS if u != preferred]
     for url in endpoints:
+        if url in dead:
+            continue
         scanner = globals().get("_PUBLIC_SCANNER")
         if scanner and scanner.expired():
-            return {}
+            return out
+        missing = {i for i in range(len(calls)) if i not in out}
+        payload = json.dumps([{"jsonrpc":"2.0","id":i,"method":calls[i][0],"params":calls[i][1]} for i in sorted(missing)]).encode()
+        what = f"{len(missing)}x {calls[0][0]}"
+        started = time.monotonic()
         try:
             req = urllib.request.Request(url, data=payload,
-                headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (skill-payout-dashboard/1.0; polite crawler)"})
-            with urllib.request.urlopen(req, timeout=_network_timeout(min(20, max(0.01, scanner.deadline-scanner.clock())) if scanner and scanner.deadline is not None else 20)) as r:
+                headers={"Content-Type":"application/json","User-Agent":"Mozilla/5.0 (skill-payout-dashboard/1.0; polite crawler)"})
+            stats["calls"] += 1
+            with urllib.request.urlopen(req, timeout=_network_timeout(min(5,max(0.01,scanner.deadline-scanner.clock())) if scanner and scanner.deadline is not None else 5)) as r:
                 res = json.load(r)
-            if not isinstance(res, list):
-                # provider does not do batches — next endpoint
-                _rpc_batch_skip("not-a-batch", url, what, str(res)[:120])
+            if not isinstance(res,list):
+                dead.add(url)
+                _rpc_batch_skip("not-a-batch",url,what,"batch response refused")
                 continue
-            out = {e["id"]: e["result"] for e in res
-                   if isinstance(e, dict) and e.get("result") is not None}
-            if len(out) < len(calls):
-                _rpc_batch_skip("items-dropped", url, what, f"{len(calls) - len(out)} of {len(calls)} "
-                                "returned no result (left for the single-call fallback)")
-            if out:
-                globals().setdefault("_RPC_GOOD_ENDPOINTS", {})["batch"] = url
+            # Unknown, duplicate or non-integer ids invalidate this provider's
+            # envelope; none can overwrite already validated partial results.
+            ids = [item.get("id") for item in res if isinstance(item,dict)]
+            if (len(ids)!=len(res) or any(type(i) is not int or i not in missing for i in ids)
+                    or len(set(ids))!=len(ids)):
+                dead.add(url)
+                _rpc_batch_skip("invalid-ids",url,what,"invalid batch identity")
+                continue
+            valid = {}
+            for item in res:
+                i=item["id"];value=item.get("result")
+                if item.get("error") is not None or value is None:
+                    continue
+                if calls[i][0]=="eth_getBlockByNumber":
+                    try:
+                        if (not isinstance(value,dict) or int(value["number"],16)!=int(calls[i][1][0],16)
+                                or int(value["timestamp"],16)<0):
+                            continue
+                    except (KeyError,TypeError,ValueError):
+                        continue
+                valid[i]=value
+            out.update(valid);stats["results"] += len(valid)
+            if set(valid)==missing:
+                globals().setdefault("_RPC_GOOD_ENDPOINTS",{})["batch"]=url
                 return out
+            _rpc_batch_skip("items-dropped",url,what,f"{len(missing)-len(valid)} of {len(missing)} returned no valid result (left for fallback)")
         except Exception as e:
-            _rpc_batch_skip("error", url, what, f"{type(e).__name__}: {str(e)[:120]}")
-            continue
-    return {}
+            dead.add(url)
+            _rpc_batch_skip("error",url,what,type(e).__name__)
+        finally:
+            stats["seconds"] += time.monotonic()-started
+    return out
 
 # --offline hard kill-switch: every HTTP/RPC path in this file funnels
 # through get()/rpc()/rpc_batch(), so rebinding them guarantees no code path
@@ -2949,3 +2973,6 @@ print("PHASE TIMING: total=%.1fs | %s | rpc_batch_skips=%d%s" % (
                         sorted(_PHASES.items(), key=lambda kv: -kv[1])),
     sum(_RPC_BATCH_SKIPS.values()),
     "".join(" %s=%d" % kv for kv in sorted(_RPC_BATCH_SKIPS.items()))))
+
+_batch_work = globals().get("_RPC_BATCH_WORK", {})
+print("RPC ACQUISITION: single_roundtrips=%d batch_roundtrips=%d batch_seconds=%.1f batch_results=%d" % (_RPC_CALLS[0], _batch_work.get("calls",0), _batch_work.get("seconds",0), _batch_work.get("results",0)))
