@@ -139,6 +139,124 @@ class TransientRetryTests(unittest.TestCase):
    return cap
   ns['_network_timeout']=timeout;ns['_network_sleep']=lambda delay:remaining.__setitem__(0,False)
   self.assertEqual(self.quiet(ns),{});self.assertEqual(len(seen),1)
+class LocalBudgetHealthTests(unittest.TestCase):
+ def quiet(self,ns,c=calls):
+  with redirect_stdout(io.StringIO()):return ns['rpc_batch'](c)
+ def test_local_expiry_does_not_poison_next_source(self):
+  from public_scan import BudgetExpired
+  ns,seen,_=harness(lambda u,p:[{'id':i['id'],'result':block(i['id'])} for i in p])
+  ns['RPC_ENDPOINTS']=ns['RPC_ENDPOINTS'][:1]
+  ns['_network_timeout']=lambda cap:(_ for _ in ()).throw(BudgetExpired('source allowance'))
+  self.assertEqual(self.quiet(ns),{});self.assertEqual(seen,[])
+  self.assertFalse(ns['_RPC_BATCH_DEAD'][('eth_getBlockByNumber',)])
+  ns['_network_timeout']=lambda cap:cap
+  self.assertEqual(self.quiet(ns),{i:block(i) for i in range(3)})
+  self.assertEqual(len(seen),1)
+ def test_retry_expiry_keeps_provider_available(self):
+  from public_scan import BudgetExpired
+  active=[False]
+  ns,seen,_=harness(lambda u,p:TimeoutError() if not active[0] else [{'id':i['id'],'result':block(i['id'])} for i in p])
+  ns['RPC_ENDPOINTS']=ns['RPC_ENDPOINTS'][:1]
+  def expired(delay):raise BudgetExpired('source allowance')
+  ns['_network_sleep']=expired
+  self.assertEqual(self.quiet(ns),{});self.assertEqual(len(seen),1)
+  self.assertFalse(ns['_RPC_BATCH_DEAD'][('eth_getBlockByNumber',)])
+  active[0]=True;ns['_network_sleep']=lambda delay:None
+  self.assertEqual(self.quiet(ns),{i:block(i) for i in range(3)})
+  self.assertEqual(len(seen),2)
+ def test_partial_survives_expiry_without_health_penalty(self):
+  from public_scan import BudgetExpired
+  ns,seen,_=harness(lambda u,p:[{'id':0,'result':block(0)}] if u.endswith('a.invalid') else [{'id':i['id'],'result':block(i['id'])} for i in p])
+  n=[0]
+  def timeout(cap):
+   n[0]+=1
+   if n[0]==2:raise BudgetExpired('source allowance')
+   return cap
+  ns['_network_timeout']=timeout
+  self.assertEqual(self.quiet(ns),{0:block(0)});self.assertEqual(len(seen),1)
+  self.assertFalse(ns['_RPC_BATCH_DEAD'][('eth_getBlockByNumber',)])
+ def test_repeated_provider_timeout_still_marks_method_dead(self):
+  ns,seen,_=harness(lambda u,p:TimeoutError())
+  ns['RPC_ENDPOINTS']=ns['RPC_ENDPOINTS'][:1]
+  self.assertEqual(self.quiet(ns),{});self.assertEqual(len(seen),2)
+  self.assertEqual(ns['_RPC_BATCH_DEAD'][('eth_getBlockByNumber',)],{'https://a.invalid'})
+  self.assertEqual(self.quiet(ns),{});self.assertEqual(len(seen),2)
+class LaterSourceRecoveryTests(unittest.TestCase):
+ class Scanner:
+  deadline=100
+  def __init__(self,sid):self._acquiring={sid:1}
+  def clock(self):return 0
+  def expired(self):return False
+ def quiet(self,ns,c=calls,validator=None):
+  with redirect_stdout(io.StringIO()):return ns['rpc_batch'](c,validate_result=validator)
+ def test_early_transients_later_source_recovers_once(self):
+  for failure in (TimeoutError(),HTTPError('https://a.invalid',429,'refused',{},None),HTTPError('https://a.invalid',503,'refused',{},None)):
+   active=[False]
+   ns,seen,_=harness(lambda u,p:failure if not active[0] else [{'id':i['id'],'result':block(i['id'])} for i in p]);ns['RPC_ENDPOINTS']=ns['RPC_ENDPOINTS'][:1]
+   scanner=self.Scanner('first');ns['_PUBLIC_SCANNER']=scanner
+   self.assertEqual(self.quiet(ns),{});self.assertEqual(len(seen),2)
+   self.assertEqual(self.quiet(ns),{});self.assertEqual(len(seen),2)
+   scanner._acquiring={'later':1};active[0]=True
+   self.assertEqual(self.quiet(ns),{i:block(i) for i in range(3)});self.assertEqual(len(seen),3)
+   self.assertEqual(seen[1][1],seen[2][1]);self.assertFalse(ns['_RPC_BATCH_DEAD'][('eth_getBlockByNumber',)])
+   self.assertEqual(ns['_RPC_GOOD_ENDPOINTS'][('batch',('eth_getBlockByNumber',))],'https://a.invalid')
+ def test_repeated_transient_one_request_per_new_source(self):
+  ns,seen,_=harness(lambda u,p:TimeoutError());ns['RPC_ENDPOINTS']=ns['RPC_ENDPOINTS'][:1];scanner=self.Scanner('first');ns['_PUBLIC_SCANNER']=scanner
+  self.assertEqual(self.quiet(ns),{});self.assertEqual(len(seen),2)
+  for sid,count in [('later',3),('later',3),('third',4),('third',4)]:
+   scanner._acquiring={sid:1};self.assertEqual(self.quiet(ns),{});self.assertEqual(len(seen),count)
+ def test_permanent_invalid_refusals_never_reprobe(self):
+  for failure in (HTTPError('https://a.invalid',403,'refused',{},None),{'error':{}},[{'id':99,'result':{}}],ValueError('bad JSON')):
+   ns,seen,_=harness(lambda u,p:failure);ns['RPC_ENDPOINTS']=ns['RPC_ENDPOINTS'][:1];scanner=self.Scanner('first');ns['_PUBLIC_SCANNER']=scanner
+   self.assertEqual(self.quiet(ns),{});scanner._acquiring={'later':1}
+   self.assertEqual(self.quiet(ns),{});self.assertEqual(len(seen),1)
+ def test_outside_active_scope_and_exhausted_budget_no_reprobe(self):
+  ns,seen,_=harness(lambda u,p:TimeoutError());ns['RPC_ENDPOINTS']=ns['RPC_ENDPOINTS'][:1];scanner=self.Scanner('first');ns['_PUBLIC_SCANNER']=scanner
+  self.quiet(ns);scanner._acquiring={};self.quiet(ns);self.assertEqual(len(seen),2)
+  scanner._acquiring={'later':1};scanner.expired=lambda:True;self.quiet(ns);self.assertEqual(len(seen),2)
+ def test_reprobe_strict_validation_before_restore(self):
+  active=[False]
+  ns,seen,_=harness(lambda u,p:TimeoutError() if not active[0] else [{'jsonrpc':'1.0','id':i['id'],'result':[]} for i in p]);ns['RPC_ENDPOINTS']=ns['RPC_ENDPOINTS'][:1];scanner=self.Scanner('first');ns['_PUBLIC_SCANNER']=scanner;c=[('eth_getLogs',[{}])]
+  self.quiet(ns,c,lambda c,v:isinstance(v,list));active[0]=True;scanner._acquiring={'later':1}
+  self.assertEqual(self.quiet(ns,c,lambda c,v:isinstance(v,list)),{});self.assertEqual(len(seen),3)
+  self.assertIn('https://a.invalid',ns['_RPC_BATCH_DEAD'][('eth_getLogs',)])
+  scanner._acquiring={'third':1};self.assertEqual(self.quiet(ns,c),{});self.assertEqual(len(seen),3)
+ def test_real_acquisition_scope_and_idle_or_ambiguous_scope(self):
+  import tempfile
+  from public_scan import PublicScanner,ActiveScanClock
+  active=[False]
+  ns,seen,_=harness(lambda u,p:TimeoutError() if not active[0] else [{'id':i['id'],'result':block(i['id'])} for i in p]);ns['RPC_ENDPOINTS']=ns['RPC_ENDPOINTS'][:1]
+  with tempfile.TemporaryDirectory() as directory:
+   scanner=PublicScanner(directory,None,None,RuntimeError,budget_seconds=360,clock=ActiveScanClock(),leg_budget_seconds=360/7);scanner.deadline=360;ns['_PUBLIC_SCANNER']=scanner
+   with scanner.acquisition('first'):self.assertEqual(self.quiet(ns),{})
+   self.assertEqual(len(seen),2);active[0]=True
+   scanner._acquiring={'stale':1}
+   self.assertEqual(self.quiet(ns),{});self.assertEqual(len(seen),2)
+   with scanner.clock.active():
+    scanner._acquiring={'one':1,'two':1}
+    self.assertEqual(self.quiet(ns),{});self.assertEqual(len(seen),2)
+   scanner._acquiring={}
+   with scanner.acquisition('later'):
+    self.assertEqual(self.quiet(ns),{i:block(i) for i in range(3)})
+   self.assertEqual(len(seen),3)
+ def test_actual_offline_rebinding_prevents_reprobe_http(self):
+  ns,seen,_=harness(lambda u,p:TimeoutError());ns['RPC_ENDPOINTS']=ns['RPC_ENDPOINTS'][:1];scanner=self.Scanner('first');ns['_PUBLIC_SCANNER']=scanner
+  self.quiet(ns);scanner._acquiring={'later':1};ns['OFFLINE']=True
+  kill=next(n for n in tree.body if isinstance(n,ast.If) and isinstance(n.test,ast.Name) and n.test.id=='OFFLINE' and any(isinstance(x,ast.FunctionDef) and x.name=='_no_net' for x in n.body))
+  exec(compile(ast.Module(body=[kill],type_ignores=[]),'actual-offline-kill','exec'),ns)
+  with self.assertRaisesRegex(RuntimeError,'network access is disabled'):self.quiet(ns)
+  self.assertEqual(len(seen),2)
+ def test_missing_only_reprobe_and_method_isolation(self):
+  active=[False]
+  def reply(u,p):
+   if u.endswith('a.invalid'):return [{'id':0,'result':block(0)}]
+   return TimeoutError() if not active[0] else [{'id':i['id'],'result':block(i['id'])} for i in p]
+  ns,seen,_=harness(reply);ns['RPC_ENDPOINTS']=ns['RPC_ENDPOINTS'][:2];scanner=self.Scanner('first');ns['_PUBLIC_SCANNER']=scanner
+  self.assertEqual(self.quiet(ns),{0:block(0)});self.assertEqual(len(seen),3)
+  scanner._acquiring={'later':1};active[0]=True
+  self.assertEqual(self.quiet(ns),{i:block(i) for i in range(3)})
+  self.assertEqual([i['id'] for i in seen[-1][1]],[1,2]);self.assertEqual(len(seen),5)
+  self.assertNotIn(('eth_getLogs',),ns['_RPC_BATCH_DEAD'])
 class MethodHealthTests(unittest.TestCase):
  def test_failure_isolated_both_method_orders(self):
   for failed,working in [('eth_getBlockByNumber','eth_getLogs'),('eth_getLogs','eth_getBlockByNumber')]:
