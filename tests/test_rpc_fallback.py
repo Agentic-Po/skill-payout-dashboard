@@ -14,7 +14,7 @@ ROOT = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0,ROOT)
 SOURCE = open(os.path.join(ROOT, 'refresh.py')).read()
 TREE = ast.parse(SOURCE)
-NAMES = {'RpcRangeError', '_rpc_range_error', 'rpc', 'rpc_transfer_fallback','_public_leg','_scan_rpc'}
+NAMES = {'RpcRangeError', '_rpc_range_error', 'rpc', 'rpc_transfer_fallback','_public_leg','_scan_rpc','_bounded_scan_rpc','_valid_log_subrange'}
 CODE = '\n'.join(ast.get_source_segment(SOURCE,n) for n in TREE.body if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name in NAMES)
 
 class RpcFallback(unittest.TestCase):
@@ -28,7 +28,7 @@ class RpcFallback(unittest.TestCase):
             'time':types.SimpleNamespace(sleep=lambda *_:None,time=lambda:0),'RPC_ENDPOINTS':list(responses),'_RPC_CALLS':[0],
             'TRANSFER_TOPIC':'topic','LOGS_CHUNK':[2000],'XCHECK_WARN_S':60,'block_ts_prefetch':lambda _:None,'block_ts':lambda _:0}
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
-        ns.update({'_PUBLIC_SCANNER':None,'_RPC_LAST_THROUGH':None,'_shape_rpc_transfers':lambda logs:[],'HERE':temp.name,'os':os,'_network_timeout':lambda cap:cap,'_network_sleep':lambda _:None})
+        ns.update({'rpc_batch':lambda *a,**k:{},'_PUBLIC_SCANNER':None,'_RPC_LAST_THROUGH':None,'_shape_rpc_transfers':lambda logs:[],'HERE':temp.name,'os':os,'_network_timeout':lambda cap:cap,'_network_sleep':lambda _:None})
         exec(CODE,ns)
         return ns
 
@@ -53,7 +53,7 @@ class RpcFallback(unittest.TestCase):
     def test_scanner_typed_invalid_blocks_global_promotion(self):
         from public_scan import ScanInvalid
         ns=self.ns({})
-        def rpc(method,params):
+        def rpc(method,params,**kwargs):
             if method=='eth_blockNumber':return hex(42)
             return ['not a log']
         ns['rpc']=rpc
@@ -63,6 +63,12 @@ class RpcFallback(unittest.TestCase):
         def range_error():return urllib.error.HTTPError('https://range.invalid',400,'range',{},io.BytesIO(b'{"error":{"message":"ranges over 10000 blocks unsupported"}}'))
         ns=self.ns({'https://range.invalid':range_error,'https://down.invalid':lambda:urllib.error.HTTPError('https://down.invalid',403,'blocked',{},io.BytesIO(b'blocked'))})
         with self.assertRaises(ns['RpcRangeError']):ns['rpc']('eth_getLogs',[],tries=1)
+
+    def test_scoped_single_envelopes_fail_over_before_empty_range_acceptance(self):
+        for bad in ({'result':[]},{'jsonrpc':'1.0','id':1,'result':[]},{'jsonrpc':'2.0','id':True,'result':[]},{'jsonrpc':'2.0','id':2,'result':[]},{'jsonrpc':'2.0','id':1,'result':[],'error':None}):
+            ns=self.ns({'https://bad.invalid':bad,'https://ok.invalid':{'jsonrpc':'2.0','id':1,'result':[]}})
+            query={'fromBlock':'0xa','toBlock':'0x6d','address':['0x'+'2'*40],'topics':['0x'+'a'*64,'0x'+'0'*24+'1'*40]}
+            self.assertEqual(ns['rpc']('eth_getLogs',[query],validate_result=ns['_valid_log_subrange']),[]);self.assertEqual(ns['_RPC_GOOD_ENDPOINTS']['eth_getLogs'],'https://ok.invalid');self.assertEqual(ns['_RPC_CALLS'][0],2)
 
     def test_working_provider_wins_over_range_refusal(self):
         ns=self.ns({'https://range.invalid':{'error':{'message':'limited to 50 blocks range'}},'https://ok.invalid':{'result':[]}})
@@ -79,7 +85,7 @@ class RpcFallback(unittest.TestCase):
 
     def test_fallback_reaches_50_block_cap_and_covers_entire_range(self):
         ns=self.ns({});calls=[]
-        def rpc(method,params):
+        def rpc(method,params,**kwargs):
             if method=='eth_blockNumber':return hex(160)
             if method=='eth_getBlockByNumber':return {'number':params[0],'hash':'0x'+'1'*64,'timestamp':'0x1'}
             query=params[0];start=int(query['fromBlock'],16);end=int(query['toBlock'],16);calls.append((start,end))
@@ -93,14 +99,14 @@ class RpcFallback(unittest.TestCase):
 
     def test_transport_failure_does_not_shrink_or_advance(self):
         ns=self.ns({});calls=[]
-        def rpc(*args):calls.append(args);raise RuntimeError('outage')
+        def rpc(*args,**kwargs):calls.append(args);raise RuntimeError('outage')
         ns['rpc']=rpc
         with self.assertRaises(RuntimeError):ns['rpc_transfer_fallback']('0x'+'1'*40,'from',['0x'+'2'*40],10,130)
         self.assertEqual(len(calls),1);self.assertEqual(ns['LOGS_CHUNK'],[2000])
 
     def test_minimum_range_terminates(self):
         ns=self.ns({});ns['LOGS_CHUNK']=[1]
-        def rpc(method,params):
+        def rpc(method,params,**kwargs):
             if method=='eth_blockNumber':return hex(160)
             raise ns['RpcRangeError']('range')
         ns['rpc']=rpc

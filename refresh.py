@@ -255,7 +255,7 @@ def _rpc_range_error(message):
             or ("limit" in message and ("block" in message or "result" in message)))
 
 
-def rpc(method, params, tries=3):
+def rpc(method, params, tries=3, validate_result=None):
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
     last_err = RuntimeError("public RPC unavailable")
     limited = False
@@ -278,6 +278,11 @@ def rpc(method, params, tries=3):
                 if not isinstance(res,dict):
                     last_err = RuntimeError("public RPC returned invalid envelope")
                     break
+                if validate_result is not None and (res.get('jsonrpc')!='2.0'
+                        or type(res.get('id')) is not int or res['id']!=1
+                        or ('result' in res)==('error' in res)):
+                    last_err = RuntimeError("public RPC returned invalid scoped envelope")
+                    break
                 if res.get("error"):
                     error = res["error"]
                     limited |= _rpc_range_error(error.get("message", "")) if isinstance(error,dict) else False
@@ -287,6 +292,9 @@ def rpc(method, params, tries=3):
                     if method == "eth_getLogs" and (not isinstance(res["result"],list)
                             or any(not isinstance(log,dict) for log in res["result"])):
                         last_err = RuntimeError("public RPC returned invalid logs")
+                        break
+                    if validate_result is not None and not validate_result((method,params),res["result"]):
+                        last_err = RuntimeError("public RPC returned invalid scoped result")
                         break
                     globals().setdefault("_RPC_GOOD_ENDPOINTS", {})[method] = url
                     return res["result"]
@@ -330,7 +338,7 @@ def _rpc_batch_skip(reason, url, what, detail):
               + (" — further skips counted only" if n == _RPC_BATCH_LOG_MAX else ""))
 
 
-def rpc_batch(calls):
+def rpc_batch(calls, validate_result=None):
     """Retain validated partial results; alternatives fetch only missing ids."""
     if not calls:
         return {}
@@ -372,6 +380,9 @@ def rpc_batch(calls):
             valid = {}
             for item in res:
                 i=item["id"];value=item.get("result")
+                if validate_result is not None and (item.get('jsonrpc')!='2.0'
+                        or ('result' in item)==('error' in item)):
+                    continue
                 if item.get("error") is not None or value is None:
                     continue
                 if calls[i][0]=="eth_getBlockByNumber":
@@ -381,6 +392,8 @@ def rpc_batch(calls):
                             continue
                     except (KeyError,TypeError,ValueError):
                         continue
+                if validate_result is not None and not validate_result(calls[i],value):
+                    continue
                 valid[i]=value
             out.update(valid);stats["results"] += len(valid)
             if set(valid)==missing:
@@ -509,12 +522,73 @@ def _shape_rpc_transfers(logs):
     return items
 
 
+def _valid_log_subrange(call, logs):
+    """Authenticate each response against its own requested filter and range."""
+    import re
+    try:
+        method,params=call
+        if method!='eth_getLogs' or not isinstance(logs,list):return False
+        filt=params[0];lo=int(filt['fromBlock'],16);hi=int(filt['toBlock'],16)
+        addresses=filt['address'] if isinstance(filt['address'],list) else [filt['address']]
+        addresses={a.lower() for a in addresses};topics=filt['topics'];seen=set()
+        for log in logs:
+            if not isinstance(log,dict):return False
+            actual=log.get('topics')
+            if (not isinstance(actual,list) or len(actual)!=3
+                    or any(not isinstance(t,str) or not re.fullmatch(r'0x[0-9a-fA-F]{64}',t) for t in actual)
+                    or not isinstance(log.get('address'),str) or not re.fullmatch(r'0x[0-9a-fA-F]{40}',log['address'])
+                    or not isinstance(log.get('transactionHash'),str) or not re.fullmatch(r'0x[0-9a-fA-F]{64}',log['transactionHash'])
+                    or any(not isinstance(log.get(k),str) or not re.fullmatch(r'0x[0-9a-fA-F]+',log[k]) for k in ('blockNumber','logIndex','data'))
+                    or ('removed' in log and (not isinstance(log['removed'],bool) or log['removed']))
+                    or log['address'].lower() not in addresses
+                    or not lo<=int(log['blockNumber'],16)<=hi
+                    or any(t is not None and actual[index].lower()!=t.lower() for index,t in enumerate(topics))):return False
+            identity=(log['transactionHash'].lower(),int(log['logIndex'],16))
+            if identity in seen:return False
+            seen.add(identity)
+        return True
+    except (KeyError,TypeError,ValueError,IndexError):
+        return False
+
+
+def _bounded_scan_rpc(method, params):
+    """Keep the original range atomic; public providers get bounded subranges."""
+    if method!='eth_getLogs':return rpc(method,params)
+    filt=params[0];lo=int(filt['fromBlock'],16);hi=int(filt['toBlock'],16)
+    if not 0<=lo<=hi or hi-lo+1>2000:
+        from public_scan import ScanInvalid
+        raise ScanInvalid('invalid bounded public log range')
+    if hi-lo+1<=100:
+        return rpc(method,params,validate_result=_valid_log_subrange)
+    calls=[('eth_getLogs',[dict(filt,fromBlock=hex(start),toBlock=hex(min(start+99,hi)))])
+           for start in range(lo,hi+1,100)]
+    combined=[]
+    # Existing public dRPC accepted two scoped calls; larger bodies returned
+    # server errors in qualification. Keep this conservative and bounded.
+    for offset in range(0,len(calls),2):
+        group=calls[offset:offset+2]
+        got=rpc_batch(group,validate_result=_valid_log_subrange)
+        for index,call in enumerate(group):
+            value=got.get(index)
+            if value is None:
+                value=rpc(*call,validate_result=_valid_log_subrange)
+            if not _valid_log_subrange(call,value):
+                from public_scan import ScanInvalid
+                raise ScanInvalid('invalid scoped public log response')
+            combined.extend(value)
+    identities=[(row['transactionHash'].lower(),int(row['logIndex'],16)) for row in combined]
+    if len(set(identities))!=len(identities):
+        from public_scan import ScanInvalid
+        raise ScanInvalid('duplicate scoped public log identity')
+    return combined
+
+
 def _public_leg(wallet,direction,token_addrs):
     """Declare a required source before bootstrap; failed head cannot look healthy."""
     global _PUBLIC_SCANNER
     from public_scan import PublicScanner,ActiveScanClock,descriptor,scan_id
     if _PUBLIC_SCANNER is None:
-        _PUBLIC_SCANNER = PublicScanner(os.path.join(HERE,"pending_scans"),rpc,
+        _PUBLIC_SCANNER = PublicScanner(os.path.join(HERE,"pending_scans"),_bounded_scan_rpc,
                                        _shape_rpc_transfers,RpcRangeError,budget_seconds=360,clock=ActiveScanClock(),leg_budget_seconds=360/7)
     if _PUBLIC_SCANNER.deadline is None:
         _PUBLIC_SCANNER.deadline = _PUBLIC_SCANNER.clock() + _PUBLIC_SCANNER.budget_seconds
@@ -2261,7 +2335,19 @@ try:
 
     _public_leg(SINK,"to",[TOKENS["MENTE"]["addr"]])
     _public_leg(SINK,"from",[TOKENS["MENTE"]["addr"]])
-    _in, _out = _sweep("to"), _sweep("from")
+    def _sweep_pair():
+        # Bank neutral progress for both directions before the existing pair
+        # rollback decides whether either can enter financial figures.
+        results, errors = {}, []
+        for direction in ("to", "from"):
+            try:
+                results[direction] = _sweep(direction)
+            except Exception as error:
+                errors.append(error)
+        if errors:
+            raise errors[0]
+        return results["to"], results["from"]
+    _in, _out = _sweep_pair()
     _sd = defaultdict(float)
     for r in _in:
         if r["col"]:

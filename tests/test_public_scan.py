@@ -364,11 +364,12 @@ class IntegrationTests(unittest.TestCase):
   source=open(os.path.join(os.path.dirname(os.path.dirname(__file__)),'refresh.py')).read();tree=ast.parse(source)
   with tempfile.TemporaryDirectory() as root:
    def fail(direction):raise S.ScanIncomplete('fixture first direction')
-   ns={'_PUBLIC_SCANNER':None,'HERE':root,'rpc':None,'_shape_rpc_transfers':None,'RpcRangeError':RangeError,'os':os,'SINK':W,'TOKENS':{'MENTE':{'addr':T}},'_sweep':fail}
+   ns={'_bounded_scan_rpc':None,'_PUBLIC_SCANNER':None,'HERE':root,'rpc':None,'_shape_rpc_transfers':None,'RpcRangeError':RangeError,'os':os,'SINK':W,'TOKENS':{'MENTE':{'addr':T}},'_sweep':fail}
    helper=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_public_leg');exec(ast.get_source_segment(source,helper),ns)
    declarations=[n for n in ast.walk(tree) if isinstance(n,ast.Expr) and isinstance(n.value,ast.Call) and isinstance(n.value.func,ast.Name) and n.value.func.id=='_public_leg' and isinstance(n.value.args[0],ast.Name) and n.value.args[0].id=='SINK' and isinstance(n.value.args[1],ast.Constant)]
    invocation=next(n for n in ast.walk(tree) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Tuple) and [getattr(e,'id',None) for e in t.elts]==['_in','_out'] for t in n.targets))
-   nodes=sorted(declarations+[invocation],key=lambda n:n.lineno)
+   pair=next(n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef) and n.name=="_sweep_pair")
+   nodes=sorted(declarations+[pair,invocation],key=lambda n:n.lineno)
    with self.assertRaises(S.ScanIncomplete):exec(compile(ast.Module(body=nodes,type_ignores=[]),'sink_pair','exec'),ns)
    self.assertEqual(len(ns['_PUBLIC_SCANNER'].last),2)
    self.assertEqual({v['alias'] for v in ns['_PUBLIC_SCANNER'].work.values()},{'sink_in','sink_out'})
@@ -498,7 +499,7 @@ class IntegrationTests(unittest.TestCase):
   import ast,types
   source=open(os.path.join(os.path.dirname(os.path.dirname(__file__)),'refresh.py')).read();tree=ast.parse(source)
   with tempfile.TemporaryDirectory() as root:
-   ns={'_PUBLIC_SCANNER':None,'HERE':root,'rpc':None,'_shape_rpc_transfers':None,'RpcRangeError':RangeError,'os':os}
+   ns={'_bounded_scan_rpc':None,'_PUBLIC_SCANNER':None,'HERE':root,'rpc':None,'_shape_rpc_transfers':None,'RpcRangeError':RangeError,'os':os}
    node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_public_leg');exec(ast.get_source_segment(source,node),ns);ns['_public_leg'](W,'from',[T])
    self.assertEqual(ns['_PUBLIC_SCANNER'].budget_seconds,360);self.assertEqual(ns['_PUBLIC_SCANNER'].deadline,360);self.assertAlmostEqual(ns['_PUBLIC_SCANNER'].leg_budget_seconds,360/7)
    ns['_PUBLIC_SCANNER'].clock.used=180;ns['_public_leg'](W,'to',[T])
@@ -680,5 +681,50 @@ class FairAdaptiveTests(unittest.TestCase):
   self.assertEqual(scanner.work['first']['active_s'],50)
   with scanner.acquisition('first'):self.assertAlmostEqual(scanner.remaining(),360/7-50)
   with scanner.acquisition('second'):self.assertAlmostEqual(ns['_network_timeout'](100),360/7)
+
+class SinkPairAttemptTests(unittest.TestCase):
+ def pair_ns(self):
+  import ast
+  source=open(os.path.join(os.path.dirname(os.path.dirname(__file__)),'refresh.py')).read();tree=ast.parse(source)
+  node=next(n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef) and n.name=='_sweep_pair');ns={};exec(ast.get_source_segment(source,node),ns)
+  outer=next(n for n in tree.body if isinstance(n,ast.Try) and any(isinstance(n,ast.FunctionDef) and n.name=='_sweep' for n in ast.walk(n)))
+  handler='\n'.join(ast.get_source_segment(source,n) for n in outer.handlers[0].body)
+  return ns,handler
+ def test_each_incomplete_direction_still_attempts_other_and_outer_rolls_back_pair(self):
+  import copy
+  for failed in ('to','from'):
+   ns,handler=self.pair_ns();old={'to':[{'saved':'in'}],'from':[{'saved':'out'}]};xcheck={'sink_xc_to':10,'sink_xc_from':11};state={'sink':{'rows':copy.deepcopy(old)},'xcheck':copy.deepcopy(xcheck)};calls=[]
+   def sweep(direction):
+    calls.append(direction);state['sink']['rows'][direction]=[{'unpromoted':direction}];state['xcheck']['sink_xc_'+direction]=999
+    if direction==failed:raise S.ScanIncomplete('synthetic partial')
+    return state['sink']['rows'][direction]
+   ns['_sweep']=sweep
+   with tempfile.TemporaryDirectory() as root:
+    json.dump({'sink':{'saved':True},'scope':{'generated_iso':'2026-10-08T00:00:00Z'}},open(os.path.join(root,'data.json'),'w'))
+    ns.update(STATE=state,_sink_saved_rows=copy.deepcopy(old),_sink_saved_xcheck=copy.deepcopy(xcheck),OFFLINE=False,HERE=root,os=os,json=json,_LAST_GOOD_SECTION_CLOCKS={})
+    try:ns['_sweep_pair']()
+    except S.ScanIncomplete as error:ns['e']=error;exec(handler,ns)
+    else:self.fail('partial pair accepted')
+    self.assertEqual(calls,['to','from']);self.assertEqual(state['sink']['rows'],old);self.assertEqual(state['xcheck'],xcheck);self.assertEqual(ns['sink'],{'saved':True})
+ def test_invalid_tripwire_survives_other_attempt_and_error_is_not_masked(self):
+  ns,_=self.pair_ns();calls=[];invalid=S.ScanInvalid('synthetic invalid')
+  def sweep(direction):
+   calls.append(direction)
+   if direction=='to':ns['_RPC_SCAN_INVALID']=True;raise invalid
+   raise S.ScanIncomplete('synthetic partial')
+  ns['_sweep']=sweep
+  with self.assertRaises(S.ScanInvalid)as error:ns['_sweep_pair']()
+  self.assertIs(error.exception,invalid);self.assertEqual(calls,['to','from']);self.assertTrue(ns['_RPC_SCAN_INVALID'])
+ def test_second_direction_invalid_still_sets_tripwire_after_first_partial(self):
+  ns,_=self.pair_ns();calls=[]
+  def sweep(direction):
+   calls.append(direction)
+   if direction=='to':raise S.ScanIncomplete('first partial')
+   ns['_RPC_SCAN_INVALID']=True;raise S.ScanInvalid('second invalid')
+  ns['_sweep']=sweep
+  with self.assertRaises(S.ScanIncomplete):ns['_sweep_pair']()
+  self.assertEqual(calls,['to','from']);self.assertTrue(ns['_RPC_SCAN_INVALID'])
+ def test_complete_pair_returns_both_original_results(self):
+  ns,_=self.pair_ns();ns['_sweep']=lambda direction:[direction];self.assertEqual(ns['_sweep_pair'](),(['to'],['from']))
 
 if __name__=='__main__':unittest.main()
