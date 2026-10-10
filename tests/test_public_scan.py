@@ -11,6 +11,22 @@ T='0x'+'2'*40
 TOPIC_W='0x'+'0'*24+'1'*40
 class RangeError(RuntimeError):pass
 class ScanTests(unittest.TestCase):
+ def test_populated_source_coverage_passes_unchanged_public_tripwire(self):
+  import check_publish as P
+  wallet='0xBD956171F5B50936f0Ad1C4db80c022bd2442519'; coupon='0xb15afc65532f8ec4d39db521ad7eb5b9e9ef5acf'
+  desc=S.descriptor(wallet,'from',['0x2b11834ed1feaed4b4b3a86a6f571315e25a884d']);proof={'descriptor':desc,'start':10,'through':11,'hash':'0x'+'4'*64,'timestamp':1787307825,'target':12,'complete':False,'chunk':2}
+  coupon_proof=dict(proof,descriptor=S.descriptor(coupon,'to',desc['tokens']))
+  coverage={'coverage_ok':False,'pending':[proof,coupon_proof]}
+  document={'scope':{'wallet':wallet,'complete':False,'source_coverage':coverage}}
+  for artifact in ('data.json','full.html','coupon_data.json','coupon.html'):
+   text=json.dumps(document)
+   if artifact.endswith('.html'):text='<script>const DATA='+text+';</script>'
+   self.assertEqual(P._status_adjacent(artifact,text),[],artifact)
+   self.assertTrue(P._status_adjacent(artifact,text.replace('coverage_ok','finance_current')),artifact)
+  for token in ('ent','burst'):
+   self.assertTrue(P._status_adjacent('data.json',json.dumps({'wallet':wallet,token:1})))
+  with self.assertRaises(S.ScanIncomplete):S.require_coverage(document)
+
  def setup_scan(self,root,limit=None,fail_shape=False):
   clock=[0];calls=[]
   def rpc(method,params):
@@ -149,11 +165,11 @@ class HealthTests(unittest.TestCase):
   self.assertIn('partial chain scan published; current financial coverage unavailable',text)
 
  def test_complete_empty_verified_leg_is_healthy(self):
-  scope={'complete':True,'source_coverage':{'finance_current':True,'pending':[{'complete':True,'through':12,'target':12,'hash':'0x'+'1'*64}]}}
+  scope={'complete':True,'source_coverage':{'coverage_ok':True,'pending':[{'complete':True,'through':12,'target':12,'hash':'0x'+'1'*64}]}}
   S.require_coverage({'scope':scope},{'scope':scope})
  def test_partial_or_missing_coupon_proof_is_unhealthy(self):
-  good={'scope':{'complete':True,'source_coverage':{'finance_current':True,'pending':[]}}}
-  for bad in ({'scope':{'complete':False}}, {'scope':{'complete':True}}, {'scope':{'complete':True,'source_coverage':{'finance_current':True,'pending':[{'complete':False}]}}}):
+  good={'scope':{'complete':True,'source_coverage':{'coverage_ok':True,'pending':[]}}}
+  for bad in ({'scope':{'complete':False}}, {'scope':{'complete':True}}, {'scope':{'complete':True,'source_coverage':{'coverage_ok':True,'pending':[{'complete':False}]}}}):
    with self.assertRaises(S.ScanIncomplete):S.require_coverage(good,bad)
 
 class IntegrationTests(unittest.TestCase):
@@ -175,7 +191,7 @@ class IntegrationTests(unittest.TestCase):
   data={'scope':{'complete':True,'generated_iso':'2026-10-09T00:00:00Z'}}
   ns={'OFFLINE':False,'_PUBLIC_SCANNER':types.SimpleNamespace(last={'required':{'complete':False}}),'data':data,'data_complete':True,'datetime':datetime,'timezone':timezone,'_LAST_GOOD_SECTION_CLOCKS':{'sink':'2026-10-08T00:00:00Z'}}
   exec(compile(ast.Module(body=[node],type_ignores=[]),'source_clock','exec'),ns)
-  self.assertFalse(data['scope']['complete']);self.assertFalse(data['scope']['source_coverage']['finance_current'])
+  self.assertFalse(data['scope']['complete']);self.assertFalse(data['scope']['source_coverage']['coverage_ok'])
   self.assertEqual(data['scope']['generated_iso'],'2026-10-09T00:00:00Z')
   self.assertEqual(data['scope']['source_coverage']['last_good_sections']['sink'],'2026-10-08T00:00:00Z')
  def test_product_queries_recompute_remaining_timeout_each_request(self):
@@ -261,7 +277,7 @@ class IntegrationTests(unittest.TestCase):
    exec(ast.get_source_segment(source,node),ns)
    with self.assertRaises(S.ScanIncomplete):ns['rpc_transfer_fallback'](W,'from',[T],10)
    self.assertFalse(next(iter(scanner.last.values()))['complete'])
-   scope={'complete':True,'source_coverage':{'finance_current':True,'pending':list(scanner.last.values())}}
+   scope={'complete':True,'source_coverage':{'coverage_ok':True,'pending':list(scanner.last.values())}}
    with self.assertRaises(S.ScanIncomplete):S.require_coverage({'scope':scope})
  def test_partial_crosscheck_retains_cache_without_advancing_cursor(self):
   def incomplete(*a,**k):raise S.ScanIncomplete('partial')
