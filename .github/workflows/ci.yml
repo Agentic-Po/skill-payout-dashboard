@@ -51,6 +51,8 @@ jobs:
         run: python3 tests/test_render_exec.py
       # Loop 2 (2026-09-27): one mutated data key must degrade only the
       # sections that read it (placeholder + page banner), never blank the page
+      - name: Visible financial freshness
+        run: python3 tests/test_visible_freshness.py
       - name: Render isolation gate (data mutations)
         run: python3 tests/test_render_mutation.py
       # template-vs-template on today's data: a page change must not move a

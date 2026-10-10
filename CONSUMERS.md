@@ -197,3 +197,7 @@ Runway and coupon pace remain independently calculated from their existing input
 observation timestamps are never substituted for financial or block-coverage clocks.
 A complete online coupon leg uses its own current clock and acquired MOCA quote even
 when Treasury is incomplete. Overall coverage gates and severity remain unchanged.
+
+### Visible financial freshness
+
+The Treasury template uses `scope.source_coverage.treasury_complete` for its own financial coverage, falling back to legacy `scope.complete`. A saved wallet balance retains its financial `scope.generated_iso` and prices; it is never described as a live balance. Incomplete Treasury 24-hour inflow/outflow tiles display unavailable rather than treating a cached zero as a verified zero. The daily table retains recorded rows and explicitly marks the dynamic missing UTC dates as unknown; it never manufactures zero-day rows from pending scans. Subsidiary incompleteness alone does not hide complete Treasury figures. These display rules change no numeric dataset, proof, promotion or publication gate.

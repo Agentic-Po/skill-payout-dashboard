@@ -161,6 +161,12 @@ def _checks_headline(p, data):
     assert len(tiles) == 6, "headline tiles missing"
     out = next((t for t in tiles if t[0] == "Outflow — 24h"), None)
     assert out is not None, "24h outflow tile missing"
+    own=data["scope"].get("source_coverage",{}).get("treasury_complete",data["scope"]["complete"])
+    if not own:
+        assert out[1] == "Unavailable", "incomplete 24h value must be unknown"
+        assert "not a verified zero" in out[2], "incomplete 24h explanation missing"
+        assert "as of last complete fetch" in p["ftiles"], "saved coverage warning missing"
+        return
     assert "$" in out[1], "24h outflow value missing"
     window = data["facts"]["windows"][0]
     labels = {"skill_rewards":"rewards", "credit_grants":"credits",
@@ -177,7 +183,7 @@ def _checks_headline(p, data):
     else:
         assert f"{window['out_tx']} tx" in out[2] and f"{window['out_wallets']} wallets" in out[2]
     warning = "as of last complete fetch"
-    assert (warning in p["ftiles"]) == (not data["scope"]["complete"]), "headline coverage warning incorrect"
+    assert (warning in p["ftiles"]) == (not own), "headline coverage warning incorrect"
 
 
 def check_headline_windows():
@@ -195,8 +201,11 @@ def check_headline_windows():
             for key in ("usd", "n", "wallets"):
                 group[key] = 0
         fixture["scope"]["complete"] = complete
+        fixture["scope"].setdefault("source_coverage",{})["treasury_complete"] = complete
         cases.append(fixture)
     nonzero = copy.deepcopy(data)
+    nonzero["scope"]["complete"] = True
+    nonzero["scope"].setdefault("source_coverage",{})["treasury_complete"] = True
     nonzero["facts"]["windows"][0]["groups"]["skill_rewards"]["usd"] = 1
     nonzero["facts"]["windows"][0]["groups"]["credit_grants"]["usd"] = 2
     cases.append(nonzero)
@@ -210,7 +219,7 @@ def check_headline_windows():
         assert not result["uncaught"] and not result["renderErrors"], "headline fixture degraded"
         assert _banner(result, "loadBanner").get("removed"), "headline fixture kept loading banner"
         _checks_headline(result["probe"], fixture)
-        if not fixture["facts"]["windows"][0]["out_usd"]:
+        if fixture["scope"].get("source_coverage",{}).get("treasury_complete",fixture["scope"]["complete"]) and not fixture["facts"]["windows"][0]["out_usd"]:
             assert re.search(r'<div class="v">\$0(?:\.0+)?</div>', result["probe"]["ftiles_html"]), "zero window did not render a zero dollar value"
     print("ok headline windows: zero/nonzero subtitles match data; incomplete coverage warning retained")
     return 0

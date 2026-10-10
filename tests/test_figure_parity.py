@@ -21,6 +21,10 @@ prints the diff and exits 0.
   python3 tests/test_figure_parity.py [BASE_REF]      (default origin/main)
 """
 import os
+import copy
+import datetime
+import json
+import re
 from collections import Counter
 import subprocess
 import sys
@@ -57,6 +61,65 @@ def display_canonical(multiset):
     return out
 
 
+FRESHNESS_PROBE="""(()=>{const e=globalThis.__domshim.elements;return {tiles:e.get('ftiles')?.innerHTML||'',note:e.get('dailyCoverage')?.textContent||'',hidden:e.get('dailyCoverage')?.hidden};})()"""
+
+def reviewed_freshness(base_result,work_result,data,now):
+    """Authenticate the exact reviewed writes before substituting baseline text."""
+    old=base_result['probe']['tiles'];new=work_result['probe']['tiles']
+    scope=data['scope'];own=scope.get('source_coverage',{}).get('treasury_complete',scope.get('complete') is not False)
+    stamp=scope.get('generated_iso') or ((scope.get('generated','').replace(' ','T')+':00Z') if scope.get('generated') else '')
+    saved=stamp.replace('T',' ').removesuffix('Z')+' UTC' if stamp else 'time unavailable'
+    expected=old
+    if 'saved as of ' not in old:
+        cards=old.split('<div class="tile"')
+        assert len(cards)==7,'headline shape changed'
+        for i,card in enumerate(cards[1:],1):
+            if '<div class="k">Wallet balance</div>' in card:
+                card=card.replace("What this wallet holds right now, at today's token price.","Saved on-chain balance, valued at the saved financial snapshot’s token prices.")
+                card=re.sub(r'(<div class="d">)(.*?)(</div>)',lambda m:m[1]+m[2]+' · saved as of '+saved+m[3],card,count=1)
+            if not own and any('<div class="k">'+label+'</div>' in card for label in ('Outflow — 24h','Inflow — 24h')):
+                card=re.sub(r'(<div class="v">).*?(</div>)',r'\1Unavailable\2',card,count=1)
+                card=re.sub(r'(<div class="d">).*?(</div>)',r'\1Coverage incomplete — this is not a verified zero.\2',card,count=1)
+            if own:
+                card=card.replace('<div style="font-size:11px;color:var(--warn);margin-top:4px">⚠ as of last complete fetch</div>','')
+            cards[i]=card
+        expected='<div class="tile"'.join(cards)
+    assert new==expected,'unreviewed headline write differs from exact expected freshness change'
+    note=work_result['probe']['note'];old_note=base_result['probe']['note']
+    if not own:
+        recorded=str(data['facts'].get('range',{}).get('to','')).replace('T',' ').removesuffix('Z')
+        days=sorted(x['d'] for x in data['facts'].get('daily',[]) if re.fullmatch(r'\d{4}-\d{2}-\d{2}',x['d']))
+        today=datetime.datetime.fromtimestamp(now/1000,datetime.timezone.utc).date().isoformat()
+        next_day=(datetime.date.fromisoformat(days[-1])+datetime.timedelta(days=1)).isoformat() if days else None
+        missing=(next_day if next_day==today else next_day+' through '+today) if next_day and next_day<=today else today
+        wanted='Recorded transfers through '+(recorded+' UTC' if recorded else 'an unavailable time')+'. '+missing+' UTC: coverage not verified; missing days are unknown, not zero. Existing rows remain saved history; recent totals may be incomplete.'
+        assert note==wanted and work_result['probe']['hidden'] is False,'daily unknown note is not exact or visible'
+    else:
+        assert not note and work_result['probe']['hidden'] is True,'complete daily note should be hidden'
+    result=copy.deepcopy(work_result)
+    replaced=0
+    for write in result['dump']['writes']:
+        if write.get('html')==new:
+            write['html']=old;replaced+=1
+        if 'text' in write and write['text']==note and note!=old_note:
+            write['text']=old_note
+    assert replaced==1,'headline fragment not uniquely identified'
+    return result
+
+
+def assert_mutations_rejected(pages,data,now,res):
+    # A mutation to an unrelated balance or daily total must still fail this gate.
+    mutated=copy.deepcopy(res[1]);mutated['probe']['tiles']=mutated['probe']['tiles'].replace('<div class="v">','$999 MUTATED ',1)
+    try:reviewed_freshness(res[0],mutated,data,now)
+    except AssertionError:pass
+    else:raise AssertionError('unrelated wallet balance mutation escaped parity')
+    baseline=display_canonical(P.digit_multiset(pages[0],res[0]))
+    altered=reviewed_freshness(res[0],res[1],data,now)
+    candidate=next(w for w in altered['dump']['writes'] if 'html' in w and 'height:10px;background:' in w['html'])
+    candidate['html']+=' <span>$999999 unrelated daily mutation</span>'
+    assert display_canonical(P.digit_multiset(pages[1],altered))!=baseline,'unrelated daily figure escaped parity'
+
+
 def main():
     if not P.have_node():
         if os.environ.get("CI"):
@@ -77,9 +140,20 @@ def main():
     data = open(os.path.join(P.ROOT, "data.json")).read()
     now = P.generated_ms(data) + 5 * 60000
     pages = [P.build_from_template(base), P.build_from_template(work)]
-    res = [P.run(pg, data, [{"now": now}])[0] for pg in pages]
+    res = [P.run(pg, data, [{"now": now,"probe":FRESHNESS_PROBE}])[0] for pg in pages]
     for name, r in zip((ref, "working"), res):
         assert not r["uncaught"], f"{name} template raised on real data: {r['uncaught']}"
+    for own,overall in ((True,True),(True,False),(False,False)):
+        fixture=json.loads(data)
+        fixture['scope']['complete']=overall
+        fixture['scope'].setdefault('source_coverage',{})['treasury_complete']=own
+        trials=[P.run(pg,json.dumps(fixture),[{"now":now,"probe":FRESHNESS_PROBE}])[0] for pg in pages]
+        assert all(not r['uncaught'] and not r['renderErrors'] for r in trials),'freshness parity fixture degraded'
+        normalized=reviewed_freshness(trials[0],trials[1],fixture,now)
+        assert display_canonical(P.digit_multiset(pages[0],trials[0]))==display_canonical(P.digit_multiset(pages[1],normalized)),'freshness fixture moved unrelated figures'
+        assert_mutations_rejected(pages,fixture,now,trials)
+    assert_mutations_rejected(pages,json.loads(data),now,res)
+    res[1]=reviewed_freshness(res[0],res[1],json.loads(data),now)
     a, b = (display_canonical(P.digit_multiset(pg, r)) for pg, r in zip(pages, res))
     only_a, only_b = a - b, b - a
     print(f"{ref}: {sum(a.values())} digit-bearing text nodes · working: {sum(b.values())}")
