@@ -195,6 +195,30 @@ PRIVATE = [
 ]
 
 
+def _pending_stamps():
+    import glob,hashlib,re
+    from public_scan import validate_store
+    validate_store(os.path.join(HERE,"pending_scans"))
+    stamps=[]
+    for manifest in glob.glob(os.path.join(HERE,"pending_scans","*.json")):
+        with open(manifest) as document:
+            state=json.load(document)
+        sid=os.path.basename(manifest)[:-5]
+        if not re.fullmatch(r"[0-9a-f]{16}",sid):
+            raise ValueError("invalid public pending manifest")
+        for part in state["chunks"]:
+            if not re.fullmatch(r"\d+-\d+\.json",part["file"]):
+                raise ValueError("invalid pending chunk path")
+            with open(os.path.join(HERE,"pending_scans",sid,part["file"]),"rb") as chunk:
+                raw=chunk.read()
+            if "0x"+hashlib.sha256(raw).hexdigest()!=part["checksum"]:
+                raise ValueError("pending chunk checksum mismatch")
+    for path in glob.glob(os.path.join(HERE,"pending_scans","*","*.json")):
+        with open(path) as rows:
+            stamps.extend(r["timestamp"][:19] for r in json.load(rows))
+    return stamps
+
+
 def build_entries():
     gen = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     out = []
@@ -202,7 +226,18 @@ def build_entries():
     # store — their "rows" is 1 by definition, and their coverage is the range
     # they summarise (measure() returns that range's endpoints).
     SINGLE_DOC = {"data", "coupon_data"}
-    for d in PUBLIC:
+    datasets = list(PUBLIC)
+    import glob
+    pending_files = sorted(glob.glob(os.path.join(HERE,"pending_scans","*.json"))
+                           + glob.glob(os.path.join(HERE,"pending_scans","*","*.json")))
+    if pending_files:
+        datasets.append(dict(name="pending_scans",path=[os.path.relpath(p,HERE) for p in pending_files],
+            kind="ledger",live=True,measure=_pending_stamps,
+            row_schema="unpromoted public transfer rows; manifest descriptor/start/through/hash/timestamp/target/complete/chunks",
+            expected_cadence_minutes=30,update_cadence="bounded existing refresh runs",
+            provenance="finality-lagged public eth_getLogs; verified range and block anchor; atomic chunk/checkpoint staging",
+            not_included="excluded from financial metrics until the complete requested leg is verified"))
+    for d in datasets:
         stamps = d["measure"]()
         rows, rows_closed, lo, hi = _measured([s for s in stamps if s])
         out.append({

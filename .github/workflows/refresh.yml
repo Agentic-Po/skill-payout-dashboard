@@ -165,6 +165,18 @@ jobs:
             [ "$i" = 3 ] && exit 1
             sleep $((i*10))
           done
+      - name: Require complete chain coverage for healthy success
+        id: coverage
+        run: |
+          python3 - <<'PY_COVERAGE'
+          import json
+          from public_scan import require_coverage
+          with open('data.json') as source:
+              data = json.load(source)
+          with open('coupon_data.json') as source:
+              coupon = json.load(source)
+          require_coverage(data, coupon)
+          PY_COVERAGE
       # External dead-man's switch: healthchecks.io expects this ping hourly
       # and alerts when it goes silent — the only leg that catches GitHub's
       # own scheduler stalling (2026-08-26: 8h account-wide cron stall).
@@ -238,9 +250,11 @@ jobs:
             "${{ steps.size.outcome }}")         GATE="oversized-file guard" ;;
             "${{ steps.sanity.outcome }}")       GATE="sanity gate (independent recompute)"; DETAIL="$SANITY_SUMMARY" ;;
             "${{ steps.commit.outcome }}")       GATE="commit and push" ;;
+            "${{ steps.coverage.outcome }}")     GATE="chain coverage incomplete"; TIER="PAGE"; DETAIL="Last saved finance and verified pending scan published; catch-up continues through existing runs." ;;
             "${{ steps.alive.outcome }}")        GATE="alert liveness (send path dead)"; TIER="PAGE" ;;
           esac
           if [ "$TIER" = "BLOCK" ]; then WHAT="nothing published this run"; else WHAT="data published, alert delivery is failing"; fi
+          if [ "$GATE" = "chain coverage incomplete" ]; then WHAT="partial chain scan published; current financial coverage unavailable"; fi
           curl -s -o /dev/null "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             --data-urlencode text="🔴 ${TIER} · Skill Payout Dashboard: ${GATE} failed — ${WHAT}. ${DETAIL} Check https://github.com/${{ github.repository }}/actions" || true

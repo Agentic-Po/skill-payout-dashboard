@@ -50,7 +50,7 @@ def make_ns(behaviour):
     fake = type("U", (), {"Request": Req, "urlopen": staticmethod(urlopen)})
     ns = {"json": json, "Counter": Counter, "RPC_ENDPOINTS": urls,
           "urllib": type("urllib", (), {"request": fake}),
-          "_RPC_BATCH_SKIPS": Counter(), "_RPC_BATCH_LOG_MAX": 5}
+          "_network_timeout":lambda cap:cap, "_RPC_BATCH_SKIPS": Counter(), "_RPC_BATCH_LOG_MAX": 5}
     exec(fns["_rpc_batch_skip"], ns)
     exec(fns["rpc_batch"], ns)
     return ns

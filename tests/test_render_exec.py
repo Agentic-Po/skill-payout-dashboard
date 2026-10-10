@@ -200,6 +200,11 @@ def check_headline_windows():
     nonzero["facts"]["windows"][0]["groups"]["skill_rewards"]["usd"] = 1
     nonzero["facts"]["windows"][0]["groups"]["credit_grants"]["usd"] = 2
     cases.append(nonzero)
+    last_good = copy.deepcopy(nonzero)
+    last_good['scope']['complete'] = False
+    last_good['scope']['build_generated_iso'] = '2099-01-01T00:00:00Z'
+    last_good['scope']['source_coverage'] = {'finance_current':False,'pending':[{'complete':False}]}
+    cases.append(last_good)
     for fixture in cases:
         result = P.run(page, json.dumps(fixture), [{"probe": PROBE}])[0]
         assert not result["uncaught"] and not result["renderErrors"], "headline fixture degraded"

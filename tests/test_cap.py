@@ -190,10 +190,26 @@ def main():
     got_breach = any("CAP BREACH" in str(section) for section in secs)
     assert got_breach == expected_breach, "real reward cap result disagrees with measured clock-hour units"
     pr = cd.probe(sw, now)
-    assert pr["rows"] >= 100 and pr["cap_usd"] == CAP_USD_PER_CREATOR_HOUR, "real reward probe missing or inconsistent"
+    assert len(rr) >= 100, "real historical reward fixture missing"
+    expected_counts = {"rows": sum(r["ts"] >= now-timedelta(hours=25) for r in rr),
+                       "rows_24h": sum(r["ts"] > now-timedelta(hours=24) for r in rr),
+                       "rows_7d": sum(r["ts"] >= now-timedelta(days=7) for r in rr)}
+    assert all(pr[k] == n for k,n in expected_counts.items()), "real reward probe disagrees with source-matched windows"
+    assert pr["cap_usd"] == CAP_USD_PER_CREATOR_HOUR, "real probe cap changed"
     tbl = cd.cap_table(sw)
-    assert tbl and all("clock" not in v for v in tbl.values())
-    print("ok real shards: measured cap parity and populated private probe")
+    expected_creators = {r["to"] for r in rr if r["ts"] >= now-timedelta(days=7)}
+    assert set(tbl) == expected_creators and all("clock" not in v for v in tbl.values())
+    if not expected_counts["rows"]:
+        assert not got_breach and pr["top_clock_units_24h"] == 0 and pr["creators_1h"] == 0, "empty real window invented cap activity"
+    print("ok real shards: measured cap parity, exact source-window probe counts and private table membership")
+    # An empty window still emits a real heartbeat, with no invented cap hits.
+    empty_sw = cd.sweep([],NOW)
+    empty_probe = cd.probe(empty_sw,NOW)
+    empty_sections, _ = cd.evaluate(empty_sw,{},NOW)
+    assert not empty_sections and cd.cap_table(empty_sw) == {}
+    assert all(empty_probe[k] == 0 for k in ("rows","rows_24h","rows_7d","creators_1h","top_units_1h","n_at_cap"))
+    assert empty_probe["cap_usd"] == CAP_USD_PER_CREATOR_HOUR and empty_probe["ts"] == cd._iso(NOW)
+    print("ok empty reward window: truthful zero heartbeat, no cap hits or private creator rows")
 
     # 9. message hygiene: 25 fan-out sections + one 🔴 runway section compose
     # under 4000 chars with the 🔴 kept first (C1 is 🟠 since loop 2 — WARN)

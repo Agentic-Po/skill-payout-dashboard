@@ -29,7 +29,7 @@ def _env():
     return env
 
 
-def fetch():
+def fetch(timeout=60):
     env = _env()
     key = env.get("POSTHOG_API_KEY")
     if not key:
@@ -41,7 +41,7 @@ def fetch():
         req = urllib.request.Request(f"{host}/api/projects/{project}/query/",
             data=json.dumps({"query": {"kind": "HogQLQuery", "query": q}}).encode(),
             headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=60) as r:
+        with urllib.request.urlopen(req, timeout=timeout() if callable(timeout) else timeout) as r:
             return json.load(r).get("results", [])
 
     cache = json.load(open(CACHE)) if os.path.exists(CACHE) else {"daily": {}}
