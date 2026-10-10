@@ -267,12 +267,17 @@ def rpc(method, params, tries=3):
                     headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (skill-payout-dashboard/1.0; polite crawler)"})
                 with urllib.request.urlopen(req, timeout=_network_timeout(min(20, max(0.01, scanner.deadline-scanner.clock())) if scanner and scanner.deadline is not None else 20)) as r:
                     res = json.load(r)
+                if not isinstance(res,dict):
+                    last_err = RuntimeError("public RPC returned invalid envelope")
+                    break
                 if res.get("error"):
-                    limited |= _rpc_range_error(res["error"].get("message", ""))
+                    error = res["error"]
+                    limited |= _rpc_range_error(error.get("message", "")) if isinstance(error,dict) else False
                     last_err = RuntimeError("public RPC rejected request")
                     break
                 if res.get("result") is not None:
-                    if method == "eth_getLogs" and not isinstance(res["result"], list):
+                    if method == "eth_getLogs" and (not isinstance(res["result"],list)
+                            or any(not isinstance(log,dict) for log in res["result"])):
                         last_err = RuntimeError("public RPC returned invalid logs")
                         break
                     globals().setdefault("_RPC_GOOD_ENDPOINTS", {})[method] = url
@@ -281,7 +286,10 @@ def rpc(method, params, tries=3):
                 break
             except urllib.error.HTTPError as e:
                 try:
-                    error = json.loads(e.read()).get("error", {})
+                    envelope = json.loads(e.read())
+                    error = envelope.get("error",{}) if isinstance(envelope,dict) else {}
+                    if not isinstance(error,dict):
+                        error = {}
                 except (ValueError, UnicodeError):
                     error = {}
                 limited |= (e.code == 413 or _rpc_range_error(error.get("message", "")))

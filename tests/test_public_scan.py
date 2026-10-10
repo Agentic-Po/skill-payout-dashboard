@@ -27,6 +27,29 @@ class ScanTests(unittest.TestCase):
    self.assertTrue(P._status_adjacent('data.json',json.dumps({'wallet':wallet,token:1})))
   with self.assertRaises(S.ScanIncomplete):S.require_coverage(document)
 
+ def test_malformed_log_shapes_are_invalid_before_materialization_or_checkpoint(self):
+  import copy
+  with tempfile.TemporaryDirectory() as root:
+   scanner,_,_=self.setup_scan(root);original=scanner.rpc;valid=original('eth_getLogs',[{'fromBlock':'0xa','toBlock':'0xb'}])[0]
+   variants=['not a log',None,[valid,'not a log']]
+   for field,value in (('topics',None),('topics',[None]*3),('topics','abc'),('address',None),('transactionHash',None),('blockNumber','not hex'),('logIndex',None),('data',{}),('removed','false')):
+    log=copy.deepcopy(valid);log[field]=value;variants.append(log)
+   for log in variants:
+    scanner,_,_=self.setup_scan(root);network=scanner.rpc;materialized=[]
+    scanner.rpc=lambda method,params: (log if isinstance(log,list) else [log]) if method=='eth_getLogs' else network(method,params)
+    scanner.materialize=lambda logs:materialized.append(logs)
+    with self.assertRaises(S.ScanInvalid):scanner.scan(W,'from',[T],10,42,chunk=2)
+    self.assertFalse(materialized);self.assertFalse(os.path.exists(root) and os.listdir(root))
+ def test_semantic_log_filter_mismatch_still_invalid(self):
+  with tempfile.TemporaryDirectory() as root:
+   scanner,_,_=self.setup_scan(root);network=scanner.rpc
+   def wrong(method,params):
+    result=network(method,params)
+    if method=='eth_getLogs':result[0]['address']='0x'+'9'*40
+    return result
+   scanner.rpc=wrong
+   with self.assertRaises(S.ScanInvalid):scanner.scan(W,'from',[T],10,42,chunk=2)
+   self.assertFalse(os.listdir(root))
  def setup_scan(self,root,limit=None,fail_shape=False):
   clock=[0];calls=[]
   def rpc(method,params):

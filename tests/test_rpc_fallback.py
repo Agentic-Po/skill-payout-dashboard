@@ -32,6 +32,33 @@ class RpcFallback(unittest.TestCase):
         exec(CODE,ns)
         return ns
 
+    def test_malformed_log_elements_fail_over_before_preference(self):
+        good={'blockNumber':'0xa','transactionHash':'0x'+'1'*64,'logIndex':'0x0','topics':['0x'+'2'*64]*3,'address':'0x'+'3'*40,'data':'0x1'}
+        for malformed in (['not a log'],[good,'not a log'],[None]):
+            ns=self.ns({'https://bad.invalid':{'result':malformed},'https://ok.invalid':{'result':[good]}})
+            self.assertEqual(ns['rpc']('eth_getLogs',[],tries=1),[good]);self.assertEqual(ns['_RPC_GOOD_ENDPOINTS']['eth_getLogs'],'https://ok.invalid');self.assertEqual(ns['_RPC_CALLS'][0],2)
+    def test_all_malformed_logs_fail_without_range_shrink_or_preference(self):
+        ns=self.ns({'https://bad.invalid':{'result':['not a log']}})
+        with self.assertRaises(RuntimeError) as error:ns['rpc']('eth_getLogs',[],tries=1)
+        self.assertNotIsInstance(error.exception,ns['RpcRangeError']);self.assertNotIn('eth_getLogs',ns.get('_RPC_GOOD_ENDPOINTS',{}));self.assertEqual(ns['LOGS_CHUNK'],[2000])
+    def test_http_error_nonobject_json_and_error_values_fail_over(self):
+        for payload in ('not an envelope',[],{'error':'not an error object'}):
+            def failure():return urllib.error.HTTPError('https://bad.invalid',500,'failed',{},io.BytesIO(json.dumps(payload).encode()))
+            ns=self.ns({'https://bad.invalid':failure,'https://ok.invalid':{'result':[]}})
+            self.assertEqual(ns['rpc']('eth_getLogs',[],tries=1),[]);self.assertEqual(ns['_RPC_GOOD_ENDPOINTS']['eth_getLogs'],'https://ok.invalid')
+    def test_nonobject_success_envelope_and_error_values_fail_over(self):
+        for payload in ('not an envelope',[],{'error':'not an error object'}):
+            ns=self.ns({'https://bad.invalid':payload,'https://ok.invalid':{'result':[]}})
+            self.assertEqual(ns['rpc']('eth_getLogs',[],tries=1),[])
+    def test_scanner_typed_invalid_blocks_global_promotion(self):
+        from public_scan import ScanInvalid
+        ns=self.ns({})
+        def rpc(method,params):
+            if method=='eth_blockNumber':return hex(42)
+            return ['not a log']
+        ns['rpc']=rpc
+        with self.assertRaises(ScanInvalid):ns['rpc_transfer_fallback']('0x'+'1'*40,'from',['0x'+'2'*40],10,12)
+        self.assertTrue(ns['_RPC_SCAN_INVALID']);self.assertIsNone(ns['_RPC_LAST_THROUGH']);self.assertTrue(all(not leg['complete'] for leg in ns['_PUBLIC_SCANNER'].last.values()))
     def test_http400_range_survives_later403(self):
         def range_error():return urllib.error.HTTPError('https://range.invalid',400,'range',{},io.BytesIO(b'{"error":{"message":"ranges over 10000 blocks unsupported"}}'))
         ns=self.ns({'https://range.invalid':range_error,'https://down.invalid':lambda:urllib.error.HTTPError('https://down.invalid',403,'blocked',{},io.BytesIO(b'blocked'))})

@@ -135,7 +135,18 @@ class PublicScanner:
             if not isinstance(logs,list):
                 raise ScanInvalid('invalid log result')
             for log in logs:
-                ls=log.get('topics',[])
+                if not isinstance(log,dict):
+                    raise ScanInvalid('invalid log object')
+                ls=log.get('topics')
+                if (not isinstance(ls,list) or len(ls)!=3
+                        or any(not isinstance(topic,str) or not re.fullmatch(r'0x[0-9a-fA-F]{64}',topic) for topic in ls)
+                        or not isinstance(log.get('address'),str)
+                        or not re.fullmatch(r'0x[0-9a-fA-F]{40}',log['address'])
+                        or not isinstance(log.get('transactionHash'),str)
+                        or not re.fullmatch(r'0x[0-9a-fA-F]{64}',log['transactionHash'])
+                        or any(not isinstance(log.get(field),str) or not re.fullmatch(r'0x[0-9a-fA-F]+',log[field]) for field in ('blockNumber','logIndex','data'))
+                        or ('removed' in log and not isinstance(log['removed'],bool))):
+                    raise ScanInvalid('invalid Transfer log shape')
                 index=1 if direction=='from' else 2
                 if (len(ls)!=3 or ls[0].lower()!=TRANSFER_TOPIC or ls[index].lower()!=topic_wallet
                         or log.get('removed') or log.get('address','').lower() not in desc['tokens']
