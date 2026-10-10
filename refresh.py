@@ -82,7 +82,7 @@ if OFFLINE:
 def utcnow():
     """Pipeline clock: pinned to the previous run's generated_iso when
     --offline (see above), wall clock otherwise."""
-    return _PINNED_NOW if OFFLINE else datetime.now(timezone.utc)
+    return _PINNED_NOW if OFFLINE else globals().get("_FINANCE_NOW", datetime.now(timezone.utc))
 WALLET = "0xBD956171F5B50936f0Ad1C4db80c022bd2442519"
 BASE = f"https://base.blockscout.com/api/v2/addresses/{WALLET}/token-transfers?filter=from"
 TOKENS = {
@@ -171,17 +171,42 @@ def write_state(label):
 _V2_FAILS = [0]
 V2_TRIP = 2
 
+_NETWORK_DEADLINE = None
+_MARKET_DEADLINE = None
+
+def _network_timeout(cap, market=False):
+    """One acquisition budget across v2, RPC, quotes and product-source reads."""
+    global _NETWORK_DEADLINE, _MARKET_DEADLINE
+    from public_scan import BudgetExpired
+    if market:
+        if _MARKET_DEADLINE is None:
+            _MARKET_DEADLINE = time.monotonic() + 60
+        remaining = _MARKET_DEADLINE - time.monotonic()
+    else:
+        if _NETWORK_DEADLINE is None:
+            _NETWORK_DEADLINE = time.monotonic() + 240
+        remaining = _NETWORK_DEADLINE - time.monotonic()
+    if remaining <= 0:
+        raise BudgetExpired("online acquisition budget exhausted")
+    return min(cap,remaining)
+
+
+def _network_sleep(seconds, market=False):
+    time.sleep(_network_timeout(seconds,market=market))
+
+
 def get(url, tries=4):
     # Scoped to Blockscout v2 ONLY. get() is also the GeckoTerminal and
     # DexScreener client, and those are unrelated services — a v2 outage must
     # not shorten their retries, nor their failures trip v2's breaker.
     v2 = "base.blockscout.com/api/v2/" in url
+    market = "api.geckoterminal.com/" in url
     if v2 and _V2_FAILS[0] >= V2_TRIP:
         tries = 1                  # v2 already proven down this run — no waiting
     for a in range(tries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "curl/8.4.0", "Accept": "application/json"})
-            with urllib.request.urlopen(req, timeout=60) as r:
+            with urllib.request.urlopen(req, timeout=_network_timeout(5 if v2 else 10 if market else 60,market=market)) as r:
                 out = json.load(r)
             if v2:
                 _V2_FAILS[0] = 0   # v2 answered — re-arm the full ladder
@@ -194,7 +219,7 @@ def get(url, tries=4):
                         print("Blockscout v2 failed twice — fast-failing v2 for the rest "
                               "of this run; every leg still uses its eth_getLogs fallback")
                 raise
-            time.sleep(2 * (a + 1))
+            _network_sleep(2 * (a + 1),market=market)
 
 def key(i):
     return f"{i['transaction_hash']}:{i['log_index']}"
@@ -228,13 +253,19 @@ def rpc(method, params, tries=3):
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
     last_err = RuntimeError("public RPC unavailable")
     limited = False
-    for url in RPC_ENDPOINTS:
+    preferred = globals().setdefault("_RPC_GOOD_ENDPOINTS", {}).get(method)
+    endpoints = ([preferred] if preferred in RPC_ENDPOINTS else []) + [u for u in RPC_ENDPOINTS if u != preferred]
+    for url in endpoints:
         for a in range(tries):
+            scanner = globals().get("_PUBLIC_SCANNER")
+            if scanner and scanner.expired():
+                from public_scan import BudgetExpired
+                raise BudgetExpired("public scan budget exhausted")
             _RPC_CALLS[0] += 1
             try:
                 req = urllib.request.Request(url, data=payload,
                     headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (skill-payout-dashboard/1.0; polite crawler)"})
-                with urllib.request.urlopen(req, timeout=20) as r:
+                with urllib.request.urlopen(req, timeout=_network_timeout(min(20, max(0.01, scanner.deadline-scanner.clock())) if scanner and scanner.deadline is not None else 20)) as r:
                     res = json.load(r)
                 if res.get("error"):
                     limited |= _rpc_range_error(res["error"].get("message", ""))
@@ -244,6 +275,7 @@ def rpc(method, params, tries=3):
                     if method == "eth_getLogs" and not isinstance(res["result"], list):
                         last_err = RuntimeError("public RPC returned invalid logs")
                         break
+                    globals().setdefault("_RPC_GOOD_ENDPOINTS", {})[method] = url
                     return res["result"]
                 last_err = RuntimeError("public RPC returned empty result")
                 break
@@ -257,11 +289,11 @@ def rpc(method, params, tries=3):
                 if 400 <= e.code < 500 and e.code != 429:
                     break
                 if a < tries - 1:
-                    time.sleep(1)
+                    _network_sleep(min(1, max(0, scanner.deadline-scanner.clock())) if scanner and scanner.deadline is not None else 1)
             except Exception:
                 last_err = RuntimeError("public RPC unavailable")
                 if a < tries - 1:
-                    time.sleep(1)
+                    _network_sleep(min(1, max(0, scanner.deadline-scanner.clock())) if scanner and scanner.deadline is not None else 1)
     if limited:
         raise RpcRangeError("public provider range limit")
     raise last_err
@@ -292,11 +324,16 @@ def rpc_batch(calls):
     payload = json.dumps([{"jsonrpc": "2.0", "id": n, "method": m, "params": p}
                           for n, (m, p) in enumerate(calls)]).encode()
     what = f"{len(calls)}x {calls[0][0] if calls else '-'}"
-    for url in RPC_ENDPOINTS:
+    preferred = globals().setdefault("_RPC_GOOD_ENDPOINTS", {}).get("batch")
+    endpoints = ([preferred] if preferred in RPC_ENDPOINTS else []) + [u for u in RPC_ENDPOINTS if u != preferred]
+    for url in endpoints:
+        scanner = globals().get("_PUBLIC_SCANNER")
+        if scanner and scanner.expired():
+            return {}
         try:
             req = urllib.request.Request(url, data=payload,
                 headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (skill-payout-dashboard/1.0; polite crawler)"})
-            with urllib.request.urlopen(req, timeout=60) as r:
+            with urllib.request.urlopen(req, timeout=_network_timeout(min(20, max(0.01, scanner.deadline-scanner.clock())) if scanner and scanner.deadline is not None else 20)) as r:
                 res = json.load(r)
             if not isinstance(res, list):
                 # provider does not do batches — next endpoint
@@ -308,6 +345,7 @@ def rpc_batch(calls):
                 _rpc_batch_skip("items-dropped", url, what, f"{len(calls) - len(out)} of {len(calls)} "
                                 "returned no result (left for the single-call fallback)")
             if out:
+                globals().setdefault("_RPC_GOOD_ENDPOINTS", {})["batch"] = url
                 return out
         except Exception as e:
             _rpc_batch_skip("error", url, what, f"{type(e).__name__}: {str(e)[:120]}")
@@ -352,7 +390,7 @@ def block_ts_prefetch(bns):
             if blk and blk.get("timestamp"):
                 _block_ts_cache[b] = _fmt_ts(blk["timestamp"])
         if n + 10 < len(todo):
-            time.sleep(0.1)     # same pacing courtesy as the eth_getLogs loop
+            _network_sleep(0.1)     # same pacing courtesy as the eth_getLogs loop
 
 def block_ts(bn):
     if bn not in _block_ts_cache:
@@ -401,65 +439,21 @@ def xcheck_done(name, blk):
     """Bank a completed scan. Monotonic: a leg that scanned less than a
     previous run (e.g. a to_block cap) must not move the cursor backwards."""
     if blk:
+        # Only completed fallback calls set this proof; partial scans raise
+        # before their callers can bank a head cursor.
+        proof = globals().get("_RPC_LAST_THROUGH")
+        if proof is not None:
+            blk = min(int(blk),proof)
         STATE["xcheck"][name] = max(STATE["xcheck"].get(name) or 0, int(blk))
 
-def rpc_transfer_fallback(wallet, direction, token_addrs, from_block, to_block=None,
-                          skip_keys=None):
-    """Fetch Transfer logs via eth_getLogs and shape them like Blockscout v2
-    items (only the fields shards.slim keeps). Addresses come back lowercase —
-    canonicalized against cached casing downstream.
-    to_block caps the scan below chain head (reorg lag); None = head.
-    skip_keys: tx:log_index keys the CALLER will discard anyway. Filtering them
-    here — before shaping — is what makes the cross-check cheap: shaping calls
-    block_ts(), one RPC round-trip per log, and in the steady state every log
-    in the window is already cached. Callers that need every log (the outage
-    fallback for the uncached sink) simply pass nothing. This cannot change any
-    caller's result: every current caller filters on exactly these keys."""
-    topic_w = "0x" + "0" * 24 + wallet[2:].lower()
-    topics = ([TRANSFER_TOPIC, topic_w] if direction == "from"
-              else [TRANSFER_TOPIC, None, topic_w])
-    latest = to_block or int(rpc("eth_blockNumber", []), 16)
-    t_leg, calls0 = time.time(), _RPC_CALLS[0]
-    logs, start, chunk = [], from_block, LOGS_CHUNK[0]
-    while start <= latest:
-        end = min(start + chunk - 1, latest)
-        try:
-            logs += rpc("eth_getLogs", [{"fromBlock": hex(start), "toBlock": hex(end),
-                                         "address": token_addrs, "topics": topics}])
-        except RpcRangeError:
-            if chunk == 1:
-                raise
-            chunk = max(1, chunk // 2)  # retry only a proven range refusal
-            # A6: remember the narrower span for every later leg this run —
-            # the range cap is a property of the provider, not of this leg.
-            LOGS_CHUNK[0] = min(LOGS_CHUNK[0], chunk)
-            continue
-        start = end + 1
-        time.sleep(0.2)
-    _dt = time.time() - t_leg
-    _n_calls = _RPC_CALLS[0] - calls0
-    print(f"eth_getLogs {direction} {wallet[:8]}… blocks {from_block:,}-{latest:,} "
-          f"({latest - from_block + 1:,}): {len(logs)} log(s) · {_n_calls} rpc call(s) · {_dt:.1f}s"
-          + (f" · SLOW (>{XCHECK_WARN_S}s) — check the RPC range cap / endpoint health"
-             if _dt > XCHECK_WARN_S else ""))
-    # Two passes, deliberately. Pass 1 drops everything the caller will discard
-    # (skip_keys) and everything malformed, so pass 2 shapes only rows that
-    # survive. Between them, one batched prefetch warms every block timestamp
-    # the surviving rows need — turning N sequential eth_getBlockByNumber calls
-    # into ceil(N/100) round-trips.
-    keep = []
-    for lg in logs:
-        if lg.get("removed") or len(lg.get("topics", [])) < 3:
-            continue
-        # key() shape, computed from the raw log — no RPC needed. Drop
-        # already-known logs BEFORE block_ts() below, which is the expensive part.
-        if skip_keys is not None and \
-                f"{lg['transactionHash']}:{int(lg['logIndex'], 16)}" in skip_keys:
-            continue
-        keep.append(lg)
-    block_ts_prefetch(int(lg["blockNumber"], 16) for lg in keep)
+_PUBLIC_SCANNER = None
+_RPC_LAST_THROUGH = None
+_LAST_GOOD_SECTION_CLOCKS = {}
+
+def _shape_rpc_transfers(logs):
+    block_ts_prefetch(int(lg["blockNumber"], 16) for lg in logs)
     items = []
-    for lg in keep:
+    for lg in logs:
         bn = int(lg["blockNumber"], 16)
         items.append({"timestamp": block_ts(bn),
                       "transaction_hash": lg["transactionHash"],
@@ -471,6 +465,42 @@ def rpc_transfer_fallback(wallet, direction, token_addrs, from_block, to_block=N
                       "total": {"value": str(int(lg["data"], 16)), "decimals": None}})
     items.sort(key=lambda i: i["timestamp"], reverse=True)
     return items
+
+
+def _public_leg(wallet,direction,token_addrs):
+    """Declare a required source before bootstrap; failed head cannot look healthy."""
+    global _PUBLIC_SCANNER
+    from public_scan import PublicScanner,descriptor,scan_id
+    if _PUBLIC_SCANNER is None:
+        _PUBLIC_SCANNER = PublicScanner(os.path.join(HERE,"pending_scans"),rpc,
+                                       _shape_rpc_transfers,RpcRangeError)
+    if _PUBLIC_SCANNER.deadline is None:
+        _PUBLIC_SCANNER.deadline = _PUBLIC_SCANNER.clock() + _PUBLIC_SCANNER.budget_seconds
+    desc = descriptor(wallet,direction,token_addrs)
+    sid = scan_id(desc)
+    _PUBLIC_SCANNER.last[sid] = {"descriptor":desc,"complete":False}
+
+
+def rpc_transfer_fallback(wallet, direction, token_addrs, from_block, to_block=None, skip_keys=None):
+    """Complete finalized leg only. Pending rows are banked separately."""
+    global _PUBLIC_SCANNER, _RPC_LAST_THROUGH
+    from public_scan import PublicScanner, descriptor, scan_id, BudgetExpired, ScanIncomplete, ScanInvalid
+    _public_leg(wallet,direction,token_addrs)
+    sid = scan_id(descriptor(wallet,direction,token_addrs))
+    try:
+        head = int(rpc("eth_blockNumber", []),16)
+    except BudgetExpired:
+        raise ScanIncomplete("bounded scan incomplete; last saved cache retained") from None
+    final_target = min(head-30,to_block) if to_block is not None else head-30
+    try:
+        items = _PUBLIC_SCANNER.scan(wallet,direction,token_addrs,from_block,final_target+30,
+                                     chunk=LOGS_CHUNK[0])
+    except ScanInvalid:
+        globals()["_RPC_SCAN_INVALID"] = True
+        raise
+    sid = scan_id(descriptor(wallet,direction,token_addrs))
+    _RPC_LAST_THROUGH = _PUBLIC_SCANNER.last[sid]["through"]
+    return [i for i in items if skip_keys is None or key(i) not in skip_keys]
 
 # --- incremental fetch: newest pages until we overlap the cache. If the page
 # cap is hit before overlap, the cache is NOT updated (a silent gap would
@@ -490,6 +520,7 @@ def refresh_cache(base_url, dir_path, pages=100, wallet=WALLET, token_addrs=None
     seen = {key(i) for i in old}
     newest = old[0]["timestamp"] if old else "2026-04-01"
     items, params, overlapped = [], "", False
+    finalized_through = None
     try:
         for _ in range(pages):
             d = get(base_url + params)
@@ -500,7 +531,7 @@ def refresh_cache(base_url, dir_path, pages=100, wallet=WALLET, token_addrs=None
                 break
             items += b
             params = "&" + "&".join(f"{k}={v}" for k, v in d["next_page_params"].items())
-            time.sleep(0.1)
+            _network_sleep(0.1)
     except Exception as e:
         # Blockscout v2 down — refetch the gap straight from the chain. Real
         # log indexes keep keys compatible, so dedup against the cache is safe.
@@ -513,6 +544,7 @@ def refresh_cache(base_url, dir_path, pages=100, wallet=WALLET, token_addrs=None
             direction = "to" if "filter=to" in base_url else "from"
             items = rpc_transfer_fallback(wallet, direction, token_addrs,
                                           newest_blk, to_block, skip_keys=seen)
+            finalized_through = _RPC_LAST_THROUGH
             overlapped = True
             print(f"fallback fetched {len(items)} logs for {dir_path} from block {newest_blk}")
         except Exception as e2:
@@ -534,12 +566,14 @@ def refresh_cache(base_url, dir_path, pages=100, wallet=WALLET, token_addrs=None
         # STATE-banked leg instead (see the coupon section) — one scan, once,
         # recorded, rather than an implicit full-history scan on every caller.
         newest_blk = max([i.get("block_number", 0) for i in old] + [0])
+        if not newest_blk and not from_block:
+            return old, 0, False
         if newest_blk:
             direction = "to" if "filter=to" in base_url else "from"
             # Cursor-resumed window (see xcheck_from): the old fixed 24h window
             # is the floor, so with no cursor this is byte-for-byte the old scan.
             _xname = os.path.basename(dir_path.rstrip(os.sep))
-            _xhead = to_block or int(rpc("eth_blockNumber", []), 16)
+            _xhead = to_block
             _xstart = xcheck_from(_xname, max(newest_blk - XCHECK_WINDOW, from_block, 1))
             xcheck = rpc_transfer_fallback(wallet, direction, token_addrs,
                                            _xstart, _xhead, skip_keys=got | seen)
@@ -552,9 +586,14 @@ def refresh_cache(base_url, dir_path, pages=100, wallet=WALLET, token_addrs=None
             # Bank ONLY after the scan returned and its extras were merged into
             # `items` — an exception above leaves the cursor where it was, so
             # the next run rescans rather than banking an unverified range.
-            xcheck_done(_xname, _xhead)
+            finalized_through = _RPC_LAST_THROUGH
+            xcheck_done(_xname, finalized_through)
     except Exception as e:
-        print(f"log cross-check skipped for {dir_path}: {e}")
+        print(f"log cross-check incomplete for {dir_path}: {e}")
+        return old, 0, False
+    # Promote only records covered by a completed finalized chain proof.
+    if finalized_through is not None:
+        items = [i for i in items if i.get("block_number", 0) <= finalized_through]
     add, _k = [], set()
     for i in items:
         k = key(i)
@@ -563,7 +602,12 @@ def refresh_cache(base_url, dir_path, pages=100, wallet=WALLET, token_addrs=None
             add.append(shards.slim(i))
     full = sorted(add + old, key=lambda i: i["timestamp"], reverse=True)
     if add:
-        shards.save(dir_path, full, months={shards.month_of(r) for r in add})
+        if dir_path in (os.path.join(HERE,"transfers"),os.path.join(HERE,"transfers_in")):
+            _TREASURY_STAGE.append((dir_path,full,{shards.month_of(r) for r in add}))
+        elif os.path.basename(dir_path) in ("coupon_out","coupon_in"):
+            _COUPON_STAGE.append((dir_path,full,{shards.month_of(r) for r in add}))
+        else:
+            shards.save(dir_path, full, months={shards.month_of(r) for r in add})
     return full, len(add), True
 
 if OFFLINE:
@@ -576,9 +620,22 @@ if OFFLINE:
     data_complete = bool(PREV["scope"].get("complete", True))
     print(f"OFFLINE: cache {len(full)} out / {len(full_in)} in, complete={data_complete} (carried from prior run)")
 else:
+    _TREASURY_STAGE = []
+    _treasury_old_out = shards.load(os.path.join(HERE,"transfers"))
+    _treasury_old_in = shards.load(os.path.join(HERE,"transfers_in"))
+    _treasury_old_xcheck = dict(STATE.get("xcheck",{}))
     full, n_new, ok_out = refresh_cache(BASE, os.path.join(HERE, "transfers"))
     full_in, n_new_in, ok_in = refresh_cache(BASE.replace("filter=from", "filter=to"), os.path.join(HERE, "transfers_in"), pages=60)
     data_complete = ok_out and ok_in
+    if data_complete:
+        for path, staged, months in _TREASURY_STAGE:
+            shards.save(path,staged,months=months)
+    else:
+        # Publication is a coherent last-good finance snapshot until BOTH
+        # direction legs complete. Pending rows/cursors remain public facts.
+        full,full_in = _treasury_old_out,_treasury_old_in
+        n_new=n_new_in=0
+        STATE["xcheck"] = _treasury_old_xcheck
     print(f"fetched {n_new} new OUT / {n_new_in} new IN, cache {len(full)} out / {len(full_in)} in, complete={data_complete}")
 
 phase("setup+treasury_crawl")
@@ -669,14 +726,14 @@ def balance_at(addr, sym, block="latest", holder=WALLET):
         try:
             req = urllib.request.Request(url, data=payload,
                 headers={"Content-Type": "application/json", "User-Agent": "curl/8.4.0"})
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=_network_timeout(30)) as r:
                 res = json.load(r).get("result")
             if res:
                 return int(res, 16) / 10 ** DECIMALS[sym]
             last_err = Exception(f"{url}: empty result (rate-limited?)")
         except Exception as e:
             last_err = e
-        time.sleep(1)
+        _network_sleep(1)
     raise last_err
 
 # Reconciliation values the balance AT a pinned block so transfers landing
@@ -808,7 +865,7 @@ try:
                         day = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d")
                         if day not in merged or v > merged[day][1]:
                             merged[day] = (c, v)
-                    time.sleep(0.5)
+                    _network_sleep(0.5,market=True)
                 except Exception as e:
                     print(sym, pool, "ohlcv failed:", e)
             for day, (c, v) in merged.items():
@@ -824,6 +881,14 @@ except Exception as e:
     print("market rate fetch failed:", e)
 
 phase("market_ohlcv")
+if not OFFLINE and not data_complete:
+    with open(os.path.join(HERE,"data.json")) as previous:
+        _LAST_GOOD = json.load(previous)
+    _FINANCE_NOW = datetime.strptime(_LAST_GOOD["scope"]["generated_iso"],"%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    RATE = dict(_LAST_GOOD["facts"]["rate"])
+    RATE_SRC = dict(_LAST_GOOD["facts"]["rate_src"])
+    BALANCE = dict(_LAST_GOOD["facts"]["balance"])
+    BALANCE_RECON = {sym:r.get("balance") for sym,r in _LAST_GOOD["facts"].get("recon",{}).items()}
 # --- day-anchored rate oracle ---
 # Persisted day rates are immutable. New (unseen) days are computed walking
 # BACKWARD from the most recent day — the live rate is a good anchor at the
@@ -1103,6 +1168,8 @@ if os.path.isdir(COG_DIR):
     # only after the rows are saved (a banked cursor over unsaved rows would
     # freeze a hole).
     _cog_scanned = [0]
+    if not OFFLINE:
+        _public_leg(COLLECTOR,"to",[TOKENS["MENTE"]["addr"]])
     def _cog_fallback(seen_c, newest_c):
         # cog rows carry no block number — estimate the resume block from the
         # newest cached timestamp (Base ≈ 2s blocks) minus a 24h safety margin
@@ -1111,6 +1178,7 @@ if os.path.isdir(COG_DIR):
         # This is by far the heaviest cross-check (~500 MENTE transfers/day into
         # the collector), so it gets the same cursor resume + skip_keys as the
         # transfer legs: the window below is the floor, never the ceiling.
+        _public_leg(COLLECTOR,"to",[TOKENS["MENTE"]["addr"]])
         latest_blk = int(rpc("eth_blockNumber", []), 16)
         age_s = (datetime.now(timezone.utc)
                  - datetime.fromisoformat(newest_c).replace(tzinfo=timezone.utc)).total_seconds()
@@ -1128,9 +1196,11 @@ if os.path.isdir(COG_DIR):
         seen_c = {i["transaction_hash"] + ":" + str(i["log_index"]) for i in cog}
         newest_c = cog[0]["ts"] if cog else "2026-04-01"
         params, got_c = "", []
+        _cog_v2_blocks = {}
         for _ in range(40):
             dd = get(f"https://base.blockscout.com/api/v2/addresses/{COLLECTOR}/token-transfers?filter=to" + params)
             b = dd.get("items", [])
+            _cog_v2_blocks.update({(i["transaction_hash"],i.get("log_index",0)):i.get("block_number",0) for i in b})
             stop = not b or not dd.get("next_page_params") or (cog and b[-1]["timestamp"][:19] < newest_c)
             got_c += [{"ts": i["timestamp"][:19], "val": int(i["total"]["value"]) / 10 ** int(i["total"].get("decimals") or DECIMALS["MENTE"]),
                        "from": i["from"]["hash"], "tx": i["transaction_hash"],
@@ -1139,16 +1209,18 @@ if os.path.isdir(COG_DIR):
                       and i["transaction_hash"] + ":" + str(i["log_index"]) not in seen_c]
             if stop: break
             params = "&" + "&".join(f"{k}={v}" for k, v in dd["next_page_params"].items())
-            time.sleep(0.1)
+            _network_sleep(0.1)
         # cross-check the trailing day against raw chain logs (v2 recovery holes)
         try:
             _seen_now = seen_c | {c["transaction_hash"] + ":" + str(c["log_index"]) for c in got_c}
             _extra = _cog_fallback(_seen_now, newest_c) if cog else []
+            got_c = [c for c in got_c if _cog_scanned[0] and _cog_v2_blocks.get((c["transaction_hash"],c["log_index"]),0) <= _RPC_LAST_THROUGH]
             if _extra:
                 print(f"cognition cross-check recovered {len(_extra)} row(s) missing from v2")
                 got_c += _extra
         except Exception as e:
-            print("cognition log cross-check skipped:", e)
+            print("cognition log cross-check incomplete; retaining saved rows:", e)
+            got_c = []
         if got_c:
             cog = sorted(got_c + cog, key=lambda i: i["ts"], reverse=True)
             shards.save(COG_DIR, cog, months={shards.month_of(c, "ts") for c in got_c}, ts_key="ts")
@@ -1192,6 +1264,12 @@ if os.path.isdir(COG_DIR):
                  "crawl_complete": bool(spends) and spends[-1]["ts"][:10] <= "2026-04-30",
                  "daily": [{"d": d0, "n": v["n"], "mente": round(v["mente"], 1), "minds": len(v["minds"])}
                            for d0, v in sorted(cog_daily.items())[-30:]]}
+
+if not OFFLINE and os.path.isdir(COG_DIR) and (not data_complete or not _cog_scanned[0]):
+    with open(os.path.join(HERE,"data.json")) as previous:
+        _saved_cognition = json.load(previous)
+        cognition = _saved_cognition.get("facts",{}).get("cognition")
+        _LAST_GOOD_SECTION_CLOCKS["cognition"] = _saved_cognition["scope"]["generated_iso"]
 
 phase("cognition")
 # --- Generation-1 economy: the SWARM era (closed history, computed from
@@ -1898,7 +1976,7 @@ if OFFLINE:
     server = PREV.get("server")
 else:
     try:
-        _ph = posthog_source.fetch()
+        _ph = posthog_source.fetch(timeout=lambda:_network_timeout(60))
     except Exception as _e:
         print("posthog tier unavailable:", _e)
         _ph = None
@@ -1992,6 +2070,8 @@ phase("guided_view")
 # are measured here so the handover (and the fact the loop no longer closes) is visible.
 SINK = "0xf0961686bC71B8A1f42E7888bD8160e9B6240f40"
 sink = None
+_sink_saved_rows = {direction:list(rows_) for direction,rows_ in STATE.get("sink",{}).get("rows",{}).items()}
+_sink_saved_xcheck = dict(STATE.get("xcheck",{}))
 try:
     if OFFLINE:
         raise RuntimeError("offline — sink/rebate reused from prior data.json below")
@@ -2018,6 +2098,7 @@ try:
         return {"ts": ts[:19], "val": val, "col": cp.lower() == COLLECTOR.lower(),
                 "blk": blk, "k": k}
     def _sweep(direction):
+        _public_leg(SINK,direction,[TOKENS["MENTE"]["addr"]])
         cached = _sink_st.get(direction) or []
         seen = {r["k"] for r in cached}
         # cached is stored newest-first; with an EMPTY cache newest is "" and the
@@ -2039,7 +2120,7 @@ try:
                 if not b or not dd.get("next_page_params") or (cached and b[-1]["timestamp"][:19] < newest):
                     break
                 params = "&" + "&".join(f"{k}={v}" for k, v in dd["next_page_params"].items())
-                time.sleep(0.1)
+                _network_sleep(0.1)
         except Exception as _e:
             # v2 down — go to the chain, but resume from the highest block this
             # leg has already SCANNED, not from genesis. Two candidates, take
@@ -2078,6 +2159,9 @@ try:
                                            max([r.get("blk", 0) for r in cached] + [0]) - XCHECK_WINDOW))
                 _tip = int(rpc("eth_blockNumber", []), 16) - SINK_XC_LAG
                 _xe = min(_tip, _xs + SINK_XC_BUDGET)
+                if _xe < _xs:
+                    from public_scan import ScanIncomplete
+                    raise ScanIncomplete("sink finalized coverage behind saved cursor")
                 if _xe >= _xs:
                     _have = seen | {r["k"] for r in acc}
                     _miss = [_sink_row(i["timestamp"],
@@ -2093,7 +2177,9 @@ try:
             except Exception as _xe_err:
                 # never let the cross-check blank the section: the cursor is
                 # untouched, so the next run retries the same span
-                print(f"sink {direction}: chain cross-check skipped this run ({type(_xe_err).__name__})")
+                print(f"sink {direction}: chain cross-check incomplete ({type(_xe_err).__name__})")
+                raise
+            acc = [r for r in acc if r.get("blk",0) <= _RPC_LAST_THROUGH]
         merged, _mk = list(cached), set(seen)
         for r in acc:
             if r["k"] not in _mk:
@@ -2199,6 +2285,18 @@ try:
 
 except Exception as e:
     print("sink fetch failed:", e)
+    if not OFFLINE:
+        STATE.setdefault("sink",{})["rows"] = _sink_saved_rows
+        STATE["xcheck"] = _sink_saved_xcheck
+        with open(os.path.join(HERE,"data.json")) as previous:
+            _saved_sink = json.load(previous)
+            sink = _saved_sink.get("sink")
+            _LAST_GOOD_SECTION_CLOCKS["sink"] = _saved_sink["scope"]["generated_iso"]
+if not OFFLINE and not data_complete:
+    with open(os.path.join(HERE,"data.json")) as previous:
+        _saved_sink = json.load(previous)
+        sink = _saved_sink.get("sink")
+        _LAST_GOOD_SECTION_CLOCKS["sink"] = _saved_sink["scope"]["generated_iso"]
 if OFFLINE:
     # the sink has no local cache (small, ~1 tx/day) — reuse the previous
     # run's published block wholesale, rebate monitor included.
@@ -2351,6 +2449,12 @@ data = {"schema_version": 5,
 # machine-readable copy of exactly what the page embeds — alerts.py/notify.py
 # read this instead of regex-scraping index.html (council item 3, 2026-08-28).
 # Strict subset of the public page, so it exposes nothing new.
+if globals().get("_RPC_SCAN_INVALID"):
+    raise RuntimeError("invalid public scan proof; publication stopped")
+if not OFFLINE and _PUBLIC_SCANNER is not None:
+    data["scope"]["build_generated_iso"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    data["scope"]["source_coverage"] = {"finance_current":bool(data_complete and all(leg.get("complete") for leg in _PUBLIC_SCANNER.last.values())),"pending":list(_PUBLIC_SCANNER.last.values()),"last_good_sections":dict(_LAST_GOOD_SECTION_CLOCKS)}
+    data["scope"]["complete"] = data["scope"]["source_coverage"]["finance_current"]
 json.dump(data, open(os.path.join(HERE, "data.json"), "w"), default=str)
 
 write_state("after_data_json")
@@ -2488,10 +2592,19 @@ if not OFFLINE:
     print(f"coupon leg: verified_from={STATE['coupon'].get('verified_from')} "
           f"cursor={cp_cursor} xcheck={{'out': {STATE['xcheck'].get('coupon_out')}, "
           f"'in': {STATE['xcheck'].get('coupon_in')}}} logs_chunk={LOGS_CHUNK[0]}")
+    _public_leg(COUPON_WALLET,"from",[TOKENS["MOCA"]["addr"]])
+    _public_leg(COUPON_WALLET,"to",[TOKENS["MOCA"]["addr"]])
     try:
         cp_head = int(rpc("eth_blockNumber", []), 16) - COUPON_HEAD_LAG
     except Exception as e:
         print("DATA-QUALITY: coupon head-block fetch failed, crawling to tip:", e)
+    _COUPON_STAGE = []
+    _coupon_old_out,_coupon_old_in = shards.load(CP_OUT_DIR),shards.load(CP_IN_DIR)
+    _coupon_old_xcheck = dict(STATE.get("xcheck",{}))
+    _coupon_old_cursor = dict(cp_cursor)
+    _coupon_old_verified = dict(STATE["coupon"].get("verified_from",{}))
+    with open(os.path.join(HERE,"coupon_data.json")) as previous:
+        _LAST_COUPON = json.load(previous)
     cp_full, cp_new, cp_ok = refresh_cache(
         COUPON_BASE, CP_OUT_DIR, pages=60, wallet=COUPON_WALLET,
         token_addrs=[TOKENS["MOCA"]["addr"]], from_block=COUPON_FROM_BLOCK,
@@ -2529,22 +2642,40 @@ if not OFFLINE:
     for _dirn, _dirp in (("from", CP_OUT_DIR), ("to", CP_IN_DIR)):
         if cp_verified.get(_dirn) == COUPON_FROM_BLOCK:
             continue
-        _cache = shards.load(_dirp)
+        _cache = cp_full if _dirn == "from" else cp_full_in
         _seen = {key(i) for i in _cache}
-        _add = [shards.slim(i) for i in
-                rpc_transfer_fallback(COUPON_WALLET, _dirn, [TOKENS["MOCA"]["addr"]],
-                                      COUPON_FROM_BLOCK, cp_head, skip_keys=_seen)
-                if key(i) not in _seen]
+        from public_scan import ScanIncomplete
+        try:
+            _add = [shards.slim(i) for i in
+                    rpc_transfer_fallback(COUPON_WALLET, _dirn, [TOKENS["MOCA"]["addr"]],
+                                          COUPON_FROM_BLOCK, cp_head, skip_keys=_seen)
+                    if key(i) not in _seen]
+        except ScanIncomplete:
+            cp_complete = False
+            continue
         if _add:
             _cache = sorted(_add + _cache, key=lambda i: i["timestamp"], reverse=True)
-            shards.save(_dirp, _cache, months={shards.month_of(r) for r in _add})
+            _COUPON_STAGE.append((_dirp,_cache,{shards.month_of(r) for r in _add}))
             print(f"DATA-QUALITY: coupon '{_dirn}' full-range verification recovered "
                   f"{len(_add)} transfer(s) the v2 crawl never returned")
+        _cache = [row for row in _cache if row.get("block_number",0) <= _RPC_LAST_THROUGH]
         cp_verified[_dirn] = COUPON_FROM_BLOCK
         if _dirn == "from":
             cp_full = _cache
         else:
             cp_full_in = _cache
+    if cp_complete:
+        for path,staged,months in _COUPON_STAGE:
+            shards.save(path,staged,months=months)
+    else:
+        cp_full,cp_full_in = _coupon_old_out,_coupon_old_in
+        STATE["xcheck"] = _coupon_old_xcheck
+        cp_cursor.clear(); cp_cursor.update(_coupon_old_cursor)
+        cp_verified.clear(); cp_verified.update(_coupon_old_verified)
+        now = datetime.strptime(_LAST_COUPON["scope"]["generated_iso"],"%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        cut7 = (now-timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
+        RATE["MOCA"] = _LAST_COUPON["scope"]["rate"]
+        RATE_SRC["MOCA"] = _LAST_COUPON["scope"]["rate_src"]
     # STATE was already written above, before this crawl existed in the run's
     # order; re-persist it so the cursor and the verification stamp survive.
     # Deliberately a SECOND write rather than moving the first one down: a
@@ -2667,6 +2798,8 @@ else:
                             holder=COUPON_WALLET)
     except Exception as e:
         print("coupon balance fetch failed:", e)
+if not OFFLINE and not cp_complete:
+    CP_BAL = _LAST_COUPON["totals"].get("balance_moca")
 phase("coupon_balance")
 
 cp_7d = [r for r in cp_claims if r["ts"] > cut7]
@@ -2748,6 +2881,11 @@ coupon_data = {
     "range": {"from": cp_claims[-1]["ts"][:10] if cp_claims else None,
               "to": cp_claims[0]["ts"][:19] if cp_claims else None},
 }
+if globals().get("_RPC_SCAN_INVALID"):
+    raise RuntimeError("invalid public scan proof; publication stopped")
+if not OFFLINE and _PUBLIC_SCANNER is not None:
+    coupon_data["scope"]["build_generated_iso"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    coupon_data["scope"]["source_coverage"] = {"finance_current":bool(cp_complete and all(leg.get("complete") for leg in _PUBLIC_SCANNER.last.values())),"pending":list(_PUBLIC_SCANNER.last.values())}
 json.dump(coupon_data, open(os.path.join(HERE, "coupon_data.json"), "w"), default=str)
 cp_tpl = open(os.path.join(HERE, "template_coupon.html")).read().replace("__STALE_MIN__", str(freshness.STALE_MINUTES))
 open(os.path.join(HERE, "coupon.html"), "w").write(

@@ -95,17 +95,37 @@ def main():
         sp = os.path.join(t, "transfers", f"{month}.json")
         rows = json.load(open(sp))
         cut = (gen - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S")
-        idx = next(i for i, r in enumerate(rows) if r["timestamp"][:19] > cut)
+        idx = next((i for i, r in enumerate(rows) if r["timestamp"][:19] > cut), None)
+        empty_24h = idx is None
+        if empty_24h:
+            assert D["facts"]["windows"][0]["out_tx"] == 0, "raw zero window has published activity"
+            idx = 0  # real cached-row corruption still must block all-history
         dropped = rows.pop(idx)
         json.dump(rows, open(sp, "w"))
         rc, summary, blocks, _, err = _run(t)
         assert rc == 1, f"dropped row did not block: {summary} {err[-400:]}"
-        assert any("24h out_tx" in b for b in blocks), f"row count did not block: {blocks[:5]}"
+        if not empty_24h:
+            assert any("24h out_tx" in b for b in blocks), f"row count did not block: {blocks[:5]}"
         assert any("all history out_tx" in b for b in blocks)
         print(f"ok (c) dropped row {dropped['transaction_hash'][:12]}… blocks on EXACT row counts "
               f"({len(blocks)} block lines)")
     finally:
         shutil.rmtree(t, ignore_errors=True)
+
+    if empty_24h:
+        # A verified zero window is still protected by the EXACT count gate:
+        # an invented published transfer must fail independently of history.
+        t = _tree()
+        try:
+            seeded = json.load(open(os.path.join(t, "data.json")))
+            seeded["facts"]["windows"][0]["out_tx"] = 1
+            json.dump(seeded, open(os.path.join(t, "data.json"), "w"))
+            rc, summary, blocks, _, err = _run(t)
+            assert rc == 1 and any("24h out_tx" in b for b in blocks), \
+                f"invented activity in zero window did not block EXACT: {blocks[:5]} {err[-400:]}"
+            print("ok (c-zero) invented published activity in empty 24h window blocks on EXACT row count")
+        finally:
+            shutil.rmtree(t, ignore_errors=True)
 
     # (d) one-cent USD drift on the published 24h window
     t = _tree()

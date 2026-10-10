@@ -88,6 +88,8 @@ PUBLISH_EXTRA = [
     # sanity.py (root *.py) is the monitor-of-the-monitor gate; tools/ holds
     # evidence scripts (detector replay) — code only, they write nothing
     "tools/*.py",
+    # Public chain-only staged ranges; included in all leak/label scans.
+    "pending_scans/*.json", "pending_scans/*/*.json",
 ]
 
 # Field names that must never reach a public artifact. Per-wallet detector
@@ -445,7 +447,19 @@ def scan():
     bad = []
     monthly = sorted(os.path.join("exports", f) for f in os.listdir(os.path.join(HERE, "exports"))
                      if f.endswith(".csv")) if os.path.isdir(os.path.join(HERE, "exports")) else []
-    for rel in DENIED_TARGETS + monthly:
+    pending = []
+    pending_root = os.path.join(HERE,"pending_scans")
+    if os.path.isdir(pending_root):
+        try:
+            from public_scan import validate_store
+            validate_store(pending_root)
+        except Exception:
+            bad.append("pending public scan failed schema/integrity validation")
+        for base,dirs,files in os.walk(pending_root):
+            for filename in files:
+                if filename.endswith(".json"):
+                    pending.append(os.path.relpath(os.path.join(base,filename),HERE))
+    for rel in DENIED_TARGETS + monthly + pending:
         p = os.path.join(HERE, rel)
         if not os.path.exists(p):
             continue
@@ -460,6 +474,13 @@ def scan():
         # export and the rendered pages, where a plain address is fine but a
         # detector verdict next to one is not.
         bad += _status_adjacent(rel, text)
+        if rel in pending:
+            try:
+                parsed = json.loads(text)
+                bad += _oracle_keys(parsed)
+                bad += _label_leaks(parsed,rel)
+            except json.JSONDecodeError as e:
+                bad.append(f"{rel} did not parse: {e}")
     # (a) Address scan: CURATED surfaces only. See the module docstring — an
     # address in a ranked aggregate is an on-chain fact, an address in a
     # hand-written doc or in the catalog is somebody singling it out.
