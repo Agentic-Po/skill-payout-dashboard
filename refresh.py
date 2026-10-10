@@ -185,7 +185,7 @@ def _network_timeout(cap, market=False):
         remaining = _MARKET_DEADLINE - time.monotonic()
     else:
         if _NETWORK_DEADLINE is None:
-            _NETWORK_DEADLINE = globals().get("_BUILD_STARTED",time.monotonic()) + 420
+            _NETWORK_DEADLINE = globals().get("_BUILD_STARTED",time.monotonic()) + 540
         remaining = _NETWORK_DEADLINE - time.monotonic()
     if remaining <= 0:
         raise BudgetExpired("online acquisition budget exhausted")
@@ -515,18 +515,19 @@ def _public_leg(wallet,direction,token_addrs):
     from public_scan import PublicScanner,ActiveScanClock,descriptor,scan_id
     if _PUBLIC_SCANNER is None:
         _PUBLIC_SCANNER = PublicScanner(os.path.join(HERE,"pending_scans"),rpc,
-                                       _shape_rpc_transfers,RpcRangeError,clock=ActiveScanClock())
+                                       _shape_rpc_transfers,RpcRangeError,budget_seconds=360,clock=ActiveScanClock())
     if _PUBLIC_SCANNER.deadline is None:
         _PUBLIC_SCANNER.deadline = _PUBLIC_SCANNER.clock() + _PUBLIC_SCANNER.budget_seconds
     desc = descriptor(wallet,direction,token_addrs)
     sid = scan_id(desc)
     _PUBLIC_SCANNER.last[sid] = {"descriptor":desc,"complete":False}
+    aliases = {globals().get("WALLET"):"treasury",globals().get("COLLECTOR"):"cognition",globals().get("SINK"):"sink",globals().get("COUPON_WALLET"):"coupon"}
+    _PUBLIC_SCANNER.declare(sid,aliases.get(wallet,"source") + ("_out" if direction=="from" else "_in"))
+    globals()["_PUBLIC_LEG_SID"] = sid
 
 
 def _scan_rpc(method,params):
-    from contextlib import nullcontext
-    clock = _PUBLIC_SCANNER.clock
-    with clock.active() if hasattr(clock,"active") else nullcontext():
+    with _PUBLIC_SCANNER.acquisition(globals()["_PUBLIC_LEG_SID"]):
         return rpc(method,params)
 
 
@@ -535,10 +536,8 @@ def rpc_transfer_fallback(wallet, direction, token_addrs, from_block, to_block=N
     global _PUBLIC_SCANNER, _RPC_LAST_THROUGH
     from public_scan import PublicScanner, descriptor, scan_id, BudgetExpired, ScanIncomplete, ScanInvalid
     _public_leg(wallet,direction,token_addrs)
-    clock = _PUBLIC_SCANNER.clock
-    from contextlib import nullcontext
-    with clock.active() if hasattr(clock,"active") else nullcontext():
-        sid = scan_id(descriptor(wallet,direction,token_addrs))
+    sid = scan_id(descriptor(wallet,direction,token_addrs))
+    with _PUBLIC_SCANNER.acquisition(sid):
         try:
             head = int(_scan_rpc("eth_blockNumber", []),16)
         except BudgetExpired:
@@ -2241,6 +2240,8 @@ try:
         _sink_st[direction] = merged
         return merged
 
+    _public_leg(SINK,"to",[TOKENS["MENTE"]["addr"]])
+    _public_leg(SINK,"from",[TOKENS["MENTE"]["addr"]])
     _in, _out = _sweep("to"), _sweep("from")
     _sd = defaultdict(float)
     for r in _in:
@@ -3004,3 +3005,9 @@ print("PHASE TIMING: total=%.1fs | %s | rpc_batch_skips=%d%s" % (
 
 _batch_work = globals().get("_RPC_BATCH_WORK", {})
 print("RPC ACQUISITION: single_roundtrips=%d batch_roundtrips=%d batch_seconds=%.1f batch_results=%d" % (_RPC_CALLS[0], _batch_work.get("calls",0), _batch_work.get("seconds",0), _batch_work.get("results",0)))
+
+if not OFFLINE and _PUBLIC_SCANNER is not None:
+    print("SCAN ACQUISITION: active_s=%.1f ordinary_elapsed_s=%.1f declared_legs=%d" % (_PUBLIC_SCANNER.clock(),time.monotonic()-_BUILD_STARTED,len(_PUBLIC_SCANNER.work)))
+    for _work in sorted(_PUBLIC_SCANNER.work.values(),key=lambda value:value["alias"]):
+        _remaining = None if _work["target"] is None or _work["through"] is None else max(0,_work["target"]-_work["through"])
+        print("SCAN LEG: leg=%s active_s=%.1f verified_blocks=%d through=%s target=%s remaining_blocks=%s" % (_work["alias"],_work["active_s"],_work["verified_blocks"],_work["through"],_work["target"],_remaining))
