@@ -3009,5 +3009,5 @@ print("RPC ACQUISITION: single_roundtrips=%d batch_roundtrips=%d batch_seconds=%
 if not OFFLINE and _PUBLIC_SCANNER is not None:
     print("SCAN ACQUISITION: active_s=%.1f ordinary_elapsed_s=%.1f declared_legs=%d" % (_PUBLIC_SCANNER.clock(),time.monotonic()-_BUILD_STARTED,len(_PUBLIC_SCANNER.work)))
     for _work in sorted(_PUBLIC_SCANNER.work.values(),key=lambda value:value["alias"]):
-        _remaining = None if _work["target"] is None or _work["through"] is None else max(0,_work["target"]-_work["through"])
+        _remaining = None if _work["target"] is None or _work["through"] is None else _work.get("remaining_blocks",max(0,_work["target"]-_work["through"]))
         print("SCAN LEG: leg=%s active_s=%.1f verified_blocks=%d through=%s target=%s remaining_blocks=%s" % (_work["alias"],_work["active_s"],_work["verified_blocks"],_work["through"],_work["target"],_remaining))

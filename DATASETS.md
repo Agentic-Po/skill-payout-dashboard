@@ -124,3 +124,16 @@ Fetched from `catalog.json` at build time: **481,562 rows · 121.3 MB across 3 d
 | `labels` | 66 | 4.4 KB | 2026-08-22 → 2026-10-04 |
 | `heartbeat` | 1 | 195 B | 2026-10-08 → 2026-10-08 |
 
+
+An earlier requested verification floor never resets an existing scan origin.
+The manifest retains its verified suffix and can carry a separate `prefix` proof
+for the missing earlier interval. Prefix chunks use the same strict public-row
+and checksum validation. Each range is durable before its prefix cursor advances.
+The suffix and prefix anchors are rechecked against canonical blocks before
+one atomic manifest joins their contiguous coverage; a crash before that join
+retains both proofs for replay. Unjoined prefix work keeps financial coverage
+incomplete, including when the suffix already reaches the current target.
+Remaining-block telemetry includes both the missing prefix and the tail.
+A later caller floor only filters returned rows; it cannot skip a coverage gap
+or erase persisted chunks. Already overwritten historical manifests require
+separate validated recovery; orphan files alone are not coverage evidence.
