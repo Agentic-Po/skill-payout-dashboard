@@ -141,8 +141,82 @@ def main():
         assert rc == 1, "seeded identity label did NOT trip --scan"
     print("ok seeded leak turns --scan red (exit 1)")
 
+    test_reviewed_registry_promotions()
     print("test_redact: PASS")
     return 0
+
+
+def test_reviewed_registry_promotions():
+    """Execute both actual producer loops with synthetic private fixtures."""
+    import ast, copy, contextlib, io
+    import check_publish as cp
+    tree = ast.parse(open(os.path.join(ROOT, "refresh.py")).read())
+    loops = [n for n in tree.body if isinstance(n, ast.For)
+             and isinstance(n.target, ast.Name) and n.target.id == "_c"
+             and isinstance(n.iter, ast.Subscript) and isinstance(n.iter.value, ast.Name)
+             and n.iter.value.id in ("top_recip", "in_sources")]
+    assert len(loops) == 2
+    importer = next(n for n in tree.body if isinstance(n, ast.ImportFrom)
+                    and n.module == "check_publish"
+                    and any(a.asname == "_registry_allow_addrs" for a in n.names))
+    allowance = next(n for n in tree.body if isinstance(n, ast.Assign)
+                     and any(isinstance(t, ast.Name) and t.id == "_registry_reviewed" for t in n.targets))
+    code = compile(ast.Module(body=[importer, allowance, *loops], type_ignores=[]), "refresh.py", "exec")
+    unreviewed_top, reviewed_top, reviewed_in, unreviewed_in = ("0x" + c * 40 for c in "abcd")
+    rank = lambda a: {"addr": a, "label": None, "usd": 100, "n": 2}
+    top = [rank(unreviewed_top), rank(reviewed_top)]
+    incoming = [rank(unreviewed_in), rank(reviewed_in)]
+    original = copy.deepcopy((top, incoming))
+    results = []
+    with tempfile.TemporaryDirectory() as td:
+        open(os.path.join(td, "publish_allow_addrs.txt"), "w").write(reviewed_top + "\n" + reviewed_in + "\n")
+        saved_here = cp.HERE
+        cp.HERE = td
+        try:
+            for monitored in ([], [unreviewed_top, unreviewed_in, reviewed_top, reviewed_in]):
+                json.dump({"rows": [{"addr": a} for a in monitored]},
+                          open(os.path.join(td, "guard_private.json"), "w"))
+                ns = {"registry": [], "_have": set(), "top_recip": top, "in_sources": incoming,
+                      "_reg": lambda a, role, group: {"addr": a, "role": role, "group": group}}
+                exec(code, ns)
+                result = ns["registry"]
+                assert {r["addr"] for r in result} == {reviewed_top, reviewed_in}
+                assert next(r for r in result if r["addr"] == reviewed_top)["group"] == "Recipients"
+                assert next(r for r in result if r["addr"] == reviewed_in)["group"] == "Funding sources"
+                assert (top, incoming) == original, "registry selection mutated factual rankings"
+                results.append(result)
+                json.dump({"registry": result,
+                           "facts": {"top_recipients": top, "in_sources": incoming}},
+                          open(os.path.join(td, "data.json"), "w"))
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    assert cp.scan() == 0, "filtered registry failed unchanged guard"
+            assert results[0] == results[1], "private membership changed public curation"
+            # Reviewed matching remains case-insensitive, duplicate candidates
+            # do not repeat, and already-labelled candidates keep the old exclusion.
+            mixed = rank(reviewed_top.upper().replace("0X", "0x"))
+            labelled = {**rank(reviewed_in), "label": "structural fixture"}
+            ns = {"registry": [], "_have": set(), "top_recip": [mixed, mixed],
+                  "in_sources": [labelled],
+                  "_reg": lambda a, role, group: {"addr": a, "role": role, "group": group}}
+            exec(code, ns)
+            assert len(ns["registry"]) == 1
+            assert ns["registry"][0]["addr"].lower() == reviewed_top
+            # Missing reviewed evidence cannot create a new curated exception.
+            os.remove(os.path.join(td, "publish_allow_addrs.txt"))
+            ns = {"registry": [], "_have": set(), "top_recip": top, "in_sources": incoming,
+                  "_reg": lambda a, role, group: {"addr": a, "role": role, "group": group}}
+            exec(code, ns)
+            assert not ns["registry"]
+            # The original gate still rejects the prohibited curated surface.
+            json.dump({"registry": [{"addr": unreviewed_top}]}, open(os.path.join(td, "data.json"), "w"))
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+                assert cp.scan() == 1
+            assert f"guard_private address {unreviewed_top} surfaced in data.json:registry" in captured.getvalue(), \
+                "gate failed for an unrelated reason instead of the curated-address leak"
+        finally:
+            cp.HERE = saved_here
+    print("ok actual registry promotions require reviewed exemptions; rankings unchanged; private-state independent; gate still red on curated leak")
 
 
 if __name__ == "__main__":
