@@ -92,7 +92,7 @@ def log_key(row):
 
 
 class PublicScanner:
-    def __init__(self, directory, rpc, materialize, range_error, budget_seconds=180, clock=time.monotonic):
+    def __init__(self, directory, rpc, materialize, range_error, budget_seconds=180, clock=time.monotonic, leg_budget_seconds=None):
         self.directory = directory
         self.rpc = rpc
         self.materialize = materialize
@@ -103,6 +103,9 @@ class PublicScanner:
         self.last = {}
         self.work = {}
         self._acquiring = {}
+        self.leg_budget_seconds = leg_budget_seconds
+        self._leg_started = {}
+        self._growth_refused = set()
 
     def declare(self, sid, alias="source"):
         self.work.setdefault(sid,{"alias":alias,"active_s":0.0,"verified_blocks":0,"through":None,"target":None})
@@ -115,6 +118,7 @@ class PublicScanner:
         with self.clock.active() if hasattr(self.clock,"active") else nullcontext():
             outer = not self._acquiring.get(sid,0)
             before = self.clock()
+            if outer:self._leg_started[sid] = before
             self._acquiring[sid] = self._acquiring.get(sid,0)+1
             try:
                 yield
@@ -122,9 +126,18 @@ class PublicScanner:
                 self._acquiring[sid] -= 1
                 if outer:
                     self.work[sid]["active_s"] += self.clock()-before
+                    self._leg_started.pop(sid,None)
+
+    def remaining(self):
+        remaining = self.deadline-self.clock() if self.deadline is not None else float('inf')
+        if self.leg_budget_seconds is not None:
+            for sid,started in self._leg_started.items():
+                used=self.work[sid]['active_s']+self.clock()-started
+                remaining=min(remaining,self.leg_budget_seconds-used)
+        return remaining
 
     def expired(self):
-        return self.deadline is not None and self.clock() >= self.deadline
+        return self.remaining() <= 0
 
     def block(self, number):
         if self.expired():
@@ -156,9 +169,10 @@ class PublicScanner:
         if self.block(state['through'])['hash'].lower() != state['hash'].lower():
             raise ScanInvalid('checkpoint block hash mismatch')
 
-    def _fill(self, state, target, desc, sid, topics, persist):
+    def _fill(self, state, target, desc, sid, topics, persist, max_chunk):
         nxt = state['through']+1
         chunk = state.get('chunk',2000)
+        successes = 0
         wallet = desc['wallet']
         direction = desc['direction']
         topic_wallet = '0x'+'0'*24+wallet[2:]
@@ -170,6 +184,8 @@ class PublicScanner:
             try:
                 logs = self.rpc('eth_getLogs',[{'fromBlock':hex(nxt),'toBlock':hex(end),'address':desc['tokens'],'topics':topics}])
             except self.range_error:
+                self._growth_refused.add(sid)
+                successes = 0
                 if chunk == 1:
                     raise
                 chunk = max(1,chunk//2)
@@ -229,9 +245,14 @@ class PublicScanner:
             self.work[sid]['verified_blocks'] += end-nxt+1
             self.work[sid]['through'] = end
             nxt = end+1
+            successes += 1
+            if successes >= 4 and sid not in self._growth_refused:
+                chunk = min(max_chunk,chunk*2)
+                successes = 0
         return state
 
     def scan(self, wallet, direction, tokens, start, head, chunk=2000):
+        chunk = min(chunk,2000)
         desc = descriptor(wallet, direction, tokens)
         sid = scan_id(desc)
         path = os.path.join(self.directory,sid+'.json')
@@ -277,7 +298,7 @@ class PublicScanner:
                     candidate = dict(state,prefix=value,complete=False)
                     persist(candidate)
                     state['prefix'] = value
-                self._fill(prefix,prefix['target'],desc,sid,topics,persist_prefix)
+                self._fill(prefix,prefix['target'],desc,sid,topics,persist_prefix,min(chunk,2000))
                 # The join is a separate atomic boundary; either proof survives
                 # a crash, and both canonical anchors must still agree now.
                 self._anchor(prefix)
@@ -288,7 +309,7 @@ class PublicScanner:
                 joined.pop('prefix',None)
                 persist(joined)
                 state = joined
-            self._fill(state,target,desc,sid,topics,persist)
+            self._fill(state,target,desc,sid,topics,persist,min(chunk,2000))
             state['complete'] = False
             completed = dict(state,complete=True)
             persist(completed)

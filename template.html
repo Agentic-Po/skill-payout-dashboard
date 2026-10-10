@@ -151,6 +151,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
 
   <div class="card" id="dailyCard">
     <h2>Daily flows</h2>
+    <p class="note" id="dailyCoverage" hidden></p>
     <p class="insight" id="ins-daily"></p>
     <p class="note">The mix bar splits each day's outflow by transfer size band (labels describe the amount only, not its purpose — hover for detail). <span id="mixToggle" role="group" aria-label="Mix bar width"></span> The current UTC day is partial and marked. Showing the latest 21 days; expand for full history since <span id="d0"></span>.</p>
     <div class="legend" id="bleg"></div>
@@ -430,6 +431,19 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"||e.key==="Esc"){pinn
 // "" => NaN (V8 would otherwise parse the bare ":00Z" as 1 Jan 2000).
 const STAMP=SC.generated_iso||(SC.generated?String(SC.generated).replace(" ","T")+":00Z":"");
 const GEN_T=Date.parse(STAMP);
+// Own Treasury coverage can be complete while another source is still behind.
+const TREASURY_CURRENT=typeof SC.source_coverage?.treasury_complete==="boolean"?SC.source_coverage.treasury_complete:SC.complete!==false;
+const savedAt=STAMP?String(STAMP).replace("T"," ").replace(/Z$/," UTC"):"time unavailable";
+function dailyCoverageText(facts,scope,now){
+ if(TREASURY_CURRENT)return "";
+ const recorded=String(facts.range?.to||"").replace("T"," ").replace(/Z$/,"");
+ const dates=(facts.daily||[]).map(x=>x.d).filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(x)).sort();
+ const last=dates.at(-1),today=new Date(now).toISOString().slice(0,10);
+ const next=last?new Date(Date.parse(last+"T00:00:00Z")+864e5).toISOString().slice(0,10):null;
+ const missing=next&&next<=today?(next===today?today:next+" through "+today):today;
+ return "Recorded transfers through "+(recorded?recorded+" UTC":"an unavailable time")+". "+missing+" UTC: coverage not verified; missing days are unknown, not zero. Existing rows remain saved history; recent totals may be incomplete.";
+}
+
 const hkt=iso=>{const t=Date.parse(iso);return isNaN(t)?iso:new Date(t+8*3.6e6).toISOString().slice(0,16).replace("T"," ")+" HKT";};
 function ageWords(ms){const m=Math.round(ms/6e4);if(m<1)return"just now";if(m<90)return m+" min ago";const h=Math.round(m/60);if(h<48)return h+" h ago";return Math.round(h/24)+" d ago";}
 function stampGen(){const e=document.getElementById("gen");if(!e)return;if(isNaN(GEN_T)){e.textContent="updated "+(SC.generated||"?")+" UTC";return;}
@@ -534,16 +548,16 @@ function delta(cur,prev){if(!prev)return"";const d=(cur-prev)/prev*100;const cls
 const gsub=w=>w.groups?GK.filter(g=>w.groups[g]&&w.groups[g].usd).map(g=>`${GSHORT[g]} ${usd(w.groups[g].usd)}`).join(" · "):`${w.out_tx} tx · ${w.out_wallets} wallets`;
 const floatV=FL&&FL.days_7d_pace?`<span style="${FL.days_7d_pace<5?"color:var(--bad);font-weight:800":(FL.days_7d_pace<14?"color:var(--warn)":"")}">~${FL.days_7d_pace} days</span>`:"n/a";
 const ftiles=[
- ["Wallet balance", usd(balUsd), fmt0(F.balance.MENTE||0)+" MENTE · "+fmt0(F.balance.MOCA||0)+" MOCA"],
- ["Outflow — 24h", usd(w24.out_usd), gsub(w24)+delta(w24.out_usd,p24.out_usd)],
- ["Inflow — 24h", usd(w24.in_usd), w24.in_tx+" transfer"+(w24.in_tx===1?"":"s")+" · "+w24.in_sources+" source"+(w24.in_sources===1?"":"s")],
+ ["Wallet balance", usd(balUsd), fmt0(F.balance.MENTE||0)+" MENTE · "+fmt0(F.balance.MOCA||0)+" MOCA · saved as of "+savedAt],
+ ["Outflow — 24h", TREASURY_CURRENT?usd(w24.out_usd):"Unavailable", TREASURY_CURRENT?gsub(w24)+delta(w24.out_usd,p24.out_usd):"Coverage incomplete — this is not a verified zero."],
+ ["Inflow — 24h", TREASURY_CURRENT?usd(w24.in_usd):"Unavailable", TREASURY_CURRENT?w24.in_tx+" transfer"+(w24.in_tx===1?"":"s")+" · "+w24.in_sources+" source"+(w24.in_sources===1?"":"s"):"Coverage incomplete — this is not a verified zero."],
  ["Distribution float", floatV, FL?`balance ÷ 7-day pace of total outflow (${usd(FL.out_7d_avg_usd)}/day)${FL.days_24h_pace?` · ${FL.days_24h_pace} d at yesterday's pace`:""}${FL.driver_24h?` · driver: ${FL.driver_24h.label.toLowerCase()} ${FL.driver_24h.share_pct}% of 24h`:""} — a refill schedule, not solvency`:"total-outflow basis"],
  ["Outflow — all history", usd(wall.out_usd), chk(wall.out_tx).toLocaleString()+" tx since "+F.range.from+(wall.economy_out_usd!=null?` · payouts ${usd(wall.economy_out_usd)} + swaps/ops ${usd(wall.ops_out_usd)}`:"")],
  ["Recipient wallets", fmt0(F.wallets_all), fmt0(F.wallets_repeat)+" received on 2+ days"],
 ];
-const stale=SC.complete?"":`<div style="font-size:11px;color:var(--warn);margin-top:4px">⚠ as of last complete fetch</div>`;
+const stale=TREASURY_CURRENT?"":`<div style="font-size:11px;color:var(--warn);margin-top:4px">⚠ as of last complete fetch</div>`;
 // one plain-English line per tile: a definition only, never a new number
-const MEAN={"Wallet balance":"What this wallet holds right now, at today's token price.",
+const MEAN={"Wallet balance":"Saved on-chain balance, valued at the saved financial snapshot’s token prices.",
  "Outflow — 24h":"Everything this wallet sent out in the last 24 hours.",
  "Inflow — 24h":"What came in during the last 24 hours — refills and returns, all our own money.",
  "Distribution float":"How long the balance lasts at last week's pace before the next refill is needed.",
@@ -651,6 +665,8 @@ return list.map(d=>{
  return `<tr data-tiphtml="${tipTxt.replace(/"/g,"&quot;")}" style="${d.partial?"opacity:.75":""}"><td class="mono">${d.d}${d.mkt?`<sup class="mkt" title="priced from that day's market close: ${Object.keys(d.mkt).join(", ")}">•m</sup>`:""}${d.partial?' <span class="pill">partial day</span>':""}</td><td class="r mono">$${chk(d.out_usd).toFixed(2)}</td><td style="width:26%;min-width:130px"><div style="display:flex;border-radius:3px;overflow:hidden">${bar}</div></td><td class="r mono">${d.out_tx}</td><td class="r mono">${d.wallets}</td><td class="r mono" style="color:${d.in_usd?"var(--c-in)":"var(--ink3)"}">${d.in_usd?"$"+chk(d.in_usd).toFixed(0):"—"}</td></tr>`;});}
 const dHead=`<thead><tr><th scope="col">Day (UTC)</th><th scope="col" class="r">Out USD</th><th scope="col">Size-band mix</th><th scope="col" class="r">Tx</th><th scope="col" class="r">Wallets</th><th scope="col" class="r">In USD</th></tr></thead>`;
 const dailyT=document.getElementById("dailyT");
+const coverageNote=document.getElementById("dailyCoverage");
+coverageNote.textContent=dailyCoverageText(F,SC,Date.now());coverageNote.hidden=TREASURY_CURRENT;
 const revDaily=F.daily.slice().reverse();
 function withMonthSeps(list,html){const out=[];let cur=null;
  list.forEach((d,i)=>{const m=d.d.slice(0,7);if(cur!==null&&m!==cur)out.push(`<tr class="mrow"><td colspan="6">${m}</td></tr>`);else if(i===0)out.push(`<tr class="mrow"><td colspan="6">${m}</td></tr>`);cur=m;out.push(html[i]);});

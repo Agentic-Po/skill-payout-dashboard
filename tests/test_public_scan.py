@@ -500,7 +500,7 @@ class IntegrationTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as root:
    ns={'_PUBLIC_SCANNER':None,'HERE':root,'rpc':None,'_shape_rpc_transfers':None,'RpcRangeError':RangeError,'os':os}
    node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_public_leg');exec(ast.get_source_segment(source,node),ns);ns['_public_leg'](W,'from',[T])
-   self.assertEqual(ns['_PUBLIC_SCANNER'].budget_seconds,360);self.assertEqual(ns['_PUBLIC_SCANNER'].deadline,360)
+   self.assertEqual(ns['_PUBLIC_SCANNER'].budget_seconds,360);self.assertEqual(ns['_PUBLIC_SCANNER'].deadline,360);self.assertAlmostEqual(ns['_PUBLIC_SCANNER'].leg_budget_seconds,360/7)
    ns['_PUBLIC_SCANNER'].clock.used=180;ns['_public_leg'](W,'to',[T])
    self.assertEqual(ns['_PUBLIC_SCANNER'].deadline-ns['_PUBLIC_SCANNER'].clock(),180)
   clock=[531];active=S.ActiveScanClock(lambda:clock[0]);active.used=359
@@ -613,5 +613,72 @@ class IntegrationTests(unittest.TestCase):
   self.assertTrue(complete);self.assertEqual(added,1)
   self.assertEqual({r['transaction_hash'] for r in rows},{'new','old'})
   self.assertEqual(len(staged),1)
+
+class FairAdaptiveTests(unittest.TestCase):
+ def seed(self,root):
+  scan,_,_=ScanTests().setup_scan(root);scan.budget_seconds=100;scan.scan(W,'from',[T],10,101,chunk=31)
+  return json.load(open(os.path.join(root,S.scan_id(S.descriptor(W,'from',[T]))+'.json')))
+ def test_persisted_small_range_recovers_with_successes_and_never_exceeds_cap(self):
+  with tempfile.TemporaryDirectory() as root:
+   old=self.seed(root);scan,_,calls=ScanTests().setup_scan(root);scan.budget_seconds=10000
+   scan.scan(W,'from',[T],10,24030,chunk=9000);sizes=[hi-lo+1 for lo,hi in calls]
+   self.assertEqual(sizes[0],31);self.assertIn(62,sizes);self.assertIn(2000,sizes);self.assertLessEqual(max(sizes),2000)
+   state=json.load(open(os.path.join(root,S.scan_id(S.descriptor(W,'from',[T]))+'.json')));self.assertEqual(state['chunks'][:len(old['chunks'])],old['chunks']);S.validate_store(root)
+ def test_refused_growth_cools_down_for_entire_process_leg(self):
+  with tempfile.TemporaryDirectory() as root:
+   self.seed(root);scan,_,calls=ScanTests().setup_scan(root,limit=31);scan.budget_seconds=10000
+   scan.scan(W,'from',[T],10,1530,chunk=2000);scan.scan(W,'from',[T],10,2530,chunk=2000)
+   self.assertEqual(sum(hi-lo+1>31 for lo,hi in calls),1);S.validate_store(root)
+ def test_growth_refusal_cooldown_survives_prefix_join_and_tail(self):
+  with tempfile.TemporaryDirectory() as root:
+   seed,_,_=ScanTests().setup_scan(root);seed.budget_seconds=10000;seed.scan(W,'from',[T],1000,1130,chunk=31)
+   scan,_,calls=ScanTests().setup_scan(root,limit=31);scan.budget_seconds=10000;scan.scan(W,'from',[T],1,2030,chunk=2000)
+   self.assertEqual(sum(hi-lo+1>31 for lo,hi in calls),1);self.assertTrue(any(lo>1100 for lo,hi in calls));S.validate_store(root)
+   state=json.load(open(os.path.join(root,S.scan_id(S.descriptor(W,'from',[T]))+'.json')));self.assertEqual(state['start'],1);self.assertNotIn('prefix',state)
+ def test_uncommitted_ranges_do_not_trigger_growth_or_cursor_advance(self):
+  with tempfile.TemporaryDirectory() as root:
+   old=self.seed(root);scan,_,calls=ScanTests().setup_scan(root);scan.budget_seconds=10000;save=S.atomic_save;writes=[0]
+   def fail(path,value):
+    if path.endswith('.json') and isinstance(value,dict):
+     writes[0]+=1
+     if writes[0]==4:raise OSError('synthetic manifest failure')
+    return save(path,value)
+   with patch.object(S,'atomic_save',fail),self.assertRaises(OSError):scan.scan(W,'from',[T],10,1030,chunk=2000)
+   self.assertTrue(all(hi-lo+1==31 for lo,hi in calls));S.validate_store(root)
+   state=json.load(open(os.path.join(root,S.scan_id(S.descriptor(W,'from',[T]))+'.json')));self.assertEqual(state['through'],old['through']+93);self.assertFalse(state['complete'])
+ def test_actual_fallback_reserves_each_leg_and_repeated_leg_cannot_reset(self):
+  import ast
+  source=open(os.path.join(os.path.dirname(os.path.dirname(__file__)),'refresh.py')).read();tree=ast.parse(source)
+  with tempfile.TemporaryDirectory() as root:
+   wall=[0];active=S.ActiveScanClock(lambda:wall[0]);calls=[]
+   def rpc(method,params):
+    if scanner.expired():raise S.BudgetExpired()
+    wall[0]+=1;calls.append(method)
+    if method=='eth_blockNumber':return hex(100)
+    if method=='eth_getLogs':return []
+    return {'number':params[0],'hash':'0x'+format(int(params[0],16),'064x'),'timestamp':hex(100+int(params[0],16))}
+   scanner=S.PublicScanner(root,rpc,lambda logs:[],RangeError,budget_seconds=28,clock=active,leg_budget_seconds=4)
+   ns={'_PUBLIC_SCANNER':scanner,'_RPC_LAST_THROUGH':None,'rpc':rpc,'HERE':root,'_shape_rpc_transfers':lambda logs:[],'RpcRangeError':RangeError,'os':os,'LOGS_CHUNK':[1]}
+   for name in ('_public_leg','_scan_rpc','rpc_transfer_fallback'):
+    node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name==name);exec(ast.get_source_segment(source,node),ns)
+   for index in range(7):
+    wallet='0x'+format(index+1,'040x')
+    with self.assertRaises(S.ScanIncomplete):ns['rpc_transfer_fallback'](wallet,'from',[T],10)
+   self.assertEqual(len(scanner.last),7);self.assertTrue(all(p.get('through')==10 and p['complete'] is False for p in scanner.last.values()));self.assertEqual(active(),28)
+   before=len(calls)
+   with self.assertRaises(S.ScanIncomplete):ns['rpc_transfer_fallback'](W,'from',[T],10)
+   self.assertEqual(len(calls),before);S.validate_store(root)
+ def test_per_leg_timeout_and_nested_exception_accounting(self):
+  import ast,types
+  clock=[0];active=S.ActiveScanClock(lambda:clock[0]);scanner=S.PublicScanner('unused',None,None,RangeError,budget_seconds=360,clock=active,leg_budget_seconds=360/7);scanner.deadline=360
+  source=open(os.path.join(os.path.dirname(os.path.dirname(__file__)),'refresh.py')).read();node=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name=='_network_timeout');ns={'time':types.SimpleNamespace(monotonic=lambda:clock[0]),'_NETWORK_DEADLINE':None,'_MARKET_DEADLINE':None,'_BUILD_STARTED':0,'_PUBLIC_SCANNER':scanner};exec(ast.get_source_segment(source,node),ns)
+  with self.assertRaises(ValueError):
+   with scanner.acquisition('first'):
+    clock[0]+=50
+    with scanner.acquisition('first'):
+     self.assertAlmostEqual(ns['_network_timeout'](20),360/7-50);raise ValueError('fixture')
+  self.assertEqual(scanner.work['first']['active_s'],50)
+  with scanner.acquisition('first'):self.assertAlmostEqual(scanner.remaining(),360/7-50)
+  with scanner.acquisition('second'):self.assertAlmostEqual(ns['_network_timeout'](100),360/7)
 
 if __name__=='__main__':unittest.main()

@@ -191,7 +191,7 @@ def _network_timeout(cap, market=False):
         raise BudgetExpired("online acquisition budget exhausted")
     scanner = globals().get("_PUBLIC_SCANNER")
     if not market and scanner and scanner.deadline is not None and getattr(scanner.clock,"depth",1):
-        remaining = min(remaining,scanner.deadline-scanner.clock())
+        remaining = min(remaining,scanner.remaining() if hasattr(scanner,"remaining") else scanner.deadline-scanner.clock())
         if remaining <= 0:
             raise BudgetExpired("active acquisition budget exhausted")
     return min(cap,remaining)
@@ -515,7 +515,7 @@ def _public_leg(wallet,direction,token_addrs):
     from public_scan import PublicScanner,ActiveScanClock,descriptor,scan_id
     if _PUBLIC_SCANNER is None:
         _PUBLIC_SCANNER = PublicScanner(os.path.join(HERE,"pending_scans"),rpc,
-                                       _shape_rpc_transfers,RpcRangeError,budget_seconds=360,clock=ActiveScanClock())
+                                       _shape_rpc_transfers,RpcRangeError,budget_seconds=360,clock=ActiveScanClock(),leg_budget_seconds=360/7)
     if _PUBLIC_SCANNER.deadline is None:
         _PUBLIC_SCANNER.deadline = _PUBLIC_SCANNER.clock() + _PUBLIC_SCANNER.budget_seconds
     desc = descriptor(wallet,direction,token_addrs)
