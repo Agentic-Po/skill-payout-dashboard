@@ -205,50 +205,65 @@ def key(i):
 # Blockscout rows and dedup/merge is safe across sources.
 # Blockscout's eth-rpc endpoint rate-limits the shared Actions IP after the
 # page crawl, so public Base RPCs come first and Blockscout stays last.
-RPC_ENDPOINTS = ["https://mainnet.base.org", "https://base.drpc.org",
+RPC_ENDPOINTS = ["https://mainnet.base.org", "https://base.drpc.org", "https://1rpc.io/base",
                  "https://base.blockscout.com/api/eth-rpc"]
 TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 
 _RPC_CALLS = [0]        # A6 telemetry: JSON-RPC round-trips this run
 
+class RpcRangeError(RuntimeError):
+    """At least one public provider refused the requested block/result range."""
+
+
+def _rpc_range_error(message):
+    message = str(message).lower()
+    if any(word in message for word in ("rate limit", "rate-limit", "too many requests", "quota", "per second", "per minute", "per day", "unauthorized", "forbidden")):
+        return False
+    return ("range" in message or "too many results" in message
+            or "response size" in message or "too large" in message
+            or ("limit" in message and ("block" in message or "result" in message)))
+
+
 def rpc(method, params, tries=3):
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
-    last_err = None
+    last_err = RuntimeError("public RPC unavailable")
+    limited = False
     for url in RPC_ENDPOINTS:
         for a in range(tries):
             _RPC_CALLS[0] += 1
             try:
                 req = urllib.request.Request(url, data=payload,
-                    headers={"Content-Type": "application/json", "User-Agent": "curl/8.4.0"})
-                with urllib.request.urlopen(req, timeout=30) as r:
+                    headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (skill-payout-dashboard/1.0; polite crawler)"})
+                with urllib.request.urlopen(req, timeout=20) as r:
                     res = json.load(r)
                 if res.get("error"):
-                    last_err = Exception(f"{url}: {res['error']}")
-                    break  # rpc-level error (e.g. range too large) — next endpoint
+                    limited |= _rpc_range_error(res["error"].get("message", ""))
+                    last_err = RuntimeError("public RPC rejected request")
+                    break
                 if res.get("result") is not None:
+                    if method == "eth_getLogs" and not isinstance(res["result"], list):
+                        last_err = RuntimeError("public RPC returned invalid logs")
+                        break
                     return res["result"]
-                last_err = Exception(f"{url}: empty result")
+                last_err = RuntimeError("public RPC returned empty result")
                 break
             except urllib.error.HTTPError as e:
-                # A6 (2026-09-15): public Base RPCs answer a too-wide eth_getLogs
-                # with an HTTP 4xx whose BODY is a JSON-RPC error (mainnet.base.org
-                # 413 "limited to a 2,000 range", drpc 400 "ranges over 10000
-                # blocks"). Treating that as a transport failure meant three
-                # 1-second sleeps per endpoint per range attempt — the whole
-                # ~30 s-per-cross-check cost. A 4xx with an rpc error body is an
-                # rpc-level refusal: move to the next endpoint immediately.
-                body = ""
                 try:
-                    body = e.read().decode(errors="replace")[:300]
-                except Exception:
-                    pass
-                last_err = Exception(f"{url}: HTTP {e.code} {body}")
-                if 400 <= e.code < 500 and e.code != 429 and '"error"' in body:
+                    error = json.loads(e.read()).get("error", {})
+                except (ValueError, UnicodeError):
+                    error = {}
+                limited |= (e.code == 413 or _rpc_range_error(error.get("message", "")))
+                last_err = RuntimeError(f"public RPC HTTP {e.code}")
+                if 400 <= e.code < 500 and e.code != 429:
                     break
-                time.sleep(1)
-            except Exception as e:
-                last_err = e
-                time.sleep(1)
+                if a < tries - 1:
+                    time.sleep(1)
+            except Exception:
+                last_err = RuntimeError("public RPC unavailable")
+                if a < tries - 1:
+                    time.sleep(1)
+    if limited:
+        raise RpcRangeError("public provider range limit")
     raise last_err
 
 # rpc_batch skip telemetry (loop 3): every endpoint or item a batch gives up
@@ -280,7 +295,7 @@ def rpc_batch(calls):
     for url in RPC_ENDPOINTS:
         try:
             req = urllib.request.Request(url, data=payload,
-                headers={"Content-Type": "application/json", "User-Agent": "curl/8.4.0"})
+                headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (skill-payout-dashboard/1.0; polite crawler)"})
             with urllib.request.urlopen(req, timeout=60) as r:
                 res = json.load(r)
             if not isinstance(res, list):
@@ -411,10 +426,10 @@ def rpc_transfer_fallback(wallet, direction, token_addrs, from_block, to_block=N
         try:
             logs += rpc("eth_getLogs", [{"fromBlock": hex(start), "toBlock": hex(end),
                                          "address": token_addrs, "topics": topics}])
-        except Exception:
-            if chunk <= 500:
+        except RpcRangeError:
+            if chunk == 1:
                 raise
-            chunk //= 2  # provider range/result cap — retry this span smaller
+            chunk = max(1, chunk // 2)  # retry only a proven range refusal
             # A6: remember the narrower span for every later leg this run —
             # the range cap is a property of the provider, not of this leg.
             LOGS_CHUNK[0] = min(LOGS_CHUNK[0], chunk)

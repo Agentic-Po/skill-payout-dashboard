@@ -98,6 +98,8 @@ jobs:
         run: python3 tests/test_freshness.py
       - name: Shared pure helpers (util.py)
         run: python3 tests/test_util.py
+      - name: Public RPC range fallback regression
+        run: python3 tests/test_rpc_fallback.py
       - name: rpc_batch skips counted and logged
         run: python3 tests/test_rpc_batch.py
       # Privacy hardening (2026-09-27): public Actions logs carry no
