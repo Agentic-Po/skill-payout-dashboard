@@ -9,7 +9,7 @@ import os
 import re
 import time
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime,timezone
 
 class ActiveScanClock:
@@ -101,6 +101,27 @@ class PublicScanner:
         self.deadline = None
         self.budget_seconds = budget_seconds
         self.last = {}
+        self.work = {}
+        self._acquiring = {}
+
+    def declare(self, sid, alias="source"):
+        self.work.setdefault(sid,{"alias":alias,"active_s":0.0,"verified_blocks":0,"through":None,"target":None})
+
+    @contextmanager
+    def acquisition(self, sid):
+        self.declare(sid)
+        if any(depth and key != sid for key,depth in self._acquiring.items()):
+            raise RuntimeError("overlapping source acquisition scopes")
+        with self.clock.active() if hasattr(self.clock,"active") else nullcontext():
+            outer = not self._acquiring.get(sid,0)
+            before = self.clock()
+            self._acquiring[sid] = self._acquiring.get(sid,0)+1
+            try:
+                yield
+            finally:
+                self._acquiring[sid] -= 1
+                if outer:
+                    self.work[sid]["active_s"] += self.clock()-before
 
     def expired(self):
         return self.deadline is not None and self.clock() >= self.deadline
@@ -148,6 +169,8 @@ class PublicScanner:
                 chunk = min(chunk,previous.get('chunk',chunk))
                 # Keep the immutable persisted origin; requested start only
                 # filters the return value, never rewrites chunk coverage.
+        self.declare(sid)
+        self.work[sid].update(through=state['through'],target=target)
         state['target'] = target
         state['complete'] = False
         topic_wallet = '0x'+'0'*24+wallet[2:].lower()
@@ -218,6 +241,8 @@ class PublicScanner:
                 checksum = '0x'+hashlib.sha256(raw.read()).hexdigest()
             state['chunks'].append({'file':filename,'checksum':checksum})
             atomic_save(path,{k:v for k,v in state.items() if k!='rows'})
+            self.work[sid]['verified_blocks'] += end-nxt+1
+            self.work[sid]['through'] = end
             nxt = end+1
         state['complete'] = True
         self.last[sid] = {k:v for k,v in state.items() if k not in ('rows','chunks')}

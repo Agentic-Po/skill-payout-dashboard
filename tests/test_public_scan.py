@@ -232,6 +232,71 @@ class IntegrationTests(unittest.TestCase):
    with patch.object(product,'_env',return_value={'POSTHOG_API_KEY':'synthetic fixture'}),patch.object(product,'CACHE',os.path.join(root,'cache.json')),patch.object(product.urllib.request,'urlopen',side_effect=urlopen):
     result=product.fetch(timeout=remaining)
    self.assertEqual(calls,[3,1]);self.assertFalse(result['complete'])
+ def test_sink_both_directions_declared_before_first_failure(self):
+  import ast
+  source=open(os.path.join(os.path.dirname(os.path.dirname(__file__)),'refresh.py')).read();tree=ast.parse(source)
+  with tempfile.TemporaryDirectory() as root:
+   def fail(direction):raise S.ScanIncomplete('fixture first direction')
+   ns={'_PUBLIC_SCANNER':None,'HERE':root,'rpc':None,'_shape_rpc_transfers':None,'RpcRangeError':RangeError,'os':os,'SINK':W,'TOKENS':{'MENTE':{'addr':T}},'_sweep':fail}
+   helper=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_public_leg');exec(ast.get_source_segment(source,helper),ns)
+   declarations=[n for n in ast.walk(tree) if isinstance(n,ast.Expr) and isinstance(n.value,ast.Call) and isinstance(n.value.func,ast.Name) and n.value.func.id=='_public_leg' and isinstance(n.value.args[0],ast.Name) and n.value.args[0].id=='SINK' and isinstance(n.value.args[1],ast.Constant)]
+   invocation=next(n for n in ast.walk(tree) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Tuple) and [getattr(e,'id',None) for e in t.elts]==['_in','_out'] for t in n.targets))
+   nodes=sorted(declarations+[invocation],key=lambda n:n.lineno)
+   with self.assertRaises(S.ScanIncomplete):exec(compile(ast.Module(body=nodes,type_ignores=[]),'sink_pair','exec'),ns)
+   self.assertEqual(len(ns['_PUBLIC_SCANNER'].last),2)
+   self.assertEqual({v['alias'] for v in ns['_PUBLIC_SCANNER'].work.values()},{'sink_in','sink_out'})
+   self.assertTrue(all(not v['complete'] for v in ns['_PUBLIC_SCANNER'].last.values()))
+ def test_neutral_work_counts_only_durable_empty_ranges_and_replay(self):
+  with tempfile.TemporaryDirectory() as root:
+   scanner,_,_=ScanTests().setup_scan(root);network=scanner.rpc
+   scanner.rpc=lambda method,params:[] if method=='eth_getLogs' else network(method,params)
+   scanner.scan(W,'from',[T],10,41,chunk=1)
+   sid=S.scan_id(S.descriptor(W,'from',[T]));self.assertEqual(scanner.work[sid]['verified_blocks'],2)
+   scanner.scan(W,'from',[T],10,41,chunk=1)
+   self.assertEqual(scanner.work[sid]['verified_blocks'],2)
+   self.assertEqual(scanner.work[sid]['through'],11);S.validate_store(root)
+ def test_neutral_work_checkpoint_failure_has_no_verified_delta(self):
+  from unittest.mock import patch
+  with tempfile.TemporaryDirectory() as root:
+   scanner,_,_=ScanTests().setup_scan(root);save=S.atomic_save
+   def broken(path,value):
+    if path.endswith(S.scan_id(S.descriptor(W,'from',[T]))+'.json'):raise OSError('fixture manifest failure')
+    return save(path,value)
+   with patch.object(S,'atomic_save',broken):
+    with self.assertRaises(OSError):scanner.scan(W,'from',[T],10,40,chunk=1)
+   work=scanner.work[S.scan_id(S.descriptor(W,'from',[T]))]
+   self.assertEqual(work['verified_blocks'],0);self.assertEqual(work['through'],9)
+ def test_neutral_active_charges_failed_bootstrap_once(self):
+  clock=[0];active=S.ActiveScanClock(lambda:clock[0]);scanner=S.PublicScanner('unused',None,None,RangeError,clock=active);scanner.declare('fixture','treasury_out')
+  with self.assertRaises(ValueError):
+   with scanner.acquisition('fixture'):
+    clock[0]+=2
+    with scanner.acquisition('fixture'):
+     clock[0]+=3;raise ValueError('fixture head')
+  self.assertEqual(scanner.work['fixture']['active_s'],5);self.assertEqual(active(),5)
+  self.assertEqual(scanner.work['fixture']['verified_blocks'],0);self.assertIsNone(scanner.work['fixture']['target'])
+  self.assertEqual(scanner._acquiring['fixture'],0)
+ def test_neutral_active_rejects_cross_source_nesting_and_sums_exactly(self):
+  clock=[0];active=S.ActiveScanClock(lambda:clock[0]);scanner=S.PublicScanner('unused',None,None,RangeError,clock=active)
+  with scanner.acquisition('first'):
+   clock[0]+=2
+   with self.assertRaises(RuntimeError):
+    with scanner.acquisition('second'):self.fail('cross-source nesting allowed')
+   with scanner.acquisition('first'):clock[0]+=3
+  with scanner.acquisition('second'):clock[0]+=4
+  self.assertEqual(sum(work['active_s'] for work in scanner.work.values()),active())
+  self.assertEqual(active(),9);self.assertEqual(active.depth,0)
+ def test_neutral_log_summary_omits_descriptor_and_unknown_coverage(self):
+  import ast,types
+  source=open(os.path.join(os.path.dirname(os.path.dirname(__file__)),'refresh.py')).read();tree=ast.parse(source)
+  block=tree.body[-1];output=[]
+  scanner=types.SimpleNamespace(clock=lambda:5,work={'first':{'alias':'sink_in','active_s':5,'verified_blocks':31,'through':100,'target':200,'descriptor':{'wallet':W,'private':'fixture secret'}},'second':{'alias':'sink_out','active_s':0,'verified_blocks':0,'through':None,'target':None}})
+  ns={'OFFLINE':False,'_PUBLIC_SCANNER':scanner,'time':types.SimpleNamespace(monotonic=lambda:10),'_BUILD_STARTED':0,'print':lambda value:output.append(value)}
+  exec(compile(ast.Module(body=[block],type_ignores=[]),'telemetry','exec'),ns)
+  text='\n'.join(output)
+  self.assertIn('declared_legs=2',text);self.assertIn('verified_blocks=31 through=100 target=200 remaining_blocks=100',text)
+  self.assertIn('leg=sink_out active_s=0.0 verified_blocks=0 through=None target=None remaining_blocks=None',text)
+  self.assertNotIn(W,text);self.assertNotIn('fixture secret',text);self.assertNotIn('descriptor',text)
  def test_active_clock_cumulative_idle_nested_and_exception(self):
   clock=[0];active=S.ActiveScanClock(lambda:clock[0])
   with active.active():
