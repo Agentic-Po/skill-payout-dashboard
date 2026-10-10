@@ -91,6 +91,7 @@ PROBE = r"""
     gT_text: html("gT").replace(/<[^>]+>/g, ""),
     patsum: html("patSum").replace(/<[^>]+>/g, ""),
     ftiles: html("ftiles").replace(/<[^>]+>/g, ""),
+    ftiles_html: html("ftiles"),
     gaps_rows: (html("gapsT").match(/<tr\b/g) || []).length,
     mix_toggle: (html("mixToggle").match(/data-mix=/g) || []).length
   };
@@ -130,7 +131,7 @@ def _checks_index(p):
     assert p["hourly_groups"] > 0 and p["hourly_line"] == 1, (p["hourly_groups"], p["hourly_line"])
     # X3: count/USD toggle present; ftiles subtitle names the groups
     assert p["mix_toggle"] == 2, p["mix_toggle"]
-    assert "rewards $" in p["ftiles"] and "credits $" in p["ftiles"], p["ftiles"][:300]
+    _checks_headline(p, json.load(open(os.path.join(ROOT, "data.json"))))
     # C4: the pattern monitor publishes NO counts, amounts or verdicts
     for bad in ("flagged", "monitored", "$"):
         assert bad not in p["gT_text"].split("Retired")[0], f"pattern monitor prose carries {bad!r}: {p['gT_text'][:200]!r}"
@@ -151,6 +152,63 @@ def _checks_index(p):
             f"2 rewards_v2 tiles · system top-up line · creator card {p['creator_tabs']} tabs / "
             f"{p['creator_rows']} rows · header {p['gen_text']!r} · hourly stacked by group · "
             f"monitor prose status-free · v2 bands only on days ≥ 2026-09-14")
+
+
+def _checks_headline(p, data):
+    """Group subtitles exist exactly when that window carries nonzero USD."""
+    tiles = re.findall(r'<div class="k">(.*?)</div><div class="v">(.*?)</div>(.*?)</div></div>',
+                       p["ftiles_html"], re.S)
+    assert len(tiles) == 6, "headline tiles missing"
+    out = next((t for t in tiles if t[0] == "Outflow — 24h"), None)
+    assert out is not None, "24h outflow tile missing"
+    assert "$" in out[1], "24h outflow value missing"
+    window = data["facts"]["windows"][0]
+    labels = {"skill_rewards":"rewards", "credit_grants":"credits",
+              "system_topups":"system top-ups", "topups_delivered":"top-ups",
+              "ops":"ops", "micro":"dust"}
+    groups = window.get("groups")
+    if groups is not None:
+        for key in data["facts"].get("group_keys", labels):
+            present = bool(groups.get(key, {}).get("usd"))
+            shown = bool(re.search(r"(?<![\w-])" + re.escape(labels[key]) + r" \$(?=[\d,])", out[2]))
+            if key == "topups_delivered":
+                shown = bool(re.search(r"(?:^| · )top-ups \$(?=[\d,])", out[2]))
+            assert shown == present, "24h group subtitle does not match its window"
+    else:
+        assert f"{window['out_tx']} tx" in out[2] and f"{window['out_wallets']} wallets" in out[2]
+    warning = "as of last complete fetch"
+    assert (warning in p["ftiles"]) == (not data["scope"]["complete"]), "headline coverage warning incorrect"
+
+
+def check_headline_windows():
+    """A zero 24h window still paints all tiles; incomplete coverage stays visible."""
+    data = json.load(open(os.path.join(ROOT, "data.json")))
+    page = P.build_from_template(open(os.path.join(ROOT, "template.html")).read())
+    cases = []
+    import copy
+    for complete in (True, False):
+        fixture = copy.deepcopy(data)
+        window = fixture["facts"]["windows"][0]
+        for key in ("out_usd", "out_tx", "out_wallets", "economy_out_usd", "ops_out_usd"):
+            window[key] = 0
+        for group in window["groups"].values():
+            for key in ("usd", "n", "wallets"):
+                group[key] = 0
+        fixture["scope"]["complete"] = complete
+        cases.append(fixture)
+    nonzero = copy.deepcopy(data)
+    nonzero["facts"]["windows"][0]["groups"]["skill_rewards"]["usd"] = 1
+    nonzero["facts"]["windows"][0]["groups"]["credit_grants"]["usd"] = 2
+    cases.append(nonzero)
+    for fixture in cases:
+        result = P.run(page, json.dumps(fixture), [{"probe": PROBE}])[0]
+        assert not result["uncaught"] and not result["renderErrors"], "headline fixture degraded"
+        assert _banner(result, "loadBanner").get("removed"), "headline fixture kept loading banner"
+        _checks_headline(result["probe"], fixture)
+        if not fixture["facts"]["windows"][0]["out_usd"]:
+            assert re.search(r'<div class="v">\$0(?:\.0+)?</div>', result["probe"]["ftiles_html"]), "zero window did not render a zero dollar value"
+    print("ok headline windows: zero/nonzero subtitles match data; incomplete coverage warning retained")
+    return 0
 
 
 def _checks_coupon(p):
@@ -311,6 +369,7 @@ def main():
                    for page, data_rel, checks in pages)
     if want in (None, "full.html") and not failures:
         failures += check_stale_and_fail_closed()
+        failures += check_headline_windows()
     if want in (None, "index.html") and not failures:
         failures += check_public_page()
     if failures:

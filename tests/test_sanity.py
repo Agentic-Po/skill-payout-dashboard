@@ -43,10 +43,13 @@ def _tree():
     return d
 
 
-def _run(root):
+def _run(root, expected_secondary=()):
     p = subprocess.run([sys.executable, os.path.join(ROOT, "sanity.py"), "--offline", "--root", root],
                        capture_output=True, text=True, cwd=ROOT)
     out = p.stdout.splitlines()
+    for section in expected_secondary:
+        assert any(ln.strip().startswith(f"LOG secondary section {section} empty") for ln in out), \
+            f"empty secondary section {section} not logged"
     summary = next((ln for ln in out if ln.startswith("SANITY:")), "")
     blocks = [ln for ln in out if ln.startswith("::error::")]
     logged = int(summary.split("logged drift")[0].split(",")[-1].strip()) if summary else -1
@@ -126,9 +129,11 @@ def main():
         D2["facts"]["balance_series"] = None
         D2["sink"] = None
         json.dump(D2, open(os.path.join(t, "data.json"), "w"))
-        rc, summary, blocks, logged, err = _run(t)
+        rc, summary, blocks, logged, err = _run(t, expected_secondary=("facts.balance_series", "sink"))
         assert rc == 0 and not blocks, f"empty secondary sections blocked: {blocks[:3]} {err[-400:]}"
-        assert logged >= logged_clean + 2, f"empty secondary sections not logged: {logged} vs {logged_clean}"
+        # Cached real data may already contain an empty secondary section.
+        # Assert each warning directly rather than expecting two NEW logs.
+        assert logged >= logged_clean, f"empty secondary sections lost logs: {logged} vs {logged_clean}"
         print(f"ok (e1) empty balance_series + sink: exit 0, logged (page shows them unavailable)")
     finally:
         shutil.rmtree(t, ignore_errors=True)
