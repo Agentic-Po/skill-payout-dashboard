@@ -100,6 +100,8 @@ jobs:
         run: python3 tests/test_util.py
       - name: Public RPC range/fallback regression
         run: python3 tests/test_rpc_fallback.py
+      - name: Coverage notice provenance and privacy
+        run: python3 tests/test_coverage_notice.py
       - name: Bounded public scan regression
         run: python3 tests/test_public_scan.py
       - name: rpc_batch skips counted and logged
