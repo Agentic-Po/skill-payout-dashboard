@@ -29,13 +29,13 @@ class BatchTests(unittest.TestCase):
  def test_partial_only_missing_preserves_exact_values(self):
   ns,seen,tm=harness(lambda u,p:[{'id':i['id'],'result':block(i['id'])} for i in p if u.endswith('b.invalid') or i['id']==0])
   self.assertEqual(self.run_batch(ns),{i:block(i) for i in range(3)})
-  self.assertEqual([i['id'] for i in seen[1][1]],[1,2]);self.assertEqual(ns['_RPC_GOOD_ENDPOINTS']['batch'],'https://b.invalid');self.assertTrue(all(t<=5 for t in tm))
+  self.assertEqual([i['id'] for i in seen[1][1]],[1,2]);self.assertEqual(ns['_RPC_GOOD_ENDPOINTS'][('batch',('eth_getBlockByNumber',))],'https://b.invalid');self.assertTrue(all(t<=5 for t in tm))
  def test_duplicate_unknown_bool_ids_never_accepted(self):
   for bad in ([{'id':0,'result':block(0)}]*2,[{'id':7,'result':block(0)}],[{'id':True,'result':block(0)}],[None]):
    ns,_,_=harness(lambda u,p:bad);self.assertEqual(self.run_batch(ns),{})
  def test_null_error_missing_and_wrong_block_stay_missing(self):
   ns,_,_=harness(lambda u,p:[{'id':0,'result':None},{'id':1,'result':block(1),'error':{}},{'id':2,'result':block(0)}])
-  self.assertEqual(self.run_batch(ns),{});self.assertNotIn('batch',ns.get('_RPC_GOOD_ENDPOINTS',{}))
+  self.assertEqual(self.run_batch(ns),{});self.assertNotIn(('batch',('eth_getBlockByNumber',)),ns.get('_RPC_GOOD_ENDPOINTS',{}))
  def test_partial_survives_invalid_alternative(self):
   ns,_,_=harness(lambda u,p:[{'id':0,'result':block(0)}] if u.endswith('a.invalid') else [{'id':0,'result':block(0)}])
   self.assertEqual(self.run_batch(ns),{0:block(0)})
@@ -91,6 +91,49 @@ class BatchTests(unittest.TestCase):
   self.assertIn('RPC ACQUISITION: single_roundtrips=%d batch_roundtrips=%d batch_seconds=%.1f batch_results=%d',src)
  def test_empty_calls_no_requests(self):
   ns,seen,_=harness(lambda u,p:None);self.assertEqual(self.run_batch(ns,[]),{});self.assertFalse(seen)
+class MethodHealthTests(unittest.TestCase):
+ def test_failure_isolated_both_method_orders(self):
+  for failed,working in [('eth_getBlockByNumber','eth_getLogs'),('eth_getLogs','eth_getBlockByNumber')]:
+   def reply(url,payload):
+    if payload[0]['method']==failed:return ConnectionError('private-provider-detail')
+    return [{'id':p['id'],'result':block(p['id']) if working=='eth_getBlockByNumber' else []} for p in payload]
+   ns,seen,_=harness(reply)
+   with redirect_stdout(io.StringIO()):
+    initial=ns['rpc_batch']([(working,['0x1',False])])
+    self.assertEqual(initial,{0:block(0) if working=='eth_getBlockByNumber' else []})
+    self.assertEqual(ns['rpc_batch']([(failed,['0x1',False])]),{})
+    got=ns['rpc_batch']([(working,['0x1',False])])
+   self.assertEqual(got,{0:block(0) if working=='eth_getBlockByNumber' else []})
+   self.assertEqual(seen[-1][0],'https://a.invalid')
+   self.assertEqual(ns['_RPC_BATCH_DEAD'][(failed,)],set(ns['RPC_ENDPOINTS']))
+   self.assertFalse(ns['_RPC_BATCH_DEAD'][(working,)])
+ def test_preference_isolated_and_mixed_failure_does_not_poison(self):
+  def reply(url,payload):
+   methods={p['method'] for p in payload}
+   if len(methods)>1:return ConnectionError('mixed failure')
+   if methods=={'eth_getLogs'} and url.endswith('a.invalid'):return ConnectionError('log refusal')
+   return [{'id':p['id'],'result':block(p['id']) if p['method']=='eth_getBlockByNumber' else []} for p in payload]
+  ns,seen,_=harness(reply)
+  with redirect_stdout(io.StringIO()):
+   self.assertEqual(ns['rpc_batch']([('eth_getLogs',[]) ]),{0:[]})
+   self.assertEqual(ns['rpc_batch']([('eth_getLogs',[]),('eth_getBlockByNumber',['0x2',False])]),{})
+   self.assertEqual(ns['rpc_batch']([('eth_getBlockByNumber',['0x1',False])]),{0:block(0)})
+   self.assertEqual(ns['rpc_batch']([('eth_getLogs',[])]),{0:[]})
+  self.assertEqual(seen[-2][0],'https://a.invalid');self.assertEqual(seen[-1][0],'https://b.invalid')
+  self.assertEqual(ns['_RPC_GOOD_ENDPOINTS'][('batch',('eth_getLogs',))],'https://b.invalid')
+ def test_two_header_groups_missing_only_cache_and_single_fallback(self):
+  requests=[]
+  def reply(url,payload):
+   requests.append(payload)
+   return [{'id':p['id'],'result':{'number':p['params'][0],'timestamp':hex(100+int(p['params'][0],16))}} for p in payload if p['params'][0]!='0x2']
+  ns,seen,_=harness(reply);ns.update(_block_ts_cache={5:'saved'},_fmt_ts=lambda value:int(value,16),_network_sleep=lambda delay:None)
+  for name in ('block_ts_prefetch','block_ts'):exec(fns[name],ns)
+  singles=[];ns['rpc']=lambda method,params:singles.append((method,params)) or {'timestamp':'0x66'}
+  with redirect_stdout(io.StringIO()):ns['block_ts_prefetch']([1,2,3,4,5,1])
+  self.assertTrue(all(len(p)<=2 for p in requests));self.assertEqual([p['params'][0] for p in requests[1]],['0x2'])
+  self.assertEqual(ns['_block_ts_cache'],{1:101,3:103,4:104,5:'saved'})
+  self.assertEqual(ns['block_ts'](2),102);self.assertEqual(singles,[('eth_getBlockByNumber',['0x2',False])])
+  self.assertEqual(ns['block_ts'](2),102);self.assertEqual(len(singles),1)
 class ScopedLogTests(unittest.TestCase):
  def ns(self):
   ns={}
