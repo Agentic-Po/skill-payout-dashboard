@@ -631,7 +631,8 @@ def _public_leg(wallet,direction,token_addrs):
     from public_scan import PublicScanner,ActiveScanClock,descriptor,scan_id
     if _PUBLIC_SCANNER is None:
         _PUBLIC_SCANNER = PublicScanner(os.path.join(HERE,"pending_scans"),_bounded_scan_rpc,
-                                       _shape_rpc_transfers,RpcRangeError,budget_seconds=360,clock=ActiveScanClock(),leg_budget_seconds=360/7)
+                                       _shape_rpc_transfers,RpcRangeError,budget_seconds=360,clock=ActiveScanClock(),leg_budget_seconds=360/7,
+                                       ordinary_remaining=lambda: (_NETWORK_DEADLINE if _NETWORK_DEADLINE is not None else _BUILD_STARTED+540)-time.monotonic())
     if _PUBLIC_SCANNER.deadline is None:
         _PUBLIC_SCANNER.deadline = _PUBLIC_SCANNER.clock() + _PUBLIC_SCANNER.budget_seconds
     desc = descriptor(wallet,direction,token_addrs)
