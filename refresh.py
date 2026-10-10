@@ -343,9 +343,11 @@ def rpc_batch(calls, validate_result=None):
     if not calls:
         return {}
     out = {}
-    dead = globals().setdefault("_RPC_BATCH_DEAD", set())
+    method_key = tuple(sorted({call[0] for call in calls}))
+    dead = globals().setdefault("_RPC_BATCH_DEAD", {}).setdefault(method_key, set())
+    preference_key = ("batch", method_key)
     stats = globals().setdefault("_RPC_BATCH_WORK", Counter())
-    preferred = globals().setdefault("_RPC_GOOD_ENDPOINTS", {}).get("batch")
+    preferred = globals().setdefault("_RPC_GOOD_ENDPOINTS", {}).get(preference_key)
     endpoints = ([preferred] if preferred in RPC_ENDPOINTS else []) + [u for u in RPC_ENDPOINTS if u != preferred]
     for url in endpoints:
         if url in dead:
@@ -397,7 +399,7 @@ def rpc_batch(calls, validate_result=None):
                 valid[i]=value
             out.update(valid);stats["results"] += len(valid)
             if set(valid)==missing:
-                globals().setdefault("_RPC_GOOD_ENDPOINTS",{})["batch"]=url
+                globals().setdefault("_RPC_GOOD_ENDPOINTS",{})[preference_key]=url
                 return out
             _rpc_batch_skip("items-dropped",url,what,f"{len(missing)-len(valid)} of {len(missing)} returned no valid result (left for fallback)")
         except Exception as e:
@@ -433,19 +435,18 @@ def block_ts_prefetch(bns):
     uncached and block_ts() fetches it singly, so the result is identical either
     way."""
     todo = sorted({b for b in bns if b not in _block_ts_cache})
-    # 10, not 100: mainnet.base.org answers a 100-call batch with
-    # {"error": "maximum 10 calls in 1 batch"} and drops the whole thing, which
-    # would silently degrade every lookup back to one-at-a-time. Measured
-    # 2026-08-31: 10 blocks in one batch = 1.3s, versus ~0.9s EACH sequentially.
-    for n in range(0, len(todo), 10):
-        chunk = todo[n:n + 10]
+    # Two headers per batch: this bounded shape succeeds on the existing public
+    # provider while larger header bodies have failed. Availability is scoped
+    # by method so a header failure cannot disable working log batches.
+    for n in range(0, len(todo), 2):
+        chunk = todo[n:n + 2]
         got = rpc_batch([("eth_getBlockByNumber", [hex(b), False]) for b in chunk])
         for idx, b in enumerate(chunk):
             blk = got.get(idx)
             if blk and blk.get("timestamp"):
                 _block_ts_cache[b] = _fmt_ts(blk["timestamp"])
-        if n + 10 < len(todo):
-            _network_sleep(0.1)     # same pacing courtesy as the eth_getLogs loop
+        if n + 2 < len(todo):
+            _network_sleep(0.1)     # unchanged pacing courtesy between groups
 
 def block_ts(bn):
     if bn not in _block_ts_cache:
