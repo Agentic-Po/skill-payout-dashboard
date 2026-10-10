@@ -727,4 +727,90 @@ class SinkPairAttemptTests(unittest.TestCase):
  def test_complete_pair_returns_both_original_results(self):
   ns,_=self.pair_ns();ns['_sweep']=lambda direction:[direction];self.assertEqual(ns['_sweep_pair'](),(['to'],['from']))
 
+
+class BudgetHintTests(unittest.TestCase):
+ def fixture(self,root,chunk=1984,prefix=False,complete=False):
+  import pathlib
+  desc=S.descriptor(W,'to',[T]);sid=S.scan_id(desc);path=pathlib.Path(root)/(sid+'.json')
+  anchor={'number':'0x63','hash':'0x'+'3'*64,'timestamp':hex(1700000198)}
+  folder=pathlib.Path(root)/sid;folder.mkdir();S.atomic_save(str(folder/'1-99.json'),[])
+  import hashlib
+  ref={'file':'1-99.json','checksum':'0x'+hashlib.sha256((folder/'1-99.json').read_bytes()).hexdigest()}
+  state={'descriptor':desc,'start':1,'through':99,'hash':anchor['hash'],'timestamp':'2023-11-14T22:16:38Z','target':3000,'complete':complete,'chunks':[ref],'chunk':chunk}
+  if complete:state['target']=99
+  if prefix:
+   state['start']=100;state['through']=199;state['chunks']=[]
+   (folder/'1-99.json').rename(folder/'100-199.json');ref={'file':'100-199.json','checksum':ref['checksum']};state['chunks']=[ref]
+   S.atomic_save(str(folder/'1-49.json'),[]);state['prefix']={'start':1,'through':49,'hash':anchor['hash'],'timestamp':state['timestamp'],'target':99,'complete':False,'chunks':[{'file':'1-49.json','checksum':ref['checksum']}],'chunk':chunk}
+  S.atomic_save(str(path),state);S.validate_store(root)
+  return sid,path,state
+ def scanner(self,root,global_budget=360,ordinary=540,slow=True):
+  import math
+  wall=[0.0];holder={}
+  def rpc(method,params):
+   if method=='eth_getLogs':
+    for _ in range(math.ceil((int(params[0]['toBlock'],16)-int(params[0]['fromBlock'],16)+1)/200)):
+     remaining=holder['s'].remaining()
+     if remaining<6:wall[0]+=max(0,remaining);raise S.BudgetExpired('local expiry')
+     wall[0]+=6
+    return []
+   n=int(params[0],16);return {'number':hex(n),'hash':'0x'+'3'*64,'timestamp':hex(1700000000+2*n)}
+  scanner=S.PublicScanner(root,rpc,lambda logs:[],RangeError,budget_seconds=global_budget,clock=S.ActiveScanClock(lambda:wall[0]),leg_budget_seconds=360/7,ordinary_remaining=lambda:ordinary-wall[0]);holder['s']=scanner
+  return scanner,wall
+ def run_partial(self,s,sid,start=1,head=3030):
+  with self.assertRaises(S.ScanIncomplete):
+   with s.acquisition(sid):s.scan(W,'to',[T],start,head)
+ def test_local_atomic_hint_preserves_proof_then_next_run_banks(self):
+  with tempfile.TemporaryDirectory() as root:
+   sid,path,prior=self.fixture(root);s,_=self.scanner(root);self.run_partial(s,sid)
+   saved=json.loads(path.read_text());self.assertEqual(saved,dict(prior,chunk=992));self.assertEqual(s.work[sid]['verified_blocks'],0);self.assertFalse(s.last[sid]['complete']);S.validate_store(root)
+   s,_=self.scanner(root);self.run_partial(s,sid);self.assertEqual(json.loads(path.read_text())['through'],1091);self.assertEqual(s.work[sid]['verified_blocks'],992)
+ def test_global_outer_complete_and_sub100_do_not_hint(self):
+  for opts,chunk,complete in (({'global_budget':360/7},1984,False),({'ordinary':0},1984,False),({},1984,True),({},31,False)):
+   with self.subTest(opts=opts,chunk=chunk,complete=complete),tempfile.TemporaryDirectory() as root:
+    sid,path,prior=self.fixture(root,chunk,complete=complete);s,wall=self.scanner(root,**opts)
+    # Directly exercise the same expiry boundary without banking a range.
+    with s.acquisition(sid):
+     s.deadline=s.clock()+s.budget_seconds;wall[0]=360/7;s._budget_hint(str(path),dict(prior),sid,1984)
+    self.assertEqual(json.loads(path.read_text()),prior)
+ def test_prefix_hint_only_changes_nested_chunk(self):
+  with tempfile.TemporaryDirectory() as root:
+   sid,path,prior=self.fixture(root,prefix=True);s,wall=self.scanner(root)
+   with s.acquisition(sid):
+    s.deadline=s.clock()+360;wall[0]=360/7;s._budget_hint(str(path),dict(prior),sid,1984,prefix=True)
+   saved=json.loads(path.read_text());expected=json.loads(json.dumps(prior));expected['prefix']['chunk']=992;self.assertEqual(saved,expected);S.validate_store(root)
+ def test_fresh_unanchored_prefix_changes_only_parent_hint(self):
+  with tempfile.TemporaryDirectory() as root:
+   sid,path,prior=self.fixture(root,prefix=True);prior.pop('prefix');S.atomic_save(str(path),prior)
+   s,wall=self.scanner(root)
+   with s.acquisition(sid):
+    s.deadline=s.clock()+360;wall[0]=360/7;s._budget_hint(str(path),dict(prior),sid,1984,prefix=True)
+   self.assertEqual(json.loads(path.read_text()),dict(prior,chunk=992));S.validate_store(root)
+ def test_validation_consuming_outer_margin_does_not_write_hint(self):
+  with tempfile.TemporaryDirectory() as root:
+   sid,path,prior=self.fixture(root);s,wall=self.scanner(root,ordinary=52)
+   original=S.validate_store
+   def validate(directory):original(directory);wall[0]=53
+   with s.acquisition(sid):
+    s.deadline=s.clock()+360;wall[0]=360/7
+    with patch.object(S,'validate_store',side_effect=validate):s._budget_hint(str(path),dict(prior),sid,1984)
+   self.assertEqual(json.loads(path.read_text()),prior)
+ def test_actual_constructor_ordinary_clock_callback(self):
+  import ast,types
+  source=open(os.path.join(os.path.dirname(os.path.dirname(__file__)),'refresh.py')).read()
+  node=next(n for n in ast.walk(ast.parse(source)) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='_PUBLIC_SCANNER' for t in n.targets) and isinstance(n.value,ast.Call))
+  ns={'PublicScanner':S.PublicScanner,'ActiveScanClock':S.ActiveScanClock,'os':os,'HERE':'/unused','_bounded_scan_rpc':lambda *a:None,'_shape_rpc_transfers':lambda a:a,'RpcRangeError':RangeError,'_NETWORK_DEADLINE':None,'_BUILD_STARTED':10,'time':types.SimpleNamespace(monotonic=lambda:20)}
+  exec(ast.get_source_segment(source,node),ns);self.assertEqual(ns['_PUBLIC_SCANNER'].ordinary_remaining(),530)
+  ns['_NETWORK_DEADLINE']=25;self.assertEqual(ns['_PUBLIC_SCANNER'].ordinary_remaining(),5)
+ def test_absent_banked_and_write_failure_never_replace_proof(self):
+  with tempfile.TemporaryDirectory() as root:
+   sid,path,prior=self.fixture(root);s,wall=self.scanner(root)
+   with s.acquisition(sid):
+    s.deadline=s.clock()+360;wall[0]=360/7;s.work[sid]['verified_blocks']=1;s._budget_hint(str(path),dict(prior),sid,1984);self.assertEqual(json.loads(path.read_text()),prior)
+    s.work[sid]['verified_blocks']=0
+    with patch.object(S,'atomic_save',side_effect=OSError('write failure')):
+     with self.assertRaises(OSError):s._budget_hint(str(path),dict(prior),sid,1984)
+    self.assertEqual(json.loads(path.read_text()),prior)
+    path.unlink();s._budget_hint(str(path),dict(prior),sid,1984);self.assertFalse(path.exists())
+
 if __name__=='__main__':unittest.main()

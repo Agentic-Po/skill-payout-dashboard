@@ -92,7 +92,7 @@ def log_key(row):
 
 
 class PublicScanner:
-    def __init__(self, directory, rpc, materialize, range_error, budget_seconds=180, clock=time.monotonic, leg_budget_seconds=None):
+    def __init__(self, directory, rpc, materialize, range_error, budget_seconds=180, clock=time.monotonic, leg_budget_seconds=None, ordinary_remaining=None):
         self.directory = directory
         self.rpc = rpc
         self.materialize = materialize
@@ -106,6 +106,8 @@ class PublicScanner:
         self.leg_budget_seconds = leg_budget_seconds
         self._leg_started = {}
         self._growth_refused = set()
+        self.ordinary_remaining = ordinary_remaining
+        self._budget_hinted = set()
 
     def declare(self, sid, alias="source"):
         self.work.setdefault(sid,{"alias":alias,"active_s":0.0,"verified_blocks":0,"through":None,"target":None})
@@ -169,7 +171,40 @@ class PublicScanner:
         if self.block(state['through'])['hash'].lower() != state['hash'].lower():
             raise ScanInvalid('checkpoint block hash mismatch')
 
-    def _fill(self, state, target, desc, sid, topics, persist, max_chunk):
+    def _budget_hint(self, path, state, sid, attempted, prefix=False):
+        # Only a first atomic range exhausting its own allowance may teach the
+        # next run a smaller range. Proof and financial availability never move.
+        started = self._leg_started.get(sid)
+        if (started is None or sid in self._budget_hinted
+                or self.leg_budget_seconds is None or self.ordinary_remaining is None
+                or self.work[sid]['verified_blocks'] or attempted <= 100
+                or self.work[sid]['active_s']+self.clock()-started < self.leg_budget_seconds
+                or self.deadline is None or self.deadline-self.clock() <= 0
+                or self.ordinary_remaining() <= 0 or not os.path.exists(path)):
+            return
+        validate_store(self.directory)
+        with open(path) as source:
+            saved = json.load(source)
+        # A completed historical proof is immutable, even if a newer request
+        # exhausted its allowance before making progress.
+        if saved['complete']:
+            return
+        segment = saved.get('prefix', saved) if prefix else saved
+        lowered = min(segment['chunk'], max(100, attempted//2))
+        if lowered >= segment['chunk']:
+            return
+        # Store validation can consume the remaining ordinary/global time.
+        if self.deadline-self.clock() <= 0 or self.ordinary_remaining() <= 0:
+            return
+        segment['chunk'] = lowered
+        atomic_save(path, saved)
+        self._budget_hinted.add(sid)
+        if prefix and 'prefix' in state:
+            state['prefix']['chunk'] = lowered
+        else:
+            state['chunk'] = lowered
+
+    def _fill(self, state, target, desc, sid, topics, persist, max_chunk, on_budget_expiry=None):
         nxt = state['through']+1
         chunk = state.get('chunk',2000)
         successes = 0
@@ -179,10 +214,14 @@ class PublicScanner:
         seen = {log_key(r) for r in state['rows']}
         while nxt <= target:
             if self.expired():
-                raise ScanIncomplete('bounded scan incomplete; last good cache retained')
+                if on_budget_expiry:on_budget_expiry(chunk)
+                raise BudgetExpired('public scan budget exhausted')
             end = min(nxt+chunk-1,target)
             try:
                 logs = self.rpc('eth_getLogs',[{'fromBlock':hex(nxt),'toBlock':hex(end),'address':desc['tokens'],'topics':topics}])
+            except BudgetExpired:
+                if on_budget_expiry:on_budget_expiry(chunk)
+                raise
             except self.range_error:
                 self._growth_refused.add(sid)
                 successes = 0
@@ -218,7 +257,8 @@ class PublicScanner:
                     raise ScanInvalid('materialization lost a transfer')
                 anchor = self.block(end)
             except BudgetExpired:
-                raise ScanIncomplete('bounded scan incomplete; last good cache retained') from None
+                if on_budget_expiry:on_budget_expiry(chunk)
+                raise
             expected = {(log['transactionHash'].lower(),int(log['logIndex'],16),int(log['blockNumber'],16)) for log in logs}
             actual = {(row['transaction_hash'].lower(),row['log_index'],row['block_number']) for row in shaped}
             if actual != expected:
@@ -298,7 +338,8 @@ class PublicScanner:
                     candidate = dict(state,prefix=value,complete=False)
                     persist(candidate)
                     state['prefix'] = value
-                self._fill(prefix,prefix['target'],desc,sid,topics,persist_prefix,min(chunk,2000))
+                self._fill(prefix,prefix['target'],desc,sid,topics,persist_prefix,min(chunk,2000),
+                           lambda attempted:self._budget_hint(path,state,sid,attempted,prefix=True))
                 # The join is a separate atomic boundary; either proof survives
                 # a crash, and both canonical anchors must still agree now.
                 self._anchor(prefix)
@@ -309,7 +350,8 @@ class PublicScanner:
                 joined.pop('prefix',None)
                 persist(joined)
                 state = joined
-            self._fill(state,target,desc,sid,topics,persist,min(chunk,2000))
+            self._fill(state,target,desc,sid,topics,persist,min(chunk,2000),
+                       lambda attempted:self._budget_hint(path,state,sid,attempted))
             state['complete'] = False
             completed = dict(state,complete=True)
             persist(completed)
