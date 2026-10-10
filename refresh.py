@@ -364,9 +364,22 @@ def rpc_batch(calls, validate_result=None):
         try:
             req = urllib.request.Request(url, data=payload,
                 headers={"Content-Type":"application/json","User-Agent":"Mozilla/5.0 (skill-payout-dashboard/1.0; polite crawler)"})
-            stats["calls"] += 1
-            with urllib.request.urlopen(req, timeout=_network_timeout(min(5,max(0.01,scanner.deadline-scanner.clock())) if scanner and scanner.deadline is not None else 5)) as r:
-                res = json.load(r)
+            # One extra read only for a transient transport failure; malformed
+            # JSON/envelopes and permanent refusals never receive this retry.
+            for attempt in range(2):
+                try:
+                    stats["calls"] += 1
+                    with urllib.request.urlopen(req, timeout=_network_timeout(min(5,max(0.01,scanner.deadline-scanner.clock())) if scanner and scanner.deadline is not None else 5)) as r:
+                        res = json.load(r)
+                    break
+                except Exception as failure:
+                    from urllib.error import HTTPError, URLError
+                    transient = (isinstance(failure, TimeoutError)
+                        or isinstance(failure, URLError) and isinstance(failure.reason, TimeoutError)
+                        or isinstance(failure, HTTPError) and (failure.code == 429 or 500 <= failure.code <= 599))
+                    if attempt or not transient:
+                        raise
+                    _network_sleep(0.2)
             if not isinstance(res,list):
                 dead.add(url)
                 _rpc_batch_skip("not-a-batch",url,what,"batch response refused")
