@@ -8,7 +8,43 @@ import json
 import os
 import re
 import time
+import threading
+from contextlib import contextmanager
 from datetime import datetime,timezone
+
+class ActiveScanClock:
+    """Cumulative acquisition time; nested scopes charge once, including failure."""
+    def __init__(self, wall=time.monotonic):
+        self.wall = wall
+        self.used = 0.0
+        self.started = None
+        self.depth = 0
+        self.owner = None
+        self.lock = threading.Lock()
+
+    def __call__(self):
+        return self.used + (self.wall()-self.started if self.started is not None else 0.0)
+
+    @contextmanager
+    def active(self):
+        owner = threading.get_ident()
+        with self.lock:
+            if self.depth and self.owner != owner:
+                raise RuntimeError("concurrent acquisition clock scope")
+            if not self.depth:
+                self.owner = owner
+                self.started = self.wall()
+            self.depth += 1
+        try:
+            yield
+        finally:
+            with self.lock:
+                self.depth -= 1
+                if not self.depth:
+                    self.used += self.wall()-self.started
+                    self.started = None
+                    self.owner = None
+
 
 FINALITY = 30
 TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
@@ -135,7 +171,18 @@ class PublicScanner:
             if not isinstance(logs,list):
                 raise ScanInvalid('invalid log result')
             for log in logs:
-                ls=log.get('topics',[])
+                if not isinstance(log,dict):
+                    raise ScanInvalid('invalid log object')
+                ls=log.get('topics')
+                if (not isinstance(ls,list) or len(ls)!=3
+                        or any(not isinstance(topic,str) or not re.fullmatch(r'0x[0-9a-fA-F]{64}',topic) for topic in ls)
+                        or not isinstance(log.get('address'),str)
+                        or not re.fullmatch(r'0x[0-9a-fA-F]{40}',log['address'])
+                        or not isinstance(log.get('transactionHash'),str)
+                        or not re.fullmatch(r'0x[0-9a-fA-F]{64}',log['transactionHash'])
+                        or any(not isinstance(log.get(field),str) or not re.fullmatch(r'0x[0-9a-fA-F]+',log[field]) for field in ('blockNumber','logIndex','data'))
+                        or ('removed' in log and not isinstance(log['removed'],bool))):
+                    raise ScanInvalid('invalid Transfer log shape')
                 index=1 if direction=='from' else 2
                 if (len(ls)!=3 or ls[0].lower()!=TRANSFER_TOPIC or ls[index].lower()!=topic_wallet
                         or log.get('removed') or log.get('address','').lower() not in desc['tokens']

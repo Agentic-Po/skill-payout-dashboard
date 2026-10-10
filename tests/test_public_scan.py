@@ -27,6 +27,29 @@ class ScanTests(unittest.TestCase):
    self.assertTrue(P._status_adjacent('data.json',json.dumps({'wallet':wallet,token:1})))
   with self.assertRaises(S.ScanIncomplete):S.require_coverage(document)
 
+ def test_malformed_log_shapes_are_invalid_before_materialization_or_checkpoint(self):
+  import copy
+  with tempfile.TemporaryDirectory() as root:
+   scanner,_,_=self.setup_scan(root);original=scanner.rpc;valid=original('eth_getLogs',[{'fromBlock':'0xa','toBlock':'0xb'}])[0]
+   variants=['not a log',None,[valid,'not a log']]
+   for field,value in (('topics',None),('topics',[None]*3),('topics','abc'),('address',None),('transactionHash',None),('blockNumber','not hex'),('logIndex',None),('data',{}),('removed','false')):
+    log=copy.deepcopy(valid);log[field]=value;variants.append(log)
+   for log in variants:
+    scanner,_,_=self.setup_scan(root);network=scanner.rpc;materialized=[]
+    scanner.rpc=lambda method,params: (log if isinstance(log,list) else [log]) if method=='eth_getLogs' else network(method,params)
+    scanner.materialize=lambda logs:materialized.append(logs)
+    with self.assertRaises(S.ScanInvalid):scanner.scan(W,'from',[T],10,42,chunk=2)
+    self.assertFalse(materialized);self.assertFalse(os.path.exists(root) and os.listdir(root))
+ def test_semantic_log_filter_mismatch_still_invalid(self):
+  with tempfile.TemporaryDirectory() as root:
+   scanner,_,_=self.setup_scan(root);network=scanner.rpc
+   def wrong(method,params):
+    result=network(method,params)
+    if method=='eth_getLogs':result[0]['address']='0x'+'9'*40
+    return result
+   scanner.rpc=wrong
+   with self.assertRaises(S.ScanInvalid):scanner.scan(W,'from',[T],10,42,chunk=2)
+   self.assertFalse(os.listdir(root))
  def setup_scan(self,root,limit=None,fail_shape=False):
   clock=[0];calls=[]
   def rpc(method,params):
@@ -209,17 +232,99 @@ class IntegrationTests(unittest.TestCase):
    with patch.object(product,'_env',return_value={'POSTHOG_API_KEY':'synthetic fixture'}),patch.object(product,'CACHE',os.path.join(root,'cache.json')),patch.object(product.urllib.request,'urlopen',side_effect=urlopen):
     result=product.fetch(timeout=remaining)
    self.assertEqual(calls,[3,1]);self.assertFalse(result['complete'])
+ def test_active_clock_cumulative_idle_nested_and_exception(self):
+  clock=[0];active=S.ActiveScanClock(lambda:clock[0])
+  with active.active():
+   clock[0]+=40
+   with active.active():clock[0]+=10
+  self.assertEqual(active(),50)
+  clock[0]+=131
+  self.assertEqual(active(),50)
+  with self.assertRaises(ValueError):
+   with active.active():
+    clock[0]+=30
+    with active.active():
+     clock[0]+=20
+     raise ValueError('fixture')
+  self.assertEqual(active(),100);self.assertEqual(active.depth,0);self.assertIsNone(active.started)
+  with active.active():clock[0]+=80
+  self.assertEqual(active(),180)
+  self.assertEqual(active.depth,0)
+ def test_fallback_scopes_bootstrap_materialization_hash_and_checkpoint(self):
+  import ast
+  source=open(os.path.join(os.path.dirname(os.path.dirname(__file__)),'refresh.py')).read();tree=ast.parse(source)
+  with tempfile.TemporaryDirectory() as root:
+   scanner,_,_=ScanTests().setup_scan(root);clock=[0];active=S.ActiveScanClock(lambda:clock[0]);scanner.clock=active;scanner.budget_seconds=180
+   network=scanner.rpc;shape=scanner.materialize;phases=[]
+   def rpc(method,params):
+    self.assertGreater(active.depth,0);phases.append(method);clock[0]+=1
+    return hex(41) if method=='eth_blockNumber' else network(method,params)
+   scanner.rpc=rpc
+   def materialize(logs):
+    self.assertGreater(active.depth,0);phases.append('materialize');clock[0]+=1;return shape(logs)
+   scanner.materialize=materialize
+   original=S.atomic_save
+   def save(*args):
+    self.assertGreater(active.depth,0);phases.append('checkpoint');clock[0]+=1;return original(*args)
+   ns={'_PUBLIC_SCANNER':scanner,'_RPC_LAST_THROUGH':None,'rpc':rpc,'HERE':root,'_shape_rpc_transfers':shape,'RpcRangeError':RangeError,'os':os,'LOGS_CHUNK':[1]}
+   for name in ('_public_leg','_scan_rpc','rpc_transfer_fallback'):
+    node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name==name);exec(ast.get_source_segment(source,node),ns)
+   from unittest.mock import patch
+   with patch.object(S,'atomic_save',save):
+    self.assertTrue(ns['rpc_transfer_fallback'](W,'from',[T],10,to_block=10))
+    first=active();clock[0]+=131
+    self.assertTrue(ns['rpc_transfer_fallback'](W,'from',[T],11,to_block=11))
+   self.assertGreater(active(),first);self.assertLess(active(),180)
+   self.assertEqual(scanner.deadline,180);self.assertEqual(active.depth,0)
+   self.assertIn('materialize',phases);self.assertIn('checkpoint',phases);self.assertIn('eth_getBlockByNumber',phases)
+   S.validate_store(root)
+ def test_outer_wall_guard_and_idle_active_timeout(self):
+  import ast,types
+  source=open(os.path.join(os.path.dirname(os.path.dirname(__file__)),'refresh.py')).read()
+  clock=[0];active=S.ActiveScanClock(lambda:clock[0])
+  scanner=types.SimpleNamespace(clock=active,deadline=180)
+  ns={'time':types.SimpleNamespace(monotonic=lambda:clock[0]),'_BUILD_STARTED':0,'_NETWORK_DEADLINE':None,'_MARKET_DEADLINE':None,'_PUBLIC_SCANNER':scanner}
+  node=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name=='_network_timeout');exec(ast.get_source_segment(source,node),ns)
+  with active.active():
+   clock[0]+=40
+   self.assertEqual(ns['_network_timeout'](200),140)
+  clock[0]+=131
+  self.assertEqual(ns['_network_timeout'](200),200);self.assertEqual(active(),40)
+  with active.active():
+   self.assertEqual(ns['_network_timeout'](200),140)
+   self.assertEqual(ns['_network_timeout'](100,market=True),60)
+   clock[0]+=140
+   with self.assertRaises(S.BudgetExpired):ns['_network_timeout'](1)
+  self.assertEqual(active(),180)
+  self.assertEqual(ns['_network_timeout'](10),10)
+  clock[0]=420
+  with self.assertRaises(S.BudgetExpired):ns['_network_timeout'](1)
+  with self.assertRaises(S.BudgetExpired):ns['_network_timeout'](100,market=True)
+  ns['_MARKET_DEADLINE']=None
+  self.assertEqual(ns['_network_timeout'](100,market=True),60)
+ def test_active_clock_rejects_other_thread_scope(self):
+  import threading
+  active=S.ActiveScanClock();errors=[]
+  def attempt():
+   try:
+    with active.active():pass
+   except RuntimeError as error:errors.append(error)
+  with active.active():
+   thread=threading.Thread(target=attempt);thread.start();thread.join()
+   self.assertEqual(active.depth,1)
+  self.assertEqual(len(errors),1);self.assertEqual(active.depth,0)
  def test_online_acquisition_timeouts_share_one_budget(self):
   import ast,types
   source=open(os.path.join(os.path.dirname(os.path.dirname(__file__)),'refresh.py')).read();tree=ast.parse(source)
   clock=[0];calls=[]
   def urlopen(req,timeout):
    calls.append(timeout);clock[0]+=timeout;raise TimeoutError('fixture timeout')
-  ns={'time':types.SimpleNamespace(monotonic=lambda:clock[0],sleep=lambda n:clock.__setitem__(0,clock[0]+n)),'urllib':types.SimpleNamespace(request=types.SimpleNamespace(Request=lambda *a,**k:None,urlopen=urlopen)),'_NETWORK_DEADLINE':None,'_MARKET_DEADLINE':None,'_V2_FAILS':[0],'V2_TRIP':2,'json':json}
+  ns={'time':types.SimpleNamespace(monotonic=lambda:clock[0],sleep=lambda n:clock.__setitem__(0,clock[0]+n)),'urllib':types.SimpleNamespace(request=types.SimpleNamespace(Request=lambda *a,**k:None,urlopen=urlopen)),'_BUILD_STARTED':0,'_NETWORK_DEADLINE':None,'_MARKET_DEADLINE':None,'_V2_FAILS':[0],'V2_TRIP':2,'json':json}
   for name in ('_network_timeout','_network_sleep','get'):
    node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name==name);exec(ast.get_source_segment(source,node),ns)
   with self.assertRaises(TimeoutError):ns['get']('https://public.invalid')
-  self.assertEqual(clock[0],240);self.assertTrue(all(n<=60 for n in calls))
+  with self.assertRaises(S.BudgetExpired):ns['get']('https://public.invalid')
+  self.assertEqual(clock[0],420);self.assertTrue(all(n<=60 for n in calls))
   before=len(calls)
   with self.assertRaises(S.BudgetExpired):ns['get']('https://public.invalid')
   self.assertEqual(len(calls),before)
@@ -232,9 +337,9 @@ class IntegrationTests(unittest.TestCase):
    self.assertTrue(scan.scan(W,'from',[T],10,40,chunk=1))
    S.validate_store(root)
   # Gecko has its own bounded reservation after the chain budget is spent.
-  clock[0]=240;calls.clear()
+  clock[0]=420;calls.clear()
   with self.assertRaises(TimeoutError):ns['get']('https://api.geckoterminal.com/api/v2/fixture')
-  self.assertTrue(calls);self.assertLessEqual(clock[0],300)
+  self.assertTrue(calls);self.assertLessEqual(clock[0],480)
  def test_online_sink_failure_restores_both_directions_and_saved_section(self):
   import ast,io
   source=open(os.path.join(os.path.dirname(os.path.dirname(__file__)),'refresh.py')).read()
@@ -255,7 +360,7 @@ class IntegrationTests(unittest.TestCase):
   tree=ast.parse(source)
   old={'to':[{'ts':'2026-10-08','val':1,'col':True,'blk':10,'k':'old'}]}
   def incomplete(*a,**k):raise S.ScanIncomplete()
-  ns={'_sink_st':old,'COLLECTOR':W,'SINK':W,'TOKENS':{'MENTE':{'addr':T}},'DECIMALS':{'MENTE':18},'get':lambda u:{'items':[{'timestamp':'2026-10-09T00:00:00Z','total':{'value':'1','decimals':18},'token':{'address_hash':T},'from':{'hash':W},'to':{'hash':W},'block_number':20,'transaction_hash':'new','log_index':0}]},'key':lambda r:r['transaction_hash'],'xcheck_from':lambda *a:10,'SINK_GENESIS_BLOCK':1,'XCHECK_WINDOW':2,'rpc':lambda *a:hex(100),'SINK_XC_LAG':30,'SINK_XC_BUDGET':50,'rpc_transfer_fallback':incomplete,'xcheck_done':lambda *a:self.fail('partial cursor advanced'),'_public_leg':lambda *a:None}
+  ns={'_sink_st':old,'COLLECTOR':W,'SINK':W,'TOKENS':{'MENTE':{'addr':T}},'DECIMALS':{'MENTE':18},'get':lambda u:{'items':[{'timestamp':'2026-10-09T00:00:00Z','total':{'value':'1','decimals':18},'token':{'address_hash':T},'from':{'hash':W},'to':{'hash':W},'block_number':20,'transaction_hash':'new','log_index':0}]},'key':lambda r:r['transaction_hash'],'xcheck_from':lambda *a:10,'SINK_GENESIS_BLOCK':1,'XCHECK_WINDOW':2,'_scan_rpc':lambda *a:hex(100),'rpc':lambda *a:hex(100),'SINK_XC_LAG':30,'SINK_XC_BUDGET':50,'rpc_transfer_fallback':incomplete,'xcheck_done':lambda *a:self.fail('partial cursor advanced'),'_public_leg':lambda *a:None}
   for name in ('_sink_row','_sweep'):
    node=next(n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef) and n.name==name)
    exec(ast.get_source_segment(source,node),ns)
@@ -273,6 +378,7 @@ class IntegrationTests(unittest.TestCase):
    ns={'_PUBLIC_SCANNER':scanner,'_RPC_LAST_THROUGH':None,'rpc':rpc,'HERE':root,'_shape_rpc_transfers':None,'RpcRangeError':RangeError}
    helper=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name=='_public_leg')
    ns['os']=os
+   ns['_scan_rpc']=rpc
    exec(ast.get_source_segment(source,helper),ns)
    exec(ast.get_source_segment(source,node),ns)
    with self.assertRaises(S.ScanIncomplete):ns['rpc_transfer_fallback'](W,'from',[T],10)
