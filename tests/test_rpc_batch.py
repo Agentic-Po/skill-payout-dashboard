@@ -3,7 +3,7 @@
 import ast,io,json,os,sys,time,unittest
 from collections import Counter
 from contextlib import redirect_stdout
-ROOT=os.path.dirname(os.path.dirname(__file__))
+ROOT=os.path.dirname(os.path.dirname(__file__));sys.path.insert(0,ROOT)
 src=open(os.path.join(ROOT,'refresh.py')).read();tree=ast.parse(src)
 fns={n.name:ast.get_source_segment(src,n) for n in tree.body if isinstance(n,ast.FunctionDef) and n.name in ('rpc_batch','_rpc_batch_skip','block_ts_prefetch','block_ts')}
 class Resp(io.StringIO):
@@ -91,4 +91,88 @@ class BatchTests(unittest.TestCase):
   self.assertIn('RPC ACQUISITION: single_roundtrips=%d batch_roundtrips=%d batch_seconds=%.1f batch_results=%d',src)
  def test_empty_calls_no_requests(self):
   ns,seen,_=harness(lambda u,p:None);self.assertEqual(self.run_batch(ns,[]),{});self.assertFalse(seen)
+class ScopedLogTests(unittest.TestCase):
+ def ns(self):
+  ns={}
+  for name in ('_valid_log_subrange','_bounded_scan_rpc'):
+   node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name==name);exec(ast.get_source_segment(src,node),ns)
+  return ns
+ def filt(self,width=2000):
+  return {'fromBlock':'0xa','toBlock':hex(10+width-1),'address':['0x'+'2'*40],'topics':['0x'+'a'*64,'0x'+'0'*24+'1'*40]}
+ def log(self,query,identity=None):
+  block=int(query['fromBlock'],16)
+  return {'topics':query['topics']+['0x'+'b'*64],'address':query['address'][0],'transactionHash':'0x'+format(identity if identity is not None else block,'064x'),'blockNumber':hex(block),'logIndex':'0x0','data':'0x1','removed':False}
+ def test_twenty_contiguous_subranges_in_ten_two_call_groups_exact_filter(self):
+  ns=self.ns();groups=[];f=self.filt()
+  def batch(group,validate_result):
+   groups.append(group);return {i:[self.log(call[1][0])]for i,call in enumerate(group)}
+  ns.update(rpc_batch=batch,rpc=lambda *a,**k:self.fail('single fallback'))
+  rows=ns['_bounded_scan_rpc']('eth_getLogs',[f]);self.assertEqual(len(rows),20);self.assertEqual([len(g)for g in groups],[2]*10);queries=[c[1][0]for g in groups for c in g]
+  self.assertEqual(queries[0]['fromBlock'],f['fromBlock']);self.assertEqual(queries[-1]['toBlock'],f['toBlock'])
+  for a,b in zip(queries,queries[1:]):self.assertEqual(int(a['toBlock'],16)+1,int(b['fromBlock'],16))
+  self.assertTrue(all(int(q['toBlock'],16)-int(q['fromBlock'],16)+1<=100 and q['address']==f['address'] and q['topics']==f['topics']for q in queries));self.assertEqual(f,self.filt())
+ def test_partial_batch_only_missing_subrange_falls_back_with_exact_filter(self):
+  ns=self.ns();singles=[];f=self.filt(250)
+  def batch(group,validate_result):return {i:[]for i in range(len(group))if i!=1}
+  def rpc(method,params,validate_result):singles.append((method,params));return [self.log(params[0])]
+  ns.update(rpc_batch=batch,rpc=rpc);rows=ns['_bounded_scan_rpc']('eth_getLogs',[f]);self.assertEqual(len(rows),1);self.assertEqual(len(singles),1);q=singles[0][1][0];self.assertEqual((q['fromBlock'],q['toBlock']),('0x6e','0xd1'));self.assertEqual(q['topics'],f['topics']);self.assertEqual(q['address'],f['address'])
+ def test_strict_subrange_rejects_shapes_filters_and_duplicate_identity(self):
+  import copy
+  ns=self.ns();q=self.filt(100);call=('eth_getLogs',[q]);valid=self.log(q);self.assertTrue(ns['_valid_log_subrange'](call,[valid]));self.assertTrue(ns['_valid_log_subrange'](call,[]))
+  variants=[None,{},['bad'],[valid,valid]]
+  for key,value in [('blockNumber','0x6e'),('address','0x'+'3'*40),('topics',['0x'+'c'*64]*3),('transactionHash',None),('logIndex',True),('data',None),('removed',True),('removed','false')]:
+   log=copy.deepcopy(valid);log[key]=value;variants.append([log])
+  for value in variants:self.assertFalse(ns['_valid_log_subrange'](call,value))
+ def test_scoped_items_validate_before_alternative_provider_selection(self):
+  helper=self.ns();queries=[('eth_getLogs',[self.filt(100)]),('eth_getLogs',[dict(self.filt(100),fromBlock='0x6e',toBlock='0xd1')])]
+  def reply(url,payload):
+   return [{'jsonrpc':'2.0','id':item['id'],'result':[self.log(queries[item['id']][1][0])] if not(url.endswith('a.invalid')and item['id']==0) else [self.log(queries[1][1][0])]}for item in payload]
+  ns,seen,_=harness(reply)
+  with redirect_stdout(io.StringIO()):got=ns['rpc_batch'](queries,validate_result=helper['_valid_log_subrange'])
+  self.assertEqual(set(got),{0,1});self.assertEqual([x['id']for x in seen[1][1]],[0]);self.assertEqual(got[0][0]['blockNumber'],'0xa')
+ def test_bad_version_both_result_error_and_invalid_ids_never_empty_proof(self):
+  helper=self.ns();query=[('eth_getLogs',[self.filt(100)])]
+  for bad in ({'id':0,'result':[]},{'jsonrpc':'1.0','id':0,'result':[]},{'jsonrpc':'2.0','id':0,'result':[],'error':None},{'jsonrpc':'2.0','id':True,'result':[]},{'jsonrpc':'2.0','id':1,'result':[]}):
+   ns,_,_=harness(lambda u,p:[bad])
+   with redirect_stdout(io.StringIO()):self.assertEqual(ns['rpc_batch'](query,validate_result=helper['_valid_log_subrange']),{})
+ def test_duplicate_identity_across_valid_subranges_and_invalid_missing_fail_closed(self):
+  ns=self.ns();f=self.filt(200)
+  ns.update(rpc_batch=lambda group,**kw:{i:[self.log(call[1][0],identity=9)]for i,call in enumerate(group)},rpc=lambda *a,**k:[])
+  from public_scan import ScanInvalid
+  with self.assertRaises(ScanInvalid):ns['_bounded_scan_rpc']('eth_getLogs',[f])
+  ns['rpc_batch']=lambda *a,**k:{};ns['rpc']=lambda *a,**k:None
+  with self.assertRaises(ScanInvalid):ns['_bounded_scan_rpc']('eth_getLogs',[f])
+ def test_bounds_and_offline_kill_never_network(self):
+  ns=self.ns();seen=[]
+  ns.update(rpc=lambda *a,**k:seen.append(a),rpc_batch=lambda *a,**k:seen.append(a))
+  from public_scan import ScanInvalid
+  for lo,hi in ((-1,10),(10,9),(10,2010)):
+   f=self.filt();f.update(fromBlock=hex(lo),toBlock=hex(hi))
+   with self.assertRaises(ScanInvalid):ns['_bounded_scan_rpc']('eth_getLogs',[f])
+  self.assertFalse(seen)
+  kill=next(n for n in tree.body if isinstance(n,ast.If) and any(isinstance(x,ast.FunctionDef)and x.name=='_no_net'for x in n.body));ns['OFFLINE']=True;exec(ast.get_source_segment(src,kill),ns)
+  for width in (31,2000):
+   with self.assertRaisesRegex(RuntimeError,'network access is disabled'):ns['_bounded_scan_rpc']('eth_getLogs',[self.filt(width)])
+  self.assertFalse(seen)
+ def test_later_batch_failure_never_persists_original_range(self):
+  import tempfile,public_scan as S
+  ns=self.ns();groups=[]
+  def batch(group,**kwargs):
+   groups.append(group)
+   if len(groups)==2:raise S.BudgetExpired('synthetic deadline')
+   return {i:[]for i in range(len(group))}
+  def rpc(method,params,**kwargs):return {'number':params[0],'hash':'0x'+'a'*64,'timestamp':'0x1'}
+  ns.update(rpc_batch=batch,rpc=rpc)
+  with tempfile.TemporaryDirectory()as root:
+   class RangeError(Exception):pass
+   scanner=S.PublicScanner(root,ns['_bounded_scan_rpc'],lambda logs:[],RangeError,budget_seconds=360)
+   with self.assertRaises(S.ScanIncomplete):scanner.scan('0x'+'1'*40,'from',['0x'+'2'*40],10,2039,chunk=2000)
+   self.assertFalse(os.listdir(root));self.assertFalse(next(iter(scanner.last.values()))['complete']);S.validate_store(root)
+ def test_expired_active_budget_batch_makes_zero_requests(self):
+  ns,seen,_=harness(lambda *a:self.fail('network after budget'))
+  ns['_PUBLIC_SCANNER']=type('Scanner',(),{'clock':type('Clock',(),{'depth':1})(),'expired':lambda self:True})()
+  helper=self.ns()
+  with redirect_stdout(io.StringIO()):self.assertEqual(ns['rpc_batch']([('eth_getLogs',[self.filt(100)])],validate_result=helper['_valid_log_subrange']),{})
+  self.assertFalse(seen)
+
 if __name__=='__main__':unittest.main()
