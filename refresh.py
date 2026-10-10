@@ -345,18 +345,26 @@ def rpc_batch(calls, validate_result=None):
     out = {}
     method_key = tuple(sorted({call[0] for call in calls}))
     dead = globals().setdefault("_RPC_BATCH_DEAD", {}).setdefault(method_key, set())
+    transient_dead = globals().setdefault("_RPC_BATCH_TRANSIENT_DEAD", {}).setdefault(method_key, set())
+    failed_sources = globals().setdefault("_RPC_BATCH_FAILED_SOURCES", {})
     preference_key = ("batch", method_key)
     stats = globals().setdefault("_RPC_BATCH_WORK", Counter())
     preferred = globals().setdefault("_RPC_GOOD_ENDPOINTS", {}).get(preference_key)
     endpoints = ([preferred] if preferred in RPC_ENDPOINTS else []) + [u for u in RPC_ENDPOINTS if u != preferred]
     for url in endpoints:
-        if url in dead:
-            continue
         scanner = globals().get("_PUBLIC_SCANNER")
         if scanner and not getattr(scanner.clock,"depth",1):
             scanner = None
+        active_sources = [sid for sid,depth in getattr(scanner,"_acquiring",{}).items() if depth]
+        active_sid = active_sources[0] if len(active_sources)==1 else None
+        attempted_sources = failed_sources.setdefault((method_key,url),set())
+        reprobe = url in dead
+        if reprobe and (url not in transient_dead or active_sid is None or active_sid in attempted_sources):
+            continue
         if scanner and scanner.expired():
             return out
+        if reprobe:
+            attempted_sources.add(active_sid)
         missing = {i for i in range(len(calls)) if i not in out}
         payload = json.dumps([{"jsonrpc":"2.0","id":i,"method":calls[i][0],"params":calls[i][1]} for i in sorted(missing)]).encode()
         what = f"{len(missing)}x {calls[0][0]}"
@@ -366,7 +374,7 @@ def rpc_batch(calls, validate_result=None):
                 headers={"Content-Type":"application/json","User-Agent":"Mozilla/5.0 (skill-payout-dashboard/1.0; polite crawler)"})
             # One extra read only for a transient transport failure; malformed
             # JSON/envelopes and permanent refusals never receive this retry.
-            for attempt in range(2):
+            for attempt in range(1 if reprobe else 2):
                 try:
                     stats["calls"] += 1
                     with urllib.request.urlopen(req, timeout=_network_timeout(min(5,max(0.01,scanner.deadline-scanner.clock())) if scanner and scanner.deadline is not None else 5)) as r:
@@ -377,11 +385,13 @@ def rpc_batch(calls, validate_result=None):
                     transient = (isinstance(failure, TimeoutError)
                         or isinstance(failure, URLError) and isinstance(failure.reason, TimeoutError)
                         or isinstance(failure, HTTPError) and (failure.code == 429 or 500 <= failure.code <= 599))
-                    if attempt or not transient:
+                    if reprobe or attempt or not transient:
                         raise
                     _network_sleep(0.2)
             if not isinstance(res,list):
                 dead.add(url)
+                transient_dead.discard(url)
+                if active_sid is not None:attempted_sources.add(active_sid)
                 _rpc_batch_skip("not-a-batch",url,what,"batch response refused")
                 continue
             # Unknown, duplicate or non-integer ids invalidate this provider's
@@ -390,6 +400,8 @@ def rpc_batch(calls, validate_result=None):
             if (len(ids)!=len(res) or any(type(i) is not int or i not in missing for i in ids)
                     or len(set(ids))!=len(ids)):
                 dead.add(url)
+                transient_dead.discard(url)
+                if active_sid is not None:attempted_sources.add(active_sid)
                 _rpc_batch_skip("invalid-ids",url,what,"invalid batch identity")
                 continue
             valid = {}
@@ -412,11 +424,27 @@ def rpc_batch(calls, validate_result=None):
                 valid[i]=value
             out.update(valid);stats["results"] += len(valid)
             if set(valid)==missing:
+                dead.discard(url)
+                transient_dead.discard(url)
                 globals().setdefault("_RPC_GOOD_ENDPOINTS",{})[preference_key]=url
                 return out
+            if reprobe:transient_dead.discard(url)
             _rpc_batch_skip("items-dropped",url,what,f"{len(missing)-len(valid)} of {len(missing)} returned no valid result (left for fallback)")
         except Exception as e:
+            from public_scan import BudgetExpired
+            if isinstance(e, BudgetExpired):
+                # A local acquisition allowance says nothing about provider
+                # health. Preserve accepted items for the current caller and
+                # leave this method available to a later source allowance.
+                return out
+            from urllib.error import HTTPError, URLError
+            transient = (isinstance(e, TimeoutError)
+                or isinstance(e, URLError) and isinstance(e.reason, TimeoutError)
+                or isinstance(e, HTTPError) and (e.code == 429 or 500 <= e.code <= 599))
             dead.add(url)
+            if transient:transient_dead.add(url)
+            else:transient_dead.discard(url)
+            if active_sid is not None:attempted_sources.add(active_sid)
             _rpc_batch_skip("error",url,what,type(e).__name__)
         finally:
             stats["seconds"] += time.monotonic()-started
