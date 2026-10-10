@@ -203,7 +203,7 @@ def check_headline_windows():
     last_good = copy.deepcopy(nonzero)
     last_good['scope']['complete'] = False
     last_good['scope']['build_generated_iso'] = '2099-01-01T00:00:00Z'
-    last_good['scope']['source_coverage'] = {'finance_current':False,'pending':[{'complete':False}]}
+    last_good['scope']['source_coverage'] = {'coverage_ok':False,'pending':[{'complete':False}]}
     cases.append(last_good)
     for fixture in cases:
         result = P.run(page, json.dumps(fixture), [{"probe": PROBE}])[0]

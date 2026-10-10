@@ -258,7 +258,7 @@ def require_coverage(*documents):
         scope = document.get('scope', {})
         coverage = scope.get('source_coverage')
         if (scope.get('complete') is not True or not isinstance(coverage, dict)
-                or coverage.get('finance_current') is not True
+                or coverage.get('coverage_ok') is not True
                 or not isinstance(coverage.get('pending'), list)):
             raise ScanIncomplete('chain coverage incomplete; last saved finance retained')
         for leg in coverage['pending']:

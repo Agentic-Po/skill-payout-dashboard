@@ -2453,8 +2453,8 @@ if globals().get("_RPC_SCAN_INVALID"):
     raise RuntimeError("invalid public scan proof; publication stopped")
 if not OFFLINE and _PUBLIC_SCANNER is not None:
     data["scope"]["build_generated_iso"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    data["scope"]["source_coverage"] = {"finance_current":bool(data_complete and all(leg.get("complete") for leg in _PUBLIC_SCANNER.last.values())),"pending":list(_PUBLIC_SCANNER.last.values()),"last_good_sections":dict(_LAST_GOOD_SECTION_CLOCKS)}
-    data["scope"]["complete"] = data["scope"]["source_coverage"]["finance_current"]
+    data["scope"]["source_coverage"] = {"coverage_ok":bool(data_complete and all(leg.get("complete") for leg in _PUBLIC_SCANNER.last.values())),"pending":list(_PUBLIC_SCANNER.last.values()),"last_good_sections":dict(_LAST_GOOD_SECTION_CLOCKS)}
+    data["scope"]["complete"] = data["scope"]["source_coverage"]["coverage_ok"]
 json.dump(data, open(os.path.join(HERE, "data.json"), "w"), default=str)
 
 write_state("after_data_json")
@@ -2885,7 +2885,7 @@ if globals().get("_RPC_SCAN_INVALID"):
     raise RuntimeError("invalid public scan proof; publication stopped")
 if not OFFLINE and _PUBLIC_SCANNER is not None:
     coupon_data["scope"]["build_generated_iso"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    coupon_data["scope"]["source_coverage"] = {"finance_current":bool(cp_complete and all(leg.get("complete") for leg in _PUBLIC_SCANNER.last.values())),"pending":list(_PUBLIC_SCANNER.last.values())}
+    coupon_data["scope"]["source_coverage"] = {"coverage_ok":bool(cp_complete and all(leg.get("complete") for leg in _PUBLIC_SCANNER.last.values())),"pending":list(_PUBLIC_SCANNER.last.values())}
 json.dump(coupon_data, open(os.path.join(HERE, "coupon_data.json"), "w"), default=str)
 cp_tpl = open(os.path.join(HERE, "template_coupon.html")).read().replace("__STALE_MIN__", str(freshness.STALE_MINUTES))
 open(os.path.join(HERE, "coupon.html"), "w").write(
