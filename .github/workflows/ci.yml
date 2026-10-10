@@ -75,6 +75,8 @@ jobs:
       # figure is minutes old); its own tier tests run just after.
       - name: Sanity gate (independent recompute-and-diff, offline)
         run: python3 sanity.py --offline
+      - name: Retained valuation and fresh observation provenance
+        run: python3 tests/test_balance_observations.py
       - name: Sanity gate tier tests
         run: python3 tests/test_sanity.py
       # these three had no workflow at all until 2026-09-27 (audit A6) —

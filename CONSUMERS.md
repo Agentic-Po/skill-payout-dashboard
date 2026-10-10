@@ -171,3 +171,29 @@ RPC log transport rejects non-object log elements before selecting a preferred p
 Public acquisition logs report neutral source aliases, cumulative active seconds, newly durably verified blocks and each leg's contiguous through/target/remaining blocks. Empty verified ranges count as progress; rows and replayed ranges do not. Failed bootstrap charges time without invented coverage, and checkpoint failure contributes no verified delta. Both sink directions are declared before either sweep begins. These log-only measurements do not change financial source clocks or turn partial coverage healthy; seven-leg capacity requires observed live progress over successive runs.
 Shared coupon bootstrap head acquisition is attributed to the last declared coupon IN leg; each direction's own fallback scope is measured separately. Nested scopes of the same source charge once; overlapping different-source scopes are rejected so per-leg active time sums to total acquisition time.
 The 360 active / 540 ordinary / 60 market bounds retain the existing 15-minute workflow timeout. They give the seven-leg backlog more bounded acquisition time while preserving time for observed unrelated computation and publication gates; they are not a doubled-throughput or catch-up guarantee. Socket inactivity timeouts remain the documented wall-time limitation.
+
+### Retained valuation provenance
+
+Online partial Treasury valuations retain their saved financial clock and values.
+`scope.balance_observations` records separately acquired latest balances and quotes,
+with per-token UTC acquisition timestamps; these timestamps do not prove chain
+coverage. Its `retained_from` binds the saved clock, wallet/token identities and
+valuation fields to this repository's immutable prior `data.json` at a full Git
+SHA. Sanity authenticates that blob locally, or in a shallow checkout through a
+bounded, redirect-free request to this repository's fixed public GitHub raw URL.
+Missing, malformed or unavailable evidence fails the online gate closed.
+
+`source_coverage.treasury_complete` distinguishes Treasury's own proof from
+aggregate subsidiary coverage. A true value on the new online path requires both
+published directional descriptors and ranges to exactly match validated persisted
+Treasury checkpoints, with complete coverage and no prefix gap. It cannot replace
+those proofs. Genuine fresh valuations retain the original live balance/quote
+checks and provider WARN/SKIP behavior. Legacy complete payloads and offline builds
+retain their prior behavior; offline mode does not authenticate network provenance.
+
+Incomplete coupon valuations independently bind their own saved clock, identities,
+rate and balances through `scope.valuation_from` to fixed prior `coupon_data.json`.
+Runway and coupon pace remain independently calculated from their existing inputs;
+observation timestamps are never substituted for financial or block-coverage clocks.
+A complete online coupon leg uses its own current clock and acquired MOCA quote even
+when Treasury is incomplete. Overall coverage gates and severity remain unchanged.
