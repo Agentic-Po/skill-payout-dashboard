@@ -24,7 +24,7 @@ class Notice(unittest.TestCase):
   for alias,w,_,tokens in N.SOURCES:
    self.assertEqual(text.count(alias+':'),1);self.assertNotIn(w,text)
    for token in tokens:self.assertNotIn(token,text)
-  self.assertIn('every 30 minutes; freshness is not guaranteed',text)
+  self.assertIn('Updates are delayed, not real-time',text);self.assertNotIn('normal delay',text)
   source=(ROOT/'refresh.py').read_text().lower()
   for _,w,_,tokens in N.SOURCES:
    self.assertIn(w,source)
@@ -62,7 +62,7 @@ class Notice(unittest.TestCase):
  def test_actual_workflow_shell_selects_only_postcommit_coverage_copy(self):
   import subprocess,re
   source=(ROOT/'.github/workflows/refresh.yml').read_text();body=source[source.index('          TIER="BLOCK"'):source.index('      # Explicit save')];body='\n'.join(line[10:] for line in body.splitlines())
-  for gate,commit,expected in [('coverage','success','Dashboard coverage behind'),('refresh','skipped','refresh.py (crawl/build) failed'),('coverage','failure','commit and push failed')]:
+  for gate,commit,expected in [('coverage','success','Dashboard catching up'),('refresh','skipped','refresh.py (crawl/build) failed'),('coverage','failure','commit and push failed')]:
    with self.subTest(gate=gate,commit=commit):
     def replace(match):
      key=match[1].strip()
@@ -73,7 +73,9 @@ class Notice(unittest.TestCase):
     prefix='python3() { printf "SAFEDETAIL"; }; curl() { printf "%s" "$NOTICE"; };\n'
     result=subprocess.run(['bash','-e','-c',prefix+shell],capture_output=True,text=True,check=True).stdout
     self.assertIn(expected,result)
-    if expected!='Dashboard coverage behind':self.assertNotIn('SAFEDETAIL',result)
+    if gate=='coverage' and commit=='success':self.assertIn('🟡',result);self.assertNotIn('🔴',result);self.assertNotIn('PAGE',result)
+    else:self.assertIn('🔴',result)
+    if expected!='Dashboard catching up':self.assertNotIn('SAFEDETAIL',result)
  def test_bad_store_never_bypasses_with_valid_published_scalar(self):
   with patch.object(N,'validate_store',side_effect=ValueError('bad store')):
    text=self.render();self.assertEqual(text.count('checkpoint validation failed'),7);self.assertNotIn('All required sources',text)

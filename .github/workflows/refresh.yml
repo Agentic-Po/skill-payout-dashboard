@@ -260,7 +260,7 @@ jobs:
           fi
           NOTICE="🔴 ${TIER} · Skill Payout Dashboard: ${GATE} failed — ${WHAT}. ${DETAIL} Check https://github.com/${{ github.repository }}/actions"
           if [ "$GATE" = "chain coverage incomplete" ] && [ "${{ steps.commit.outcome }}" = "success" ]; then
-            NOTICE="🔴 PAGE · Dashboard coverage behind
+            NOTICE="🟡 Dashboard catching up · checkpoint saved
           ${DETAIL}
           https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           fi

@@ -67,7 +67,7 @@ def summary(root, now):
     except Exception:
         # A malformed store supplies no usable checkpoint evidence.
         manifests={}; store_valid=False
-    lines=['Full financial coverage not yet verified.','Saved chain checkpoints · as of '+date(now)];stamps=[];all_complete=True
+    lines=['A checkpoint was saved, but the scan does not yet cover every required source.','Saved chain checkpoints · as of '+date(now)];stamps=[];all_complete=True
     for sid,name in aliases.items():
         p=published.get(sid,{})
         value=manifests.get(sid,p)
@@ -88,7 +88,7 @@ def summary(root, now):
             status='incomplete' if doc.get('scope',{}).get('complete') is not True else 'complete'
             lines.append(name+' saved figures built: '+date(utc(doc['scope']['generated_iso']))+' ('+status+'; build time, not chain coverage)')
         except (ValueError,KeyError,TypeError):lines.append(name+' saved figures build time: unavailable')
-    lines.append('Dispatch cadence: every 30 minutes; freshness is not guaranteed. Healthy reporting withheld.')
+    lines.append('Catch-up continues through scheduled runs. Updates are delayed, not real-time; a quiet detector is not an all-clear.')
     return '\n'.join(lines)
 
 if __name__=='__main__':
