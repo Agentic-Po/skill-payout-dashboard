@@ -14,7 +14,7 @@ ROOT = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0,ROOT)
 SOURCE = open(os.path.join(ROOT, 'refresh.py')).read()
 TREE = ast.parse(SOURCE)
-NAMES = {'RpcRangeError', '_rpc_range_error', 'rpc', 'rpc_transfer_fallback','_public_leg'}
+NAMES = {'RpcRangeError', '_rpc_range_error', 'rpc', 'rpc_transfer_fallback','_public_leg','_scan_rpc'}
 CODE = '\n'.join(ast.get_source_segment(SOURCE,n) for n in TREE.body if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name in NAMES)
 
 class RpcFallback(unittest.TestCase):

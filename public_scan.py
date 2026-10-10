@@ -8,7 +8,43 @@ import json
 import os
 import re
 import time
+import threading
+from contextlib import contextmanager
 from datetime import datetime,timezone
+
+class ActiveScanClock:
+    """Cumulative acquisition time; nested scopes charge once, including failure."""
+    def __init__(self, wall=time.monotonic):
+        self.wall = wall
+        self.used = 0.0
+        self.started = None
+        self.depth = 0
+        self.owner = None
+        self.lock = threading.Lock()
+
+    def __call__(self):
+        return self.used + (self.wall()-self.started if self.started is not None else 0.0)
+
+    @contextmanager
+    def active(self):
+        owner = threading.get_ident()
+        with self.lock:
+            if self.depth and self.owner != owner:
+                raise RuntimeError("concurrent acquisition clock scope")
+            if not self.depth:
+                self.owner = owner
+                self.started = self.wall()
+            self.depth += 1
+        try:
+            yield
+        finally:
+            with self.lock:
+                self.depth -= 1
+                if not self.depth:
+                    self.used += self.wall()-self.started
+                    self.started = None
+                    self.owner = None
+
 
 FINALITY = 30
 TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'

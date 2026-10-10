@@ -27,6 +27,7 @@ from datetime import datetime, timezone, timedelta
 import urllib.error
 from collections import Counter, defaultdict
 
+_BUILD_STARTED = time.monotonic()
 _T0 = time.time()   # run-duration telemetry (digest-only; see end of file)
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -184,10 +185,15 @@ def _network_timeout(cap, market=False):
         remaining = _MARKET_DEADLINE - time.monotonic()
     else:
         if _NETWORK_DEADLINE is None:
-            _NETWORK_DEADLINE = time.monotonic() + 240
+            _NETWORK_DEADLINE = globals().get("_BUILD_STARTED",time.monotonic()) + 420
         remaining = _NETWORK_DEADLINE - time.monotonic()
     if remaining <= 0:
         raise BudgetExpired("online acquisition budget exhausted")
+    scanner = globals().get("_PUBLIC_SCANNER")
+    if not market and scanner and scanner.deadline is not None and getattr(scanner.clock,"depth",1):
+        remaining = min(remaining,scanner.deadline-scanner.clock())
+        if remaining <= 0:
+            raise BudgetExpired("active acquisition budget exhausted")
     return min(cap,remaining)
 
 
@@ -258,6 +264,8 @@ def rpc(method, params, tries=3):
     for url in endpoints:
         for a in range(tries):
             scanner = globals().get("_PUBLIC_SCANNER")
+            if scanner and not getattr(scanner.clock,"depth",1):
+                scanner = None
             if scanner and scanner.expired():
                 from public_scan import BudgetExpired
                 raise BudgetExpired("public scan budget exhausted")
@@ -335,6 +343,8 @@ def rpc_batch(calls):
         if url in dead:
             continue
         scanner = globals().get("_PUBLIC_SCANNER")
+        if scanner and not getattr(scanner.clock,"depth",1):
+            scanner = None
         if scanner and scanner.expired():
             return out
         missing = {i for i in range(len(calls)) if i not in out}
@@ -502,10 +512,10 @@ def _shape_rpc_transfers(logs):
 def _public_leg(wallet,direction,token_addrs):
     """Declare a required source before bootstrap; failed head cannot look healthy."""
     global _PUBLIC_SCANNER
-    from public_scan import PublicScanner,descriptor,scan_id
+    from public_scan import PublicScanner,ActiveScanClock,descriptor,scan_id
     if _PUBLIC_SCANNER is None:
         _PUBLIC_SCANNER = PublicScanner(os.path.join(HERE,"pending_scans"),rpc,
-                                       _shape_rpc_transfers,RpcRangeError)
+                                       _shape_rpc_transfers,RpcRangeError,clock=ActiveScanClock())
     if _PUBLIC_SCANNER.deadline is None:
         _PUBLIC_SCANNER.deadline = _PUBLIC_SCANNER.clock() + _PUBLIC_SCANNER.budget_seconds
     desc = descriptor(wallet,direction,token_addrs)
@@ -513,26 +523,36 @@ def _public_leg(wallet,direction,token_addrs):
     _PUBLIC_SCANNER.last[sid] = {"descriptor":desc,"complete":False}
 
 
+def _scan_rpc(method,params):
+    from contextlib import nullcontext
+    clock = _PUBLIC_SCANNER.clock
+    with clock.active() if hasattr(clock,"active") else nullcontext():
+        return rpc(method,params)
+
+
 def rpc_transfer_fallback(wallet, direction, token_addrs, from_block, to_block=None, skip_keys=None):
     """Complete finalized leg only. Pending rows are banked separately."""
     global _PUBLIC_SCANNER, _RPC_LAST_THROUGH
     from public_scan import PublicScanner, descriptor, scan_id, BudgetExpired, ScanIncomplete, ScanInvalid
     _public_leg(wallet,direction,token_addrs)
-    sid = scan_id(descriptor(wallet,direction,token_addrs))
-    try:
-        head = int(rpc("eth_blockNumber", []),16)
-    except BudgetExpired:
-        raise ScanIncomplete("bounded scan incomplete; last saved cache retained") from None
-    final_target = min(head-30,to_block) if to_block is not None else head-30
-    try:
-        items = _PUBLIC_SCANNER.scan(wallet,direction,token_addrs,from_block,final_target+30,
-                                     chunk=LOGS_CHUNK[0])
-    except ScanInvalid:
-        globals()["_RPC_SCAN_INVALID"] = True
-        raise
-    sid = scan_id(descriptor(wallet,direction,token_addrs))
-    _RPC_LAST_THROUGH = _PUBLIC_SCANNER.last[sid]["through"]
-    return [i for i in items if skip_keys is None or key(i) not in skip_keys]
+    clock = _PUBLIC_SCANNER.clock
+    from contextlib import nullcontext
+    with clock.active() if hasattr(clock,"active") else nullcontext():
+        sid = scan_id(descriptor(wallet,direction,token_addrs))
+        try:
+            head = int(_scan_rpc("eth_blockNumber", []),16)
+        except BudgetExpired:
+            raise ScanIncomplete("bounded scan incomplete; last saved cache retained") from None
+        final_target = min(head-30,to_block) if to_block is not None else head-30
+        try:
+            items = _PUBLIC_SCANNER.scan(wallet,direction,token_addrs,from_block,final_target+30,
+                                         chunk=LOGS_CHUNK[0])
+        except ScanInvalid:
+            globals()["_RPC_SCAN_INVALID"] = True
+            raise
+        sid = scan_id(descriptor(wallet,direction,token_addrs))
+        _RPC_LAST_THROUGH = _PUBLIC_SCANNER.last[sid]["through"]
+        return [i for i in items if skip_keys is None or key(i) not in skip_keys]
 
 # --- incremental fetch: newest pages until we overlap the cache. If the page
 # cap is hit before overlap, the cache is NOT updated (a silent gap would
@@ -1211,7 +1231,7 @@ if os.path.isdir(COG_DIR):
         # the collector), so it gets the same cursor resume + skip_keys as the
         # transfer legs: the window below is the floor, never the ceiling.
         _public_leg(COLLECTOR,"to",[TOKENS["MENTE"]["addr"]])
-        latest_blk = int(rpc("eth_blockNumber", []), 16)
+        latest_blk = int(_scan_rpc("eth_blockNumber", []), 16)
         age_s = (datetime.now(timezone.utc)
                  - datetime.fromisoformat(newest_c).replace(tzinfo=timezone.utc)).total_seconds()
         from_blk = max(1, latest_blk - int(age_s / 2) - XCHECK_WINDOW)
@@ -2166,7 +2186,7 @@ try:
             _resume = xcheck_from(_xn, max([r.get("blk", 0) for r in cached]
                                            + [SINK_GENESIS_BLOCK]))
             print(f"sink v2 fetch failed ({_e}) — eth_getLogs fallback from block {_resume}")
-            _head = int(rpc("eth_blockNumber", []), 16)
+            _head = int(_scan_rpc("eth_blockNumber", []), 16)
             acc = [_sink_row(i["timestamp"],
                              int(i["total"]["value"]) / 10 ** DECIMALS["MENTE"],
                              (i["from"] if direction == "to" else i["to"])["hash"],
@@ -2189,7 +2209,7 @@ try:
                 # every other leg; history was seeded once from the sink's genesis
                 _xs = xcheck_from(_xn, max(SINK_GENESIS_BLOCK,
                                            max([r.get("blk", 0) for r in cached] + [0]) - XCHECK_WINDOW))
-                _tip = int(rpc("eth_blockNumber", []), 16) - SINK_XC_LAG
+                _tip = int(_scan_rpc("eth_blockNumber", []), 16) - SINK_XC_LAG
                 _xe = min(_tip, _xs + SINK_XC_BUDGET)
                 if _xe < _xs:
                     from public_scan import ScanIncomplete
@@ -2627,7 +2647,7 @@ if not OFFLINE:
     _public_leg(COUPON_WALLET,"from",[TOKENS["MOCA"]["addr"]])
     _public_leg(COUPON_WALLET,"to",[TOKENS["MOCA"]["addr"]])
     try:
-        cp_head = int(rpc("eth_blockNumber", []), 16) - COUPON_HEAD_LAG
+        cp_head = int(_scan_rpc("eth_blockNumber", []), 16) - COUPON_HEAD_LAG
     except Exception as e:
         print("DATA-QUALITY: coupon head-block fetch failed, crawling to tip:", e)
     _COUPON_STAGE = []
