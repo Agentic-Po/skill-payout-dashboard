@@ -347,25 +347,49 @@ class IntegrationTests(unittest.TestCase):
   import ast,types
   source=open(os.path.join(os.path.dirname(os.path.dirname(__file__)),'refresh.py')).read()
   clock=[0];active=S.ActiveScanClock(lambda:clock[0])
-  scanner=types.SimpleNamespace(clock=active,deadline=180)
+  scanner=types.SimpleNamespace(clock=active,deadline=360)
   ns={'time':types.SimpleNamespace(monotonic=lambda:clock[0]),'_BUILD_STARTED':0,'_NETWORK_DEADLINE':None,'_MARKET_DEADLINE':None,'_PUBLIC_SCANNER':scanner}
   node=next(n for n in ast.parse(source).body if isinstance(n,ast.FunctionDef) and n.name=='_network_timeout');exec(ast.get_source_segment(source,node),ns)
   with active.active():
    clock[0]+=40
-   self.assertEqual(ns['_network_timeout'](200),140)
+   self.assertEqual(ns['_network_timeout'](400),320)
   clock[0]+=131
   self.assertEqual(ns['_network_timeout'](200),200);self.assertEqual(active(),40)
   with active.active():
-   self.assertEqual(ns['_network_timeout'](200),140)
+   self.assertEqual(ns['_network_timeout'](400),320)
    self.assertEqual(ns['_network_timeout'](100,market=True),60)
-   clock[0]+=140
+   clock[0]+=320
    with self.assertRaises(S.BudgetExpired):ns['_network_timeout'](1)
-  self.assertEqual(active(),180)
+  self.assertEqual(active(),360)
   self.assertEqual(ns['_network_timeout'](10),10)
-  clock[0]=420
+  clock[0]=540
   with self.assertRaises(S.BudgetExpired):ns['_network_timeout'](1)
   with self.assertRaises(S.BudgetExpired):ns['_network_timeout'](100,market=True)
   ns['_MARKET_DEADLINE']=None
+  self.assertEqual(ns['_network_timeout'](100,market=True),60)
+ def test_live_limits_and_socket_pacing_clamp_to_active_and_outer(self):
+  import ast,types
+  source=open(os.path.join(os.path.dirname(os.path.dirname(__file__)),'refresh.py')).read();tree=ast.parse(source)
+  with tempfile.TemporaryDirectory() as root:
+   ns={'_PUBLIC_SCANNER':None,'HERE':root,'rpc':None,'_shape_rpc_transfers':None,'RpcRangeError':RangeError,'os':os}
+   node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_public_leg');exec(ast.get_source_segment(source,node),ns);ns['_public_leg'](W,'from',[T])
+   self.assertEqual(ns['_PUBLIC_SCANNER'].budget_seconds,360);self.assertEqual(ns['_PUBLIC_SCANNER'].deadline,360)
+   ns['_PUBLIC_SCANNER'].clock.used=180;ns['_public_leg'](W,'to',[T])
+   self.assertEqual(ns['_PUBLIC_SCANNER'].deadline-ns['_PUBLIC_SCANNER'].clock(),180)
+  clock=[531];active=S.ActiveScanClock(lambda:clock[0]);active.used=359
+  scanner=types.SimpleNamespace(clock=active,deadline=360)
+  ns={'time':types.SimpleNamespace(monotonic=lambda:clock[0],sleep=lambda n:clock.__setitem__(0,clock[0]+n)),'_BUILD_STARTED':0,'_NETWORK_DEADLINE':None,'_MARKET_DEADLINE':None,'_PUBLIC_SCANNER':scanner}
+  for name in ('_network_timeout','_network_sleep'):
+   node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name==name);exec(ast.get_source_segment(source,node),ns)
+  with active.active():
+   self.assertEqual(ns['_network_timeout'](20),1)
+   with active.active():ns['_network_sleep'](2)
+   with self.assertRaises(S.BudgetExpired):ns['_network_timeout'](20)
+  self.assertEqual(active(),360)
+  clock[0]=539;active.used=10
+  with active.active():self.assertEqual(ns['_network_timeout'](20),1)
+  clock[0]=540
+  with self.assertRaises(S.BudgetExpired):ns['_network_timeout'](20)
   self.assertEqual(ns['_network_timeout'](100,market=True),60)
  def test_active_clock_rejects_other_thread_scope(self):
   import threading
@@ -388,8 +412,9 @@ class IntegrationTests(unittest.TestCase):
   for name in ('_network_timeout','_network_sleep','get'):
    node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name==name);exec(ast.get_source_segment(source,node),ns)
   with self.assertRaises(TimeoutError):ns['get']('https://public.invalid')
+  with self.assertRaises(TimeoutError):ns['get']('https://public.invalid')
   with self.assertRaises(S.BudgetExpired):ns['get']('https://public.invalid')
-  self.assertEqual(clock[0],420);self.assertTrue(all(n<=60 for n in calls))
+  self.assertEqual(clock[0],540);self.assertTrue(all(n<=60 for n in calls))
   before=len(calls)
   with self.assertRaises(S.BudgetExpired):ns['get']('https://public.invalid')
   self.assertEqual(len(calls),before)
@@ -402,9 +427,9 @@ class IntegrationTests(unittest.TestCase):
    self.assertTrue(scan.scan(W,'from',[T],10,40,chunk=1))
    S.validate_store(root)
   # Gecko has its own bounded reservation after the chain budget is spent.
-  clock[0]=420;calls.clear()
+  clock[0]=540;calls.clear()
   with self.assertRaises(TimeoutError):ns['get']('https://api.geckoterminal.com/api/v2/fixture')
-  self.assertTrue(calls);self.assertLessEqual(clock[0],480)
+  self.assertTrue(calls);self.assertLessEqual(clock[0],600)
  def test_online_sink_failure_restores_both_directions_and_saved_section(self):
   import ast,io
   source=open(os.path.join(os.path.dirname(os.path.dirname(__file__)),'refresh.py')).read()
