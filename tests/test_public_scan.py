@@ -23,6 +23,11 @@ class ScanTests(unittest.TestCase):
    if artifact.endswith('.html'):text='<script>const DATA='+text+';</script>'
    self.assertEqual(P._status_adjacent(artifact,text),[],artifact)
    self.assertTrue(P._status_adjacent(artifact,text.replace('coverage_ok','finance_current')),artifact)
+  proof['prefix']={'start':5,'through':7,'hash':'0x'+'5'*64,'timestamp':'2026-10-09T00:00:00Z','target':9,'complete':False,'chunk':2}
+  for artifact in ('data.json','full.html','coupon_data.json','coupon.html'):
+   text=json.dumps(document)
+   if artifact.endswith('.html'):text='<script>const DATA='+text+';</script>'
+   self.assertEqual(P._status_adjacent(artifact,text),[],artifact)
   for token in ('ent','burst'):
    self.assertTrue(P._status_adjacent('data.json',json.dumps({'wallet':wallet,token:1})))
   with self.assertRaises(S.ScanIncomplete):S.require_coverage(document)
@@ -62,6 +67,128 @@ class ScanTests(unittest.TestCase):
    if fail_shape:raise S.BudgetExpired()
    return [{'transaction_hash':x['transactionHash'],'log_index':0,'block_number':int(x['blockNumber'],16),'timestamp':'2026-10-09T00:00:00Z','from':{'hash':W},'to':{'hash':'0x'+'3'*40},'token':{'address_hash':T},'total':{'value':'1','decimals':None}} for x in logs]
   return S.PublicScanner(root,rpc,shape,RangeError,budget_seconds=2,clock=lambda:clock[0]),clock,calls
+ def prefix_fixture(self,root):
+  scan,_,_=self.setup_scan(root);scan.budget_seconds=100
+  scan.scan(W,'from',[T],20,60,chunk=2)
+  path=os.path.join(root,S.scan_id(S.descriptor(W,'from',[T]))+'.json')
+  return path,json.load(open(path))
+ def test_earlier_floor_preserves_suffix_and_durable_prefix_before_join(self):
+  with tempfile.TemporaryDirectory() as root:
+   path,old=self.prefix_fixture(root)
+   before={r['file']:open(os.path.join(root,S.scan_id(old['descriptor']),r['file']),'rb').read() for r in old['chunks']}
+   scan,_,calls=self.setup_scan(root)
+   with self.assertRaises(S.ScanIncomplete):scan.scan(W,'from',[T],10,60,chunk=2)
+   pending=json.load(open(path));S.validate_store(root)
+   for key in ('start','through','hash','timestamp','chunks'):self.assertEqual(pending[key],old[key])
+   self.assertEqual(pending['prefix']['through'],11);self.assertFalse(scan.last[S.scan_id(old['descriptor'])]['complete'])
+   self.assertEqual(scan.work[S.scan_id(old['descriptor'])]['remaining_blocks'],8)
+   scan,_,calls=self.setup_scan(root);scan.budget_seconds=100
+   rows=scan.scan(W,'from',[T],10,60,chunk=2)
+   self.assertEqual(calls[0],(12,13));self.assertEqual(calls[-1],(18,19))
+   joined=json.load(open(path));self.assertNotIn('prefix',joined);self.assertEqual(joined['start'],10);S.validate_store(root)
+   self.assertEqual(joined['chunks'][-len(old['chunks']):],old['chunks'])
+   for name,raw in before.items():self.assertEqual(open(os.path.join(root,S.scan_id(old['descriptor']),name),'rb').read(),raw)
+   self.assertEqual(len(rows),len({S.log_key(row) for row in rows}))
+ def test_prefix_provider_error_retains_original_suffix(self):
+  with tempfile.TemporaryDirectory() as root:
+   path,old=self.prefix_fixture(root);raw=open(path,'rb').read()
+   scan,_,_=self.setup_scan(root);network=scan.rpc
+   def fail(m,p):
+    if m=='eth_getLogs':raise RuntimeError('provider refused')
+    return network(m,p)
+   scan.rpc=fail
+   with self.assertRaises(RuntimeError):scan.scan(W,'from',[T],10,60,chunk=2)
+   self.assertEqual(open(path,'rb').read(),raw);self.assertFalse(scan.last[S.scan_id(old['descriptor'])]['complete'])
+ def test_prefix_manifest_failure_does_not_claim_uncommitted_progress(self):
+  with tempfile.TemporaryDirectory() as root:
+   path,old=self.prefix_fixture(root);raw=open(path,'rb').read();real=S.atomic_save
+   def fail(destination,value):
+    if destination==path:raise OSError('manifest crash')
+    real(destination,value)
+   scan,_,_=self.setup_scan(root)
+   with patch.object(S,'atomic_save',side_effect=fail):
+    with self.assertRaises(OSError):scan.scan(W,'from',[T],10,60,chunk=2)
+   self.assertEqual(open(path,'rb').read(),raw);self.assertEqual(scan.work[S.scan_id(old['descriptor'])]['verified_blocks'],0)
+   S.validate_store(root)
+ def test_crash_before_join_replays_verified_prefix_without_querying_it(self):
+  with tempfile.TemporaryDirectory() as root:
+   path,old=self.prefix_fixture(root);real=S.atomic_save
+   def fail(destination,value):
+    if destination==path and value['start']==10 and 'prefix' not in value:raise OSError('join crash')
+    real(destination,value)
+   scan,_,_=self.setup_scan(root);scan.budget_seconds=100
+   with patch.object(S,'atomic_save',side_effect=fail):
+    with self.assertRaises(OSError):scan.scan(W,'from',[T],10,60,chunk=2)
+   staged=json.load(open(path));self.assertTrue(staged['prefix']['complete']);S.validate_store(root)
+   scan,_,calls=self.setup_scan(root);scan.budget_seconds=100
+   scan.scan(W,'from',[T],10,60,chunk=2)
+   self.assertEqual(calls,[]);self.assertNotIn('prefix',json.load(open(path)));S.validate_store(root)
+ def test_final_completion_write_failure_cannot_claim_healthy_join(self):
+  with tempfile.TemporaryDirectory() as root:
+   path,old=self.prefix_fixture(root);real=S.atomic_save
+   def fail(destination,value):
+    if destination==path and value['start']==10 and 'prefix' not in value and value['complete']:raise OSError('completion crash')
+    real(destination,value)
+   scan,_,_=self.setup_scan(root);scan.budget_seconds=100
+   with patch.object(S,'atomic_save',side_effect=fail):
+    with self.assertRaises(OSError):scan.scan(W,'from',[T],10,60,chunk=2)
+   pending=json.load(open(path));self.assertFalse(pending['complete']);self.assertEqual(pending['chunks'][-len(old['chunks']):],old['chunks']);S.validate_store(root)
+   proof=scan.last[S.scan_id(old['descriptor'])];self.assertFalse(proof['complete'])
+   with self.assertRaises(S.ScanIncomplete):S.require_coverage({'scope':{'complete':True,'source_coverage':{'coverage_ok':True,'pending':[proof]}}})
+ def test_changed_prefix_or_suffix_anchor_never_joins(self):
+  for changed in (11,30):
+   with tempfile.TemporaryDirectory() as root:
+    path,old=self.prefix_fixture(root);scan,_,_=self.setup_scan(root)
+    with self.assertRaises(S.ScanIncomplete):scan.scan(W,'from',[T],10,60,chunk=2)
+    raw=open(path,'rb').read();scan,_,_=self.setup_scan(root);scan.budget_seconds=100;network=scan.rpc
+    def reorg(m,p):
+     value=network(m,p)
+     if m=='eth_getBlockByNumber' and int(p[0],16)==changed:value['hash']='0x'+'f'*64
+     return value
+    scan.rpc=reorg
+    with self.assertRaises(S.ScanInvalid):scan.scan(W,'from',[T],10,60,chunk=2)
+    self.assertEqual(open(path,'rb').read(),raw)
+ def test_later_floor_never_resets_or_skips_gap(self):
+  with tempfile.TemporaryDirectory() as root:
+   path,old=self.prefix_fixture(root);scan,_,calls=self.setup_scan(root);scan.budget_seconds=100
+   rows=scan.scan(W,'from',[T],35,70,chunk=2)
+   self.assertEqual(calls[0],(31,32));self.assertEqual(json.load(open(path))['start'],20)
+   self.assertTrue(all(row['block_number']>=35 for row in rows));S.validate_store(root)
+   scan,_,calls=self.setup_scan(root);scan.budget_seconds=100;scan.scan(W,'from',[T],36,70,chunk=2)
+   self.assertEqual(calls,[]);S.validate_store(root)
+ def test_wider_floor_during_pending_prefix_finishes_then_extends(self):
+  with tempfile.TemporaryDirectory() as root:
+   path,old=self.prefix_fixture(root);scan,_,_=self.setup_scan(root)
+   with self.assertRaises(S.ScanIncomplete):scan.scan(W,'from',[T],10,60,chunk=2)
+   scan,_,calls=self.setup_scan(root);scan.budget_seconds=100;scan.scan(W,'from',[T],6,60,chunk=2)
+   self.assertEqual(calls,[(12,13),(14,15),(16,17),(18,19),(6,7),(8,9)])
+   self.assertEqual(json.load(open(path))['start'],6);S.validate_store(root)
+ def test_prefix_schema_checksum_and_overlap_remain_strict(self):
+  import copy
+  with tempfile.TemporaryDirectory() as root:
+   path,old=self.prefix_fixture(root);scan,_,_=self.setup_scan(root)
+   with self.assertRaises(S.ScanIncomplete):scan.scan(W,'from',[T],10,60,chunk=2)
+   valid=json.load(open(path))
+   for mutate in (lambda p:p.update(complete=True),lambda p:p['prefix'].update(target=20),lambda p:p['prefix'].update(start=20),lambda p:p['prefix'].update(through=20),lambda p:p['prefix'].update(owner='private'),lambda p:p['prefix']['chunks'][0].update(checksum='0x'+'f'*64)):
+    bad=copy.deepcopy(valid);mutate(bad);S.atomic_save(path,bad)
+    with self.assertRaises(S.ScanInvalid):S.validate_store(root)
+   S.atomic_save(path,valid);S.validate_store(root)
+ def test_prefix_join_rechecks_suffix_after_prefix_scan(self):
+  with tempfile.TemporaryDirectory() as root:
+   path,old=self.prefix_fixture(root);scan,_,_=self.setup_scan(root);scan.budget_seconds=100;network=scan.rpc;count=[0]
+   def changing(m,p):
+    value=network(m,p)
+    if m=='eth_getBlockByNumber' and int(p[0],16)==30:
+     count[0]+=1
+     if count[0]>1:value['hash']='0x'+'f'*64
+    return value
+   scan.rpc=changing
+   with self.assertRaises(S.ScanInvalid):scan.scan(W,'from',[T],10,60,chunk=2)
+   pending=json.load(open(path));self.assertEqual(pending['chunks'],old['chunks']);self.assertIn('prefix',pending)
+   self.assertFalse(scan.last[S.scan_id(old['descriptor'])]['complete']);S.validate_store(root)
+ def test_unjoined_prefix_rejects_forged_health(self):
+  leg={'complete':True,'through':30,'target':30,'hash':'0x'+'a'*64,'prefix':{'through':11,'target':19}}
+  with self.assertRaises(S.ScanIncomplete):S.require_coverage({'scope':{'complete':True,'source_coverage':{'coverage_ok':True,'pending':[leg]}}})
  def test_partial_resume_never_returns_financial_rows(self):
   with tempfile.TemporaryDirectory() as root:
    scan,clock,calls=self.setup_scan(root,limit=2)

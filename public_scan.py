@@ -135,53 +135,36 @@ class PublicScanner:
             raise ScanInvalid('missing verified block anchor')
         return value
 
-    def scan(self, wallet, direction, tokens, start, head, chunk=2000):
-        desc = descriptor(wallet, direction, tokens)
-        sid = scan_id(desc)
-        path = os.path.join(self.directory, sid+'.json')
-        target = head - FINALITY
-        if self.deadline is None:
-            self.deadline = self.clock() + self.budget_seconds
-        state = {'descriptor':desc, 'start':start, 'through':start-1,
-                 'hash':None, 'timestamp':None, 'target':target, 'complete':False, 'chunks':[], 'rows':[]}
-        if os.path.exists(path):
-            validate_store(self.directory)
-            with open(path) as prior:
-                previous = json.load(prior)
-            if previous.get('descriptor') != desc:
-                raise ScanInvalid('scan descriptor mismatch')
-            previous['rows'] = []
-            for part in previous.get('chunks', []):
-                if not re.fullmatch(r'\d+-\d+\.json', part['file']):
-                    raise ScanInvalid('invalid pending chunk path')
-                chunk_path = os.path.join(self.directory,sid,part['file'])
-                with open(chunk_path,'rb') as data:
-                    raw = data.read()
-                if '0x'+hashlib.sha256(raw).hexdigest() != part['checksum']:
-                    raise ScanInvalid('pending chunk checksum mismatch')
-                previous['rows'].extend(json.loads(raw))
-            through = previous['through']
-            if through >= start and start >= previous['start']:
-                if self.block(through)['hash'].lower() != previous['hash'].lower():
-                    raise ScanInvalid('checkpoint block hash mismatch')
-                # Rows remain until their complete leg has actually been promoted.
-                state = previous
-                chunk = min(chunk,previous.get('chunk',chunk))
-                # Keep the immutable persisted origin; requested start only
-                # filters the return value, never rewrites chunk coverage.
-        self.declare(sid)
-        self.work[sid].update(through=state['through'],target=target)
-        state['target'] = target
-        state['complete'] = False
-        topic_wallet = '0x'+'0'*24+wallet[2:].lower()
-        topics = [TRANSFER_TOPIC, topic_wallet] if direction == 'from' else [TRANSFER_TOPIC, None, topic_wallet]
-        nxt = max(start, state['through']+1)
-        if target < start:
-            raise ScanIncomplete('requested start exceeds finalized head')
+    @staticmethod
+    def proof(state):
+        proof = {k:v for k,v in state.items() if k not in ('rows','chunks')}
+        if 'prefix' in proof:
+            proof['prefix'] = PublicScanner.proof(proof['prefix'])
+        return proof
+
+    def _rows(self, sid, state):
+        rows = []
+        for part in state['chunks']:
+            with open(os.path.join(self.directory,sid,part['file']),'rb') as data:
+                raw = data.read()
+            if '0x'+hashlib.sha256(raw).hexdigest() != part['checksum']:
+                raise ScanInvalid('pending chunk checksum mismatch')
+            rows.extend(json.loads(raw))
+        return rows
+
+    def _anchor(self, state):
+        if self.block(state['through'])['hash'].lower() != state['hash'].lower():
+            raise ScanInvalid('checkpoint block hash mismatch')
+
+    def _fill(self, state, target, desc, sid, topics, persist):
+        nxt = state['through']+1
+        chunk = state.get('chunk',2000)
+        wallet = desc['wallet']
+        direction = desc['direction']
+        topic_wallet = '0x'+'0'*24+wallet[2:]
         seen = {log_key(r) for r in state['rows']}
         while nxt <= target:
             if self.expired():
-                self.last[sid] = {k:v for k,v in state.items() if k not in ('rows','chunks')}
                 raise ScanIncomplete('bounded scan incomplete; last good cache retained')
             end = min(nxt+chunk-1,target)
             try:
@@ -219,18 +202,18 @@ class PublicScanner:
                     raise ScanInvalid('materialization lost a transfer')
                 anchor = self.block(end)
             except BudgetExpired:
-                self.last[sid] = {k:v for k,v in state.items() if k not in ('rows','chunks')}
                 raise ScanIncomplete('bounded scan incomplete; last good cache retained') from None
             expected = {(log['transactionHash'].lower(),int(log['logIndex'],16),int(log['blockNumber'],16)) for log in logs}
             actual = {(row['transaction_hash'].lower(),row['log_index'],row['block_number']) for row in shaped}
             if actual != expected:
                 raise ScanInvalid('materialization changed transfer identity')
+            candidate = dict(state, rows=list(state['rows']), chunks=list(state['chunks']))
             for row in shaped:
                 key = log_key(row)
                 if key not in seen:
-                    state['rows'].append(row)
+                    candidate['rows'].append(row)
                     seen.add(key)
-            state.update(through=end,hash=anchor['hash'],timestamp=datetime.fromtimestamp(int(anchor['timestamp'],16),timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),complete=end==target,chunk=chunk)
+            candidate.update(through=end,hash=anchor['hash'],timestamp=datetime.fromtimestamp(int(anchor['timestamp'],16),timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),complete=end==target,chunk=chunk)
             # Each range is small; no ever-growing monolithic pending file.
             # Persist the chunk before its manifest so an interrupted write
             # leaves at worst an unreferenced chunk, never a cursor ahead.
@@ -239,14 +222,89 @@ class PublicScanner:
             atomic_save(chunk_path,shaped)
             with open(chunk_path,'rb') as raw:
                 checksum = '0x'+hashlib.sha256(raw.read()).hexdigest()
-            state['chunks'].append({'file':filename,'checksum':checksum})
-            atomic_save(path,{k:v for k,v in state.items() if k!='rows'})
+            candidate['chunks'].append({'file':filename,'checksum':checksum})
+            persist(candidate)
+            state.clear()
+            state.update(candidate)
             self.work[sid]['verified_blocks'] += end-nxt+1
             self.work[sid]['through'] = end
             nxt = end+1
-        state['complete'] = True
-        self.last[sid] = {k:v for k,v in state.items() if k not in ('rows','chunks')}
-        return [r for r in state['rows'] if start <= r['block_number'] <= target]
+        return state
+
+    def scan(self, wallet, direction, tokens, start, head, chunk=2000):
+        desc = descriptor(wallet, direction, tokens)
+        sid = scan_id(desc)
+        path = os.path.join(self.directory,sid+'.json')
+        target = head-FINALITY
+        if self.deadline is None:
+            self.deadline = self.clock()+self.budget_seconds
+        self.declare(sid)
+        state = {'descriptor':desc,'start':start,'through':start-1,
+                 'hash':None,'timestamp':None,'target':target,'complete':False,
+                 'chunks':[],'rows':[],'chunk':chunk}
+        if target < start:
+            raise ScanIncomplete('requested start exceeds finalized head')
+        if os.path.exists(path):
+            validate_store(self.directory)
+            with open(path) as prior:
+                state = json.load(prior)
+            if state['descriptor'] != desc:
+                raise ScanInvalid('scan descriptor mismatch')
+            state['rows'] = self._rows(sid,state)
+            # A caller floor is a return filter, never permission to discard proof.
+            self._anchor(state)
+            state['chunk'] = min(chunk,state['chunk'])
+            if 'prefix' in state:
+                state['prefix']['rows'] = self._rows(sid,state['prefix'])
+                self._anchor(state['prefix'])
+        state.update(target=target,complete=False)
+        topics = [TRANSFER_TOPIC,'0x'+'0'*24+desc['wallet'][2:]] if direction=='from' else [TRANSFER_TOPIC,None,'0x'+'0'*24+desc['wallet'][2:]]
+        def disk(value):
+            result = {k:v for k,v in value.items() if k!='rows'}
+            if 'prefix' in result:
+                result['prefix'] = {k:v for k,v in result['prefix'].items() if k!='rows'}
+            return result
+        def persist(value):
+            atomic_save(path,disk(value))
+        try:
+            while 'prefix' in state or start < state['start']:
+                prefix = state.get('prefix')
+                if prefix is None:
+                    prefix = {'start':start,'through':start-1,'hash':None,'timestamp':None,
+                              'target':state['start']-1,'complete':False,'chunks':[],
+                              'rows':[],'chunk':state['chunk']}
+                def persist_prefix(value):
+                    candidate = dict(state,prefix=value,complete=False)
+                    persist(candidate)
+                    state['prefix'] = value
+                self._fill(prefix,prefix['target'],desc,sid,topics,persist_prefix)
+                # The join is a separate atomic boundary; either proof survives
+                # a crash, and both canonical anchors must still agree now.
+                self._anchor(prefix)
+                self._anchor(state)
+                joined = dict(state,start=prefix['start'],
+                              chunks=prefix['chunks']+state['chunks'],
+                              rows=prefix['rows']+state['rows'],complete=False)
+                joined.pop('prefix',None)
+                persist(joined)
+                state = joined
+            self._fill(state,target,desc,sid,topics,persist)
+            state['complete'] = False
+            completed = dict(state,complete=True)
+            persist(completed)
+            state = completed
+            return [r for r in state['rows'] if start <= r['block_number'] <= target]
+        except BudgetExpired:
+            raise ScanIncomplete('bounded scan incomplete; last good cache retained') from None
+        finally:
+            self.last[sid] = self.proof(state)
+            missing = max(0,target-state['through'])
+            prefix = state.get('prefix')
+            if prefix:
+                missing += prefix['target']-prefix['through']+max(0,prefix['start']-start)
+            elif start < state['start']:
+                missing += state['start']-start
+            self.work[sid].update(through=state['through'],target=target,remaining_blocks=missing)
 
 
 def validate_store(directory):
@@ -267,32 +325,41 @@ def validate_store(directory):
         with open(path) as source:
             state=json.load(source)
         required={'descriptor','start','through','hash','timestamp','target','complete','chunks','chunk'}
-        if set(state)!=required or set(state['descriptor'])!={'wallet','direction','tokens','finality','version'}:
+        if set(state) not in (required,required|{'prefix'}) or set(state['descriptor'])!={'wallet','direction','tokens','finality','version'}:
             raise ScanInvalid('invalid pending manifest schema')
         desc=state['descriptor']
         if descriptor(desc['wallet'],desc['direction'],desc['tokens'])!=desc or scan_id(desc)!=filename[:-5]:
             raise ScanInvalid('invalid pending scan identity')
-        if (not all(isinstance(state[k],int) and not isinstance(state[k],bool) for k in ('start','through','target','chunk'))
-                or state['through']<state['start'] or not isinstance(state['complete'],bool)
-                or (state['complete'] and state['through']<state['target'])
-                or not re.fullmatch(r'0x[0-9a-fA-F]{64}',state['hash'])
-                or not re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ',state['timestamp'])):
-            raise ScanInvalid('invalid pending coverage proof')
-        prior=None
-        for part in state['chunks']:
-            if set(part)!={'file','checksum'} or not re.fullmatch(r'\d+-\d+\.json',part['file']):
-                raise ScanInvalid('invalid pending chunk reference')
-            lo,hi=map(int,part['file'][:-5].split('-'))
-            if hi<lo or (prior is None and lo!=state['start']) or (prior is not None and lo!=prior+1):
-                raise ScanInvalid('pending coverage gap')
-            prior=hi
-            chunk_path=os.path.join(directory,filename[:-5],part['file'])
-            with open(chunk_path,'rb') as data:
-                raw=data.read()
-            if '0x'+hashlib.sha256(raw).hexdigest()!=part['checksum']:
-                raise ScanInvalid('pending chunk checksum mismatch')
-        if prior!=state['through']:
-            raise ScanInvalid('pending cursor exceeds persisted chunks')
+        segments = [state]
+        if 'prefix' in state:
+            prefix = state['prefix']
+            if (not isinstance(prefix,dict) or set(prefix)!=required-{'descriptor'}
+                    or state['complete'] or prefix['target']!=state['start']-1
+                    or prefix['through']>=state['start'] or prefix['start']>=state['start']):
+                raise ScanInvalid('invalid pending prefix proof')
+            segments.append(prefix)
+        for segment in segments:
+            if (not all(isinstance(segment[k],int) and not isinstance(segment[k],bool) for k in ('start','through','target','chunk'))
+                    or segment['through']<segment['start'] or not isinstance(segment['complete'],bool)
+                    or (segment['complete'] and segment['through']<segment['target'])
+                    or not re.fullmatch(r'0x[0-9a-fA-F]{64}',segment['hash'])
+                    or not re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ',segment['timestamp'])):
+                raise ScanInvalid('invalid pending coverage proof')
+            prior=None
+            for part in segment['chunks']:
+                if set(part)!={'file','checksum'} or not re.fullmatch(r'\d+-\d+\.json',part['file']):
+                    raise ScanInvalid('invalid pending chunk reference')
+                lo,hi=map(int,part['file'][:-5].split('-'))
+                if hi<lo or (prior is None and lo!=segment['start']) or (prior is not None and lo!=prior+1):
+                    raise ScanInvalid('pending coverage gap')
+                prior=hi
+                chunk_path=os.path.join(directory,filename[:-5],part['file'])
+                with open(chunk_path,'rb') as data:
+                    raw=data.read()
+                if '0x'+hashlib.sha256(raw).hexdigest()!=part['checksum']:
+                    raise ScanInvalid('pending chunk checksum mismatch')
+            if prior!=segment['through']:
+                raise ScanInvalid('pending cursor exceeds persisted chunks')
         manifests[filename[:-5]]=desc
     for sid in (name for name in os.listdir(directory) if os.path.isdir(os.path.join(directory,name))):
         for filename in os.listdir(os.path.join(directory,sid)):
@@ -334,7 +401,7 @@ def require_coverage(*documents):
                 or not isinstance(coverage.get('pending'), list)):
             raise ScanIncomplete('chain coverage incomplete; last saved finance retained')
         for leg in coverage['pending']:
-            if (not isinstance(leg, dict) or leg.get('complete') is not True
+            if (not isinstance(leg, dict) or 'prefix' in leg or leg.get('complete') is not True
                     or not isinstance(leg.get('through'), int)
                     or not isinstance(leg.get('target'), int)
                     or leg['through'] < leg['target']
