@@ -672,5 +672,9 @@
   "previous_sha": "13fec99a13cfe801a812852472af6647069b1a72ed85cbce3cee23f0e0a6a6c6",
   "restated_iso": "2026-10-10T14:32:30Z",
   "sha": "0f16f71f094c95e93d0333ba01e80c39042ef5c71fff52f24a9d75a501c1ae05"
+ },
+ "2026-10-09": {
+  "first_written_iso": "2026-10-11T00:08:24Z",
+  "sha": "ce921a9e2483899f4d6bcb12606c0c6f7b61dc4efce5579ca96fa54eb790608b"
  }
 }
