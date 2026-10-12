@@ -180,7 +180,7 @@
 }
 },
 "last_accepted_rate": {
-"MOCA": 0.009825,
+"MOCA": 0.009822,
 "MENTE": 0.01817
 },
 "recon": {
@@ -762,8 +762,8 @@
 "cognition_in": 52506058,
 "coupon_out": 52506153,
 "coupon_in": 52506153,
-"sink_to": 52518776,
-"sink_from": 52518778,
+"sink_to": 52519682,
+"sink_from": 52519684,
 "sink_xc_to": 52239699,
 "sink_xc_from": 52239701
 },
