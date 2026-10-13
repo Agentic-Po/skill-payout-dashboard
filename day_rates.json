@@ -181,8 +181,8 @@
 }
 },
 "last_accepted_rate": {
-"MOCA": 0.009731,
-"MENTE": 0.01844
+"MOCA": 0.009729,
+"MENTE": 0.01845
 },
 "recon": {
 "MOCA": -16161.7,
@@ -194,7 +194,7 @@
 "open_day_rate": {
 "MOCA": {
 "d": "2026-10-13",
-"rate": 0.00967093
+"rate": 0.00966968
 }
 },
 "market_rates": {
@@ -762,13 +762,13 @@
 }
 },
 "xcheck": {
-"transfers": 52542034,
-"transfers_in": 52542044,
-"cognition_in": 52542047,
-"coupon_out": 52542125,
-"coupon_in": 52542125,
-"sink_to": 52542118,
-"sink_from": 52542121,
+"transfers": 52542932,
+"transfers_in": 52542942,
+"cognition_in": 52542946,
+"coupon_out": 52543047,
+"coupon_in": 52543047,
+"sink_to": 52543040,
+"sink_from": 52543043,
 "sink_xc_to": 52239699,
 "sink_xc_from": 52239701
 },
@@ -2253,13 +2253,13 @@
 "market_open": {
 "MENTE": {
 "d": "2026-10-13",
-"close": 0.01844513,
-"fetched": "2026-10-13T06:08:16Z"
+"close": 0.01855756,
+"fetched": "2026-10-13T07:08:18Z"
 },
 "MOCA": {
 "d": "2026-10-13",
-"close": 0.00967093,
-"fetched": "2026-10-13T06:08:16Z"
+"close": 0.00966968,
+"fetched": "2026-10-13T07:08:18Z"
 }
 },
 "market_rates_note": {
