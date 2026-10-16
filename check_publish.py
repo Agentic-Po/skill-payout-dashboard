@@ -336,11 +336,11 @@ def _catalog_paths():
     return [q for e in json.load(open(p)) if e.get("public") for q in e.get("path", [])]
 
 
-# A monthly shard, and nothing else, may appear inside a dataset directory.
+# A monthly live shard or strict numbered part may appear in a dataset directory.
 # Same regex shards.load() uses to decide what to READ, so the publish
 # surface and the read surface cannot diverge: a file the pipeline would
 # ignore is a file the pipeline must not publish either.
-SHARD_RE = re.compile(r"\d{4}-\d{2}\.json")
+SHARD_RE = re.compile(r"\d{4}-\d{2}(?:-part-\d{4})?\.json")
 
 
 def _expand(paths):

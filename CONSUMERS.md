@@ -201,3 +201,17 @@ when Treasury is incomplete. Overall coverage gates and severity remain unchange
 ### Visible financial freshness
 
 The Treasury template uses `scope.source_coverage.treasury_complete` for its own financial coverage, falling back to legacy `scope.complete`. A saved wallet balance retains its financial `scope.generated_iso` and prices; it is never described as a live balance. Incomplete Treasury 24-hour inflow/outflow tiles display unavailable rather than treating a cached zero as a verified zero. The daily table retains recorded rows and explicitly marks the dynamic missing UTC dates as unknown; it never manufactures zero-day rows from pending scans. Subsidiary incompleteness alone does not hide complete Treasury figures. These display rules change no numeric dataset, proof, promotion or publication gate.
+
+
+### Raw archive parts — 2026-10-16
+
+Monthly JSON row arrays remain under `transfers/YYYY-MM.json` (and the other
+existing cache directories). Growing months also contain immutable
+`YYYY-MM-part-NNNN.json` arrays, numbered contiguously from0001. Read **all**
+files for a month, not only its live base file; concatenate and deduplicate
+exact `(transaction_hash, log_index)` records. Conflicting duplicates fail.
+A part is written before reducing the live base, so interruption may leave
+exact overlap; no historical records are removed. The live base is bounded
+at32MiB and parts at16MiB, beneath the unchanged50MiB publication guard.
+`shards.load()` and the private ownership/funding readers support both layouts.
+Financial JSON, daily bands, prices and CSV row schemas are unchanged.
