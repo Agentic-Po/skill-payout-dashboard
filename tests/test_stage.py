@@ -23,6 +23,7 @@ ROOT = os.path.dirname(HERE)
 
 NESTED_PY = os.path.join(ROOT, ".creds_probe", "keys.py")
 STRAY = os.path.join(ROOT, "transfers", "LEAK_probe.json")
+PART_PROBE = os.path.join(ROOT, "transfers", "2099-01-part-0001.json")
 COUPON_STRAY = os.path.join(ROOT, "coupon_out", "LEAK_probe.json")
 # Every dataset directory in the catalog must be staged file-by-file. Listed
 # by name so a new dataset dir that stops being staged is a red test, not a
@@ -39,15 +40,17 @@ def _stage():
 
 
 def main():
-    seeds = (NESTED_PY, STRAY, COUPON_STRAY)
+    seeds = (NESTED_PY, STRAY, COUPON_STRAY, PART_PROBE)
     assert not any(os.path.exists(p) for p in seeds), \
         "probe files already exist — refusing to clobber"
     os.makedirs(os.path.dirname(NESTED_PY), exist_ok=True)
     open(NESTED_PY, "w").write("TOKEN = 1\n")
     open(STRAY, "w").write('{"leak": 1}\n')
     open(COUPON_STRAY, "w").write('{"leak": 1}\n')
+    open(PART_PROBE, "w").write("[]\n")
     try:
         files, warns = _stage()
+        assert "transfers/2099-01-part-0001.json" in files, "bounded part not published"
         for probe in (".creds_probe/keys.py", "transfers/LEAK_probe.json",
                       "coupon_out/LEAK_probe.json"):
             assert probe not in files, f"{probe} was STAGED — allowlist is too wide"
@@ -70,7 +73,7 @@ def main():
         print("ok coupon + public summary + full render + Pages config staged")
     finally:
         shutil.rmtree(os.path.dirname(NESTED_PY), ignore_errors=True)
-        for p in (STRAY, COUPON_STRAY):
+        for p in (STRAY, COUPON_STRAY, PART_PROBE):
             if os.path.exists(p):
                 os.remove(p)
     print("test_stage: PASS")
