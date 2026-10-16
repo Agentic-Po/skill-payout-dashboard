@@ -185,7 +185,7 @@
 },
 "last_accepted_rate": {
 "MOCA": 0.008981,
-"MENTE": 0.018
+"MENTE": 0.01801
 },
 "recon": {
 "MOCA": -16161.7,
@@ -197,7 +197,7 @@
 "open_day_rate": {
 "MOCA": {
 "d": "2026-10-16",
-"rate": 0.00896689
+"rate": 0.00895863
 }
 },
 "market_rates": {
@@ -2345,13 +2345,13 @@
 "market_open": {
 "MENTE": {
 "d": "2026-10-16",
-"close": 0.01794419,
-"fetched": "2026-10-16T10:09:44Z"
+"close": 0.0180718,
+"fetched": "2026-10-16T11:09:56Z"
 },
 "MOCA": {
 "d": "2026-10-16",
-"close": 0.00896689,
-"fetched": "2026-10-16T10:09:45Z"
+"close": 0.00895863,
+"fetched": "2026-10-16T11:09:57Z"
 }
 },
 "market_rates_note": {
