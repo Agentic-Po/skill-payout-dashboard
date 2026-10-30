@@ -78,7 +78,7 @@ PUBLISH_EXTRA = [
     # aggregates only, no rows — MUST commit or the ledger is rebuilt from
     # scratch every run and carries zero tamper evidence
     "day_digests.json", "RESTATEMENTS.md",
-    "catalog.json", "data.json", "day_rates.json", "stats_history.json",
+    "catalog.json", "data.json", "day_rates.json", "stats_history.json", "price_observations.json",
     "stripe_snapshot.json", "posthog_cache.json",
     "swarm_era.json", "swarm_prices.json",
     "transfers_export.csv", "publish_allow_addrs.txt",
@@ -140,7 +140,7 @@ LEAKED_NAME_RES = [re.compile("ja" + "son" + r"\s+o" + "ng", re.I),
                    re.compile("kat" + "herine" + r"\s+w" + "ebb", re.I)]
 
 # Every public/derived artifact gets the denied-field scan.
-DENIED_TARGETS = ["index.html", "full.html", "data.json", "catalog.json",
+DENIED_TARGETS = ["index.html", "full.html", "data.json", "catalog.json", "price_observations.json",
                   "DATASETS.md", "README.md", "stats_history.json",
                   "transfers_export.csv", "day_digests.json", "RESTATEMENTS.md",
                   # the coupon page is a public artifact like any other
@@ -505,14 +505,14 @@ def scan():
             bad += _label_leaks(_parsed, "data.json")
         except json.JSONDecodeError as e:
             bad.append(f"data.json did not parse for the structural scan: {e}")
-    for _rel in ("catalog.json", "coupon_data.json"):
+    for _rel in ("catalog.json", "coupon_data.json", "price_observations.json"):
         _cj = os.path.join(HERE, _rel)
         if os.path.exists(_cj):
             try:
                 _p2 = json.load(open(_cj))
                 bad += _label_leaks(_p2, _rel)
-                if _rel == "coupon_data.json":
-                    bad += [h.replace("data.json:", "coupon_data.json:")
+                if _rel in ("coupon_data.json", "price_observations.json"):
+                    bad += [h.replace("data.json:", _rel+":")
                             for h in _oracle_keys(_p2)]
             except json.JSONDecodeError as e:
                 bad.append(f"{_rel} did not parse for the structural scan: {e}")

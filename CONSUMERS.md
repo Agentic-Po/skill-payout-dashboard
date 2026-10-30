@@ -239,3 +239,41 @@ not a token movement or a changed bill. The prior values remain retrievable
 from the preceding Git version; existing sealed outflow artifacts reproduce
 unchanged. `valuation` is additive and records all/week priced subtotals,
 unpriced native amounts/counts, provisional-row counts and exact dated inputs.
+
+### Price acquisition evidence — 2026-10-30
+
+An additive `scope.price_observations` envelope and the equivalent small root
+`price_observations.json` expose this project's existing acquisition evidence.
+Top-level financial schema remains version 5. The envelope is schema version 1,
+collector `treasury-price-acquisition-v1`, origin `provider_acquisition`, Base
+chain ID 8453, with `exported_at`, `observations` and `selections`.
+
+Each observation carries its stable ID, source (`blockscout` or
+`dexscreener`), symbol/token contract, original provider USD text or null,
+logical query start/completion and response receipt clocks, provider-update
+and last-trade clocks when known, outcome, fixed reason codes and whether the
+original collector accepted it. Outcomes are `acquired`, `rejected`, `failed`
+or `not_queried`; an unqueried lower-priority source has null query clocks.
+Query windows include the existing get() retry ladder; they are not a claim
+about individual HTTP attempts. JSON numeric price lexemes are retained
+separately; the original collector still decodes and selects as before.
+
+The actual selected DexScreener pair records its chain, pool address, DEX,
+base/quote contracts and USD liquidity when provided. Unknown trade/update
+clocks remain null; fetching a quote does not establish recent market trading.
+Selections preserve the legacy source label, USD rate, kind (`acquired`,
+`retained` or `static`) and original observation ID/receipt when known.
+`last-accepted` and `fallback` are explicit legacy source labels. Retained
+observations keep their original clocks and IDs; export/build time never makes
+them fresh. Before the first instrumented online refresh, legacy rates are
+audit-only retained/static values with no invented acquisition time.
+
+The acquisition envelope is published even when Treasury financial coverage
+retains an earlier snapshot. The two clocks and purposes are independent.
+Offline builds preserve the original envelope exactly. Provider bodies,
+headers, exception text, credentials, identities and bank-derived observations
+are excluded. The small file is capped at 64 KiB. Consumers should validate
+identities/clocks and pin immutable Git commits; this is not a new Pages poller.
+The original calls, priorities, acceptance/fallback rules, published valuation,
+payout classifications, native quantities and sealed financial digests remain
+unchanged. No schedule, additional provider request or credential was added.
