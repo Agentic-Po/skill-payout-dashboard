@@ -78,16 +78,16 @@ and canonical cutoff header were verified before authorizing this pair.
 
 ### Note — 2026-10-30 cognition market-value correction (no outflow seal changed)
 
-The `2026-10-30T03:38:43Z` snapshot valued cognition consumption using payout
+The `2026-10-30T04:08:52Z` snapshot valued cognition consumption using payout
 `day_rates.MENTE` and a live fallback for missing historical dates.
 `treasury-market-day-v2` now uses exact retained `market_rates.MENTE`
 observations; only the actual current UTC day may use yesterday provisionally.
 Historical gaps remain explicitly unavailable, with native amounts and known
 USD subtotals retained. Old first-print observations keep their history note.
 
-All-history market value changes from $419,228.26 to $412,245.60, and the
-trailing-seven-day value from $42,606.88 to $43,043.42. This changes reference
-USD only: 272,756 consumption transfers and 25,113,738 rounded native MENTE
+All-history market value changes from $419,865.70 to $412,348.41, and the
+trailing-seven-day value from $42,711.51 to $43,075.55. This changes reference
+USD only: 272,825 consumption transfers and 25,119,522 rounded native MENTE
 remain unchanged. The preceding Git version preserves the former values.
 Additive valuation metadata records per-day source dates, provisional inputs
 and unpriced counts/subtotals. Payout classifications, transfer exports,
