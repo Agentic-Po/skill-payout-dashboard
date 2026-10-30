@@ -231,10 +231,10 @@ not daily closes; they are not silently repriced. No live historical fallback.
 Sealed Treasury outflow pricing, category allocations and day digests are
 unchanged. The signed-in display labels unavailable market totals explicitly.
 
-At the retained `2026-10-30T03:08:53Z` snapshot, this correction changes cognition market
-value from **$418,598.38 to $412,150.06** (all history) and **$42,498.95 to
-$43,007.81** (trailing seven days). The native 272,694 transfers and
-25,108,363 rounded MENTE are unchanged. This is a USD reference correction,
+At the retained `2026-10-30T03:38:43Z` snapshot, this correction changes cognition market
+value from **$419,228.26 to $412,245.60** (all history) and **$42,606.88 to
+$43,043.42** (trailing seven days). The native 272,756 transfers and
+25,113,738 rounded MENTE are unchanged. This is a USD reference correction,
 not a token movement or a changed bill. The prior values remain retrievable
 from the preceding Git version; existing sealed outflow artifacts reproduce
 unchanged. `valuation` is additive and records all/week priced subtotals,
