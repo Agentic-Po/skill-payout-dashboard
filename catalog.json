@@ -9,19 +9,19 @@
   "row_schema": "schema_version, collector, origin, chain_id, exported_at, observations[], selections[]",
   "rows": 2,
   "rows_closed": 0,
-  "bytes": 3236,
+  "bytes": 3235,
   "coverage": {
-   "from": "2026-10-30T15:08:46.249Z",
-   "to": "2026-10-30T15:08:46.448Z"
+   "from": "2026-10-30T15:38:32.597Z",
+   "to": "2026-10-30T15:38:32.817Z"
   },
-  "generated_iso": "2026-10-30T15:16:09Z",
-  "max_row_ts": "2026-10-30T15:08:46.448Z",
+  "generated_iso": "2026-10-30T15:43:17Z",
+  "max_row_ts": "2026-10-30T15:38:32.817Z",
   "expected_cadence_minutes": 30,
   "update_cadence": "existing refresh (Worker :07/:37; hourly backup :22)",
   "provenance": "existing Blockscout/DexScreener acquisition attempts and legacy selection; original receipt clocks",
   "not_included": "no bank-derived price, balance, wallet identities, provider bodies, private labels or trade-time inference",
   "live": false,
-  "source_generated_iso": "2026-10-30T15:08:46.449Z"
+  "source_generated_iso": "2026-10-30T15:38:32.817Z"
  },
  {
   "name": "transfers",
@@ -31,15 +31,15 @@
   "public": true,
   "kind": "ledger",
   "row_schema": "timestamp, transaction_hash, log_index, block_number, from.hash, to.hash, token.address_hash, total.value, total.decimals",
-  "rows": 381968,
+  "rows": 382000,
   "rows_closed": 161872,
-  "bytes": 163441406,
+  "bytes": 163454883,
   "coverage": {
    "from": "2026-04-24T22:13:15",
-   "to": "2026-10-30T15:06:41"
+   "to": "2026-10-30T15:33:49"
   },
-  "generated_iso": "2026-10-30T15:16:09Z",
-  "max_row_ts": "2026-10-30T15:06:41",
+  "generated_iso": "2026-10-30T15:43:17Z",
+  "max_row_ts": "2026-10-30T15:33:49",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
   "provenance": "Blockscout v2 token-transfers (filter=from) \u2192 eth_getLogs fallback \u2192 24h cross-check",
@@ -61,7 +61,7 @@
    "from": "2026-04-24T20:07:19",
    "to": "2026-10-13T04:06:13"
   },
-  "generated_iso": "2026-10-30T15:16:09Z",
+  "generated_iso": "2026-10-30T15:43:17Z",
   "max_row_ts": "2026-10-13T04:06:13",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
@@ -77,15 +77,15 @@
   "public": true,
   "kind": "ledger",
   "row_schema": "ts, val (MENTE token amount, float), from, tx, log_index, transaction_hash",
-  "rows": 296221,
+  "rows": 296410,
   "rows_closed": 164913,
-  "bytes": 83238446,
+  "bytes": 83289519,
   "coverage": {
    "from": "2026-04-12T19:58:25",
-   "to": "2026-10-30T15:07:17"
+   "to": "2026-10-30T15:36:59"
   },
-  "generated_iso": "2026-10-30T15:16:09Z",
-  "max_row_ts": "2026-10-30T15:07:17",
+  "generated_iso": "2026-10-30T15:43:17Z",
+  "max_row_ts": "2026-10-30T15:36:59",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
   "provenance": "Blockscout v2 token-transfers into the Cognition Credits collector \u2192 eth_getLogs fallback \u2192 24h cross-check",
@@ -100,15 +100,15 @@
   "public": true,
   "kind": "ledger",
   "row_schema": "timestamp, transaction_hash, log_index, block_number, from.hash, to.hash, token.address_hash, total.value, total.decimals",
-  "rows": 3931,
+  "rows": 3932,
   "rows_closed": 3238,
-  "bytes": 1723097,
+  "bytes": 1723518,
   "coverage": {
    "from": "2026-07-08T03:19:47",
-   "to": "2026-10-30T08:23:05"
+   "to": "2026-10-30T15:18:31"
   },
-  "generated_iso": "2026-10-30T15:16:09Z",
-  "max_row_ts": "2026-10-30T08:23:05",
+  "generated_iso": "2026-10-30T15:43:17Z",
+  "max_row_ts": "2026-10-30T15:18:31",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
   "provenance": "Blockscout v2 token-transfers (filter=from) for the Coupon Distributor wallet \u2192 eth_getLogs fallback \u2192 24h cross-check",
@@ -130,7 +130,7 @@
    "from": "2026-07-07T03:47:43",
    "to": "2026-10-28T02:44:31"
   },
-  "generated_iso": "2026-10-30T15:16:09Z",
+  "generated_iso": "2026-10-30T15:43:17Z",
   "max_row_ts": "2026-10-28T02:44:31",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
@@ -148,19 +148,19 @@
   "row_schema": "schema_version, scope, summary, totals, buckets, daily, inflows, top, concentration, range",
   "rows": 1,
   "rows_closed": 1,
-  "bytes": 30861,
+  "bytes": 30915,
   "coverage": {
    "from": "2026-07-08",
-   "to": "2026-10-30T08:23:05"
+   "to": "2026-10-30T15:18:31"
   },
-  "generated_iso": "2026-10-30T15:16:09Z",
-  "max_row_ts": "2026-10-30T08:23:05",
+  "generated_iso": "2026-10-30T15:43:17Z",
+  "max_row_ts": "2026-10-30T15:18:31",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
   "provenance": "refresh.py \u2014 exactly what coupon.html embeds, from coupon_out/ + coupon_in/ priced at the day-pinned MOCA rate",
   "not_included": "aggregates and the top-10 claimant totals only \u2014 no per-claim rows and no claimant list beyond the top 10",
   "live": true,
-  "source_generated_iso": "2026-10-30T15:16:09Z"
+  "source_generated_iso": "2026-10-30T15:43:16Z"
  },
  {
   "name": "transfers_export",
@@ -170,15 +170,15 @@
   "public": true,
   "kind": "derived",
   "row_schema": "timestamp_utc, direction, token, amount, rate_usd, rate_source, usd, size_band, counterparty, tx_hash, log_index, class_coarse, class_fine",
-  "rows": 70571,
+  "rows": 70507,
   "rows_closed": 0,
-  "bytes": 14517753,
+  "bytes": 14504564,
   "coverage": {
-   "from": "2026-10-23T15:09:49",
-   "to": "2026-10-30T15:06:41"
+   "from": "2026-10-23T15:38:59",
+   "to": "2026-10-30T15:33:49"
   },
-  "generated_iso": "2026-10-30T15:16:09Z",
-  "max_row_ts": "2026-10-30T15:06:41",
+  "generated_iso": "2026-10-30T15:43:17Z",
+  "max_row_ts": "2026-10-30T15:33:49",
   "expected_cadence_minutes": 15,
   "update_cadence": "trailing 7 days, rewritten every refresh (full history: transfers_monthly)",
   "provenance": "refresh.py, from transfers/ + transfers_in/ priced at the day-pinned rate",
@@ -193,15 +193,15 @@
   "public": true,
   "kind": "derived",
   "row_schema": "exports/transfers-YYYY-MM.csv \u2014 same 13 columns as transfers_export.csv, one file per UTC month, rows sorted by (timestamp_utc, direction, tx_hash, log_index)",
-  "rows": 382042,
+  "rows": 382074,
   "rows_closed": 161939,
-  "bytes": 79233986,
+  "bytes": 79240997,
   "coverage": {
    "from": "2026-04-24T20:07:19",
-   "to": "2026-10-30T15:06:41"
+   "to": "2026-10-30T15:33:49"
   },
-  "generated_iso": "2026-10-30T15:16:09Z",
-  "max_row_ts": "2026-10-30T15:06:41",
+  "generated_iso": "2026-10-30T15:43:17Z",
+  "max_row_ts": "2026-10-30T15:33:49",
   "expected_cadence_minutes": 15,
   "update_cadence": "open month rewritten every refresh; closed months byte-stable",
   "provenance": "refresh.py, from transfers/ + transfers_in/ priced at the day-pinned rate \u2014 the full per-tx history",
@@ -223,7 +223,7 @@
    "from": "2026-04-24",
    "to": "2026-10-29"
   },
-  "generated_iso": "2026-10-30T15:16:09Z",
+  "generated_iso": "2026-10-30T15:43:17Z",
   "max_row_ts": "2026-10-29",
   "expected_cadence_minutes": 1440,
   "update_cadence": "one immutable entry per token per day",
@@ -247,7 +247,7 @@
    "from": "2026-01-30T12:44:05",
    "to": "2026-07-17T16:30:57"
   },
-  "generated_iso": "2026-10-30T15:16:09Z",
+  "generated_iso": "2026-10-30T15:43:17Z",
   "max_row_ts": "2026-07-17T16:30:57",
   "expected_cadence_minutes": null,
   "update_cadence": "static archive \u2014 frozen",
@@ -265,19 +265,19 @@
   "row_schema": "schema_version (5), scope, facts (incl. windows[].groups, float, creator_wallets, hourly[].g), infer, server, stripe_snap, insights, open_items, gaps, registry, sink, exec_summary",
   "rows": 1,
   "rows_closed": 1,
-  "bytes": 250513,
+  "bytes": 250534,
   "coverage": {
    "from": "2026-04-24",
-   "to": "2026-10-30T15:06:41"
+   "to": "2026-10-30T15:33:49"
   },
-  "generated_iso": "2026-10-30T15:16:09Z",
-  "max_row_ts": "2026-10-30T15:06:41",
+  "generated_iso": "2026-10-30T15:43:17Z",
+  "max_row_ts": "2026-10-30T15:33:49",
   "expected_cadence_minutes": 15,
   "update_cadence": "every refresh (~4x/hour)",
   "provenance": "refresh.py \u2014 the versioned contract; a strict subset of what full.html embeds",
   "not_included": "no per-wallet detector signals or monitoring-status counts (those stay in guard_private.json / alert_state.json), no cap figure, no paid-vs-free basis and no raw transfer rows",
   "live": true,
-  "source_generated_iso": "2026-10-30T15:09:22Z"
+  "source_generated_iso": "2026-10-30T15:38:54Z"
  },
  {
   "name": "stats_history",
@@ -287,15 +287,15 @@
   "public": true,
   "kind": "derived",
   "row_schema": "ts, recon, invoke, equip, growth, moca, creators, rate, balance, mente_balance, runway7, runway_adj (runway7/runway_adj = facts.float.days_7d_pace, total-outflow basis, since 2026-09-15)",
-  "rows": 3824,
+  "rows": 3825,
   "rows_closed": 2308,
-  "bytes": 1128383,
+  "bytes": 1128696,
   "coverage": {
    "from": "2026-07-13T00:00",
-   "to": "2026-10-30T15:09"
+   "to": "2026-10-30T15:38"
   },
-  "generated_iso": "2026-10-30T15:16:09Z",
-  "max_row_ts": "2026-10-30T15:09",
+  "generated_iso": "2026-10-30T15:43:17Z",
+  "max_row_ts": "2026-10-30T15:38",
   "expected_cadence_minutes": 15,
   "update_cadence": "one append per refresh (~4x/hour)",
   "provenance": "refresh.py append-only snapshot; git history of the hourly commits is the immutable trail",
@@ -4136,6 +4136,8 @@
    "pending_scans/6a78a94dd9f69450/53290992-53291439.json",
    "pending_scans/6a78a94dd9f69450/53291440-53291887.json",
    "pending_scans/6a78a94dd9f69450/53291888-53291964.json",
+   "pending_scans/6a78a94dd9f69450/53291965-53292412.json",
+   "pending_scans/6a78a94dd9f69450/53292413-53292782.json",
    "pending_scans/738232af044fbcbb.json",
    "pending_scans/738232af044fbcbb/52334222-52334283.json",
    "pending_scans/738232af044fbcbb/52334284-52334345.json",
@@ -7330,6 +7332,7 @@
    "pending_scans/738232af044fbcbb/53290853-53290855.json",
    "pending_scans/738232af044fbcbb/53290856-53291751.json",
    "pending_scans/738232af044fbcbb/53291752-53291763.json",
+   "pending_scans/738232af044fbcbb/53291764-53292654.json",
    "pending_scans/9e7542906d39ac6e.json",
    "pending_scans/9e7542906d39ac6e/52334190-52334251.json",
    "pending_scans/9e7542906d39ac6e/52334252-52334313.json",
@@ -14742,6 +14745,8 @@
    "pending_scans/9e7542906d39ac6e/53290843-53291738.json",
    "pending_scans/9e7542906d39ac6e/53291739-53291739.json",
    "pending_scans/9e7542906d39ac6e/53291740-53291744.json",
+   "pending_scans/9e7542906d39ac6e/53291745-53292635.json",
+   "pending_scans/9e7542906d39ac6e/53292636-53292639.json",
    "pending_scans/a04bb762b6108ede.json",
    "pending_scans/a04bb762b6108ede/52334294-52336293.json",
    "pending_scans/a04bb762b6108ede/52336294-52338293.json",
@@ -17481,6 +17486,7 @@
    "pending_scans/a04bb762b6108ede/53289245-53290117.json",
    "pending_scans/a04bb762b6108ede/53290118-53290993.json",
    "pending_scans/a04bb762b6108ede/53290994-53291967.json",
+   "pending_scans/a04bb762b6108ede/53291968-53292784.json",
    "pending_scans/ac51e8f25dc8059a.json",
    "pending_scans/ac51e8f25dc8059a/52277739-52277800.json",
    "pending_scans/ac51e8f25dc8059a/52277801-52277862.json",
@@ -23276,6 +23282,8 @@
    "pending_scans/ac51e8f25dc8059a/53290853-53291748.json",
    "pending_scans/ac51e8f25dc8059a/53291749-53291753.json",
    "pending_scans/ac51e8f25dc8059a/53291754-53291756.json",
+   "pending_scans/ac51e8f25dc8059a/53291757-53292648.json",
+   "pending_scans/ac51e8f25dc8059a/53292649-53292650.json",
    "pending_scans/ba6eba7fc4d22e3b.json",
    "pending_scans/ba6eba7fc4d22e3b/52334267-52336250.json",
    "pending_scans/ba6eba7fc4d22e3b/52336251-52337643.json",
@@ -25930,6 +25938,7 @@
    "pending_scans/ba6eba7fc4d22e3b/53289250-53290121.json",
    "pending_scans/ba6eba7fc4d22e3b/53290122-53290997.json",
    "pending_scans/ba6eba7fc4d22e3b/53290998-53291972.json",
+   "pending_scans/ba6eba7fc4d22e3b/53291973-53292788.json",
    "pending_scans/ec89b4c4fbb7be1c.json",
    "pending_scans/ec89b4c4fbb7be1c/52204141-52204202.json",
    "pending_scans/ec89b4c4fbb7be1c/52204203-52204264.json",
@@ -28869,20 +28878,21 @@
    "pending_scans/ec89b4c4fbb7be1c/53289250-53290121.json",
    "pending_scans/ec89b4c4fbb7be1c/53290122-53290997.json",
    "pending_scans/ec89b4c4fbb7be1c/53290998-53291893.json",
-   "pending_scans/ec89b4c4fbb7be1c/53291894-53291972.json"
+   "pending_scans/ec89b4c4fbb7be1c/53291894-53291972.json",
+   "pending_scans/ec89b4c4fbb7be1c/53291973-53292788.json"
   ],
   "public": true,
   "kind": "ledger",
   "row_schema": "unpromoted public transfer rows; manifest descriptor/start/through/hash/timestamp/target/complete/chunks",
-  "rows": 282988,
+  "rows": 283210,
   "rows_closed": 0,
-  "bytes": 121496744,
+  "bytes": 121591033,
   "coverage": {
    "from": "2026-10-07T03:47:05",
-   "to": "2026-10-30T15:07:17"
+   "to": "2026-10-30T15:36:59"
   },
-  "generated_iso": "2026-10-30T15:16:09Z",
-  "max_row_ts": "2026-10-30T15:07:17",
+  "generated_iso": "2026-10-30T15:43:17Z",
+  "max_row_ts": "2026-10-30T15:36:59",
   "expected_cadence_minutes": 30,
   "update_cadence": "bounded existing refresh runs",
   "provenance": "finality-lagged public eth_getLogs; verified range and block anchor; atomic chunk/checkpoint staging",
