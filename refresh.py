@@ -1427,8 +1427,13 @@ if os.path.isdir(COG_DIR):
     _now = utcnow()
     _c7 = (_now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
     _c24 = (_now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%S")
-    def _cog_usd(rows_):
-        return round(sum(c["val"] * (STATE["day_rates"]["MENTE"].get(c["ts"][:10]) or RATE["MENTE"]) for c in rows_), 2)
+    from market_valuation import value_consumption, POLICY_ID as MARKET_DAY_POLICY
+    _cog_prices = STATE.get("market_rates", {}).get("MENTE", {})
+    # A delayed financial cutoff is not permission to create a new historical
+    # estimate. Offline reconstruction alone replays the original report clock.
+    _cog_valuation_now = _PINNED_NOW if OFFLINE else datetime.now(timezone.utc)
+    _cog_all = value_consumption(spends, _cog_prices, _cog_valuation_now)
+    _cog_week = value_consumption([c for c in spends if c["ts"] > _c7], _cog_prices, _cog_valuation_now)
     cog_daily = {}
     for c in spends:
         d0 = c["ts"][:10]
@@ -1437,8 +1442,11 @@ if os.path.isdir(COG_DIR):
     # (the per-wallet "who pays for cognition" split was removed 2026-09-15 —
     # Po rule 5: no paid-vs-free source-of-cognition reasoning anywhere)
     cognition = {"total_n": len(spends), "total_mente": round(sum(c["val"] for c in spends), 0),
-                 "total_usd": _cog_usd(spends),
-                 "usd_7d": _cog_usd([c for c in spends if c["ts"] > _c7]),
+                 "total_usd": _cog_all["usd"],
+                 "usd_7d": _cog_week["usd"],
+                 "valuation": {"policy_id": MARKET_DAY_POLICY, "purpose": "historical_market_value",
+                               "source": "market_rates.MENTE", "history_note": STATE.get("market_rates_note"),
+                               "all": _cog_all, "week": _cog_week},
                  "n_24h": sum(1 for c in spends if c["ts"] > _c24),
                  "minds_all": len({c["from"].lower() for c in spends}),
                  "minds_7d": len({c["from"].lower() for c in spends if c["ts"] > _c7}),
