@@ -241,7 +241,7 @@
   "row_schema": "schema_version (5), scope, facts (incl. windows[].groups, float, creator_wallets, hourly[].g), infer, server, stripe_snap, insights, open_items, gaps, registry, sink, exec_summary",
   "rows": 1,
   "rows_closed": 1,
-  "bytes": 226951,
+  "bytes": 247093,
   "coverage": {
    "from": "2026-04-24",
    "to": "2026-10-30T03:06:41"

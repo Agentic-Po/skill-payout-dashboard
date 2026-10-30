@@ -75,3 +75,21 @@ and canonical cutoff header were verified before authorizing this pair.
 ```digest-transition
 {"day":"2026-10-08","old_sha":"13fec99a13cfe801a812852472af6647069b1a72ed85cbce3cee23f0e0a6a6c6","new_sha":"0f16f71f094c95e93d0333ba01e80c39042ef5c71fff52f24a9d75a501c1ae05"}
 ```
+
+### Note — 2026-10-30 cognition market-value correction (no outflow seal changed)
+
+The `2026-10-30T03:08:53Z` snapshot valued cognition consumption using payout
+`day_rates.MENTE` and a live fallback for missing historical dates.
+`treasury-market-day-v2` now uses exact retained `market_rates.MENTE`
+observations; only the actual current UTC day may use yesterday provisionally.
+Historical gaps remain explicitly unavailable, with native amounts and known
+USD subtotals retained. Old first-print observations keep their history note.
+
+All-history market value changes from $418,598.38 to $412,150.06, and the
+trailing-seven-day value from $42,498.95 to $43,007.81. This changes reference
+USD only: 272,694 consumption transfers and 25,108,363 rounded native MENTE
+remain unchanged. The preceding Git version preserves the former values.
+Additive valuation metadata records per-day source dates, provisional inputs
+and unpriced counts/subtotals. Payout classifications, transfer exports,
+`day_rates.json`, `day_digests.json` and sealed outflow amounts are identical.
+This note authorizes no digest transition or general historical resealing.

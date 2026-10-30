@@ -204,6 +204,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
     <p class="insight" id="ins-cognition"></p>
     <p class="note">On-chain demand side of the economy: MENTE flowing from mind wallets into the Cognition Credits collection wallet (<a href="https://basescan.org/address/0xd85096fAeC1aC03075667B4C1a1661F5623Bf111" target="_blank" class="mono">0xd85096…f111</a>) when minds spend credits on cognition. Treasury-originated transfers to the collector are excluded; spenders are restricted to wallets that previously received treasury payouts. USD at that day’s token price.</p>
     <div class="tiles" id="cogTiles"></div>
+    <p id="cogValuationNote" style="font-size:12px;color:var(--ink2);margin:10px 0" hidden></p>
     <svg id="cogSpark" width="100%" height="70" viewBox="0 0 1060 70" style="margin-top:10px" role="img" aria-label="Bar chart: MENTE consumed on cognition per day"></svg>
   </div>
 
@@ -932,7 +933,7 @@ renderSection("Flow diagram","flowCard",()=>{const wA=F.windows[3];
  if(DATA.sink&&DATA.sink.total)put("nSweep",Math.round(DATA.sink.total*(DATA.sink.rate||0)));
  if(DATA.sink&&DATA.sink.rebate){const _r=DATA.sink.rebate,_e=document.getElementById("nRebate");
    if(_e)_e.textContent=`holds ${Math.round(chk(_r.bal_mente)).toLocaleString()} MENTE + ${Math.round(chk(_r.bal_moca)).toLocaleString()} MOCA · last swap ${_r.last_swap||"never"}`;}
- if(F.cognition)put("nCons",F.cognition.total_usd);
+ if(F.cognition){if(F.cognition.total_usd===null){document.getElementById("nCons").textContent=" · USD unavailable";}else put("nCons",F.cognition.total_usd);}
  // C9 (amended): the diagram is CLOSED by default; a viewer who opens it is remembered
  const fc=document.getElementById("flowCard"),fp=document.getElementById("flowPill");
  try{if(localStorage.getItem("flowOpen")==="1")fc.setAttribute("open","");}catch(e){}
@@ -959,12 +960,15 @@ renderSection("Cognition consumption","cogCard",()=>{
 const CG=F.cognition;
 if(CG){
  document.getElementById("cogCard").style.display="block";
+ const marketUSD=v=>v===null?"USD unavailable":"$"+chk(v).toLocaleString();
+ const valuationNote=CG.valuation?"Daily market reference"+(CG.valuation.all?.provisional_rows?" · current day provisional":"")+(CG.valuation.all?.unpriced_rows?" · historical prices missing":""):"";
  const ct=[
-  ["Cognition consumed — 7d","$"+chk(CG.usd_7d).toLocaleString(), chk(CG.minds_7d).toLocaleString()+" minds spent · "+CG.n_24h+" spend tx in 24h"+(CG.crawl_complete?"":" · ⚠ data since "+CG.range_from+", crawl in progress")],
-  ["Consumed — "+(CG.crawl_complete?"all history":"partial"),"$"+chk(CG.total_usd).toLocaleString(), chk(CG.total_mente).toLocaleString()+" MENTE since "+CG.range_from+(CG.crawl_complete?"":" (backfill running)")],
+  ["Cognition consumed — 7d",marketUSD(CG.usd_7d), chk(CG.minds_7d).toLocaleString()+" minds spent · "+CG.n_24h+" spend tx in 24h"+(CG.crawl_complete?"":" · ⚠ data since "+CG.range_from+", crawl in progress")],
+  ["Consumed — "+(CG.crawl_complete?"all history":"partial"),marketUSD(CG.total_usd), chk(CG.total_mente).toLocaleString()+" MENTE since "+CG.range_from+(CG.crawl_complete?"":" (backfill running)")],
   ["Spend transactions", chk(CG.total_n).toLocaleString(), "mind → collector transfers"+(CG.crawl_complete?"":" since "+CG.range_from)],
   ["Minds "+(CG.crawl_complete?"ever spending":"spending (partial)"), chk(CG.minds_all).toLocaleString(), "unique treasury-credited wallets consuming cognition"+(CG.crawl_complete?"":" since "+CG.range_from)],
  ];
+ const priceNote=document.getElementById("cogValuationNote");priceNote.hidden=!CG.valuation;priceNote.textContent=valuationNote;
  document.getElementById("cogTiles").innerHTML=ct.map(t=>`<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="d">${t[2]}</div></div>`).join("");
  const cd=CG.daily;
  if(cd.length>3){

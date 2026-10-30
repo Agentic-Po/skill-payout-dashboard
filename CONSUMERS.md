@@ -215,3 +215,27 @@ exact overlap; no historical records are removed. The live base is bounded
 at32MiB and parts at16MiB, beneath the unchanged50MiB publication guard.
 `shards.load()` and the private ownership/funding readers support both layouts.
 Financial JSON, daily bands, prices and CSV row schemas are unchanged.
+
+### Cognition market-value policy — 2026-10-30
+
+`facts.cognition.total_usd` and `usd_7d` value native MENTE consumption with
+`market_rates.MENTE` dated observations (`treasury-market-day-v2`), separately
+from the sealed payout classifier. Exact historical dates only; the actual
+current UTC day may borrow yesterday and is marked provisional. A missing
+historical price makes the corresponding total `null`; native MENTE, counts
+and `valuation.{all,week}.priced_usd_subtotal` remain available.
+`valuation` also carries unpriced rows/MENTE, per-day rate dates and the retained
+market history note. Entries through 15 September may be legacy first prints,
+not daily closes; they are not silently repriced. No live historical fallback.
+
+Sealed Treasury outflow pricing, category allocations and day digests are
+unchanged. The signed-in display labels unavailable market totals explicitly.
+
+At the retained `2026-10-30T03:08:53Z` snapshot, this correction changes cognition market
+value from **$418,598.38 to $412,150.06** (all history) and **$42,498.95 to
+$43,007.81** (trailing seven days). The native 272,694 transfers and
+25,108,363 rounded MENTE are unchanged. This is a USD reference correction,
+not a token movement or a changed bill. The prior values remain retrievable
+from the preceding Git version; existing sealed outflow artifacts reproduce
+unchanged. `valuation` is additive and records all/week priced subtotals,
+unpriced native amounts/counts, provisional-row counts and exact dated inputs.

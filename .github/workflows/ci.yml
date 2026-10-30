@@ -96,6 +96,8 @@ jobs:
       # Pipeline maintainability (council loop 3, 2026-09-27)
       - name: STATE (day_rates.json) write-order gate
         run: python3 tests/test_state_order.py
+      - name: Consumption market-value policy
+        run: python3 tests/test_market_valuation.py
       - name: Pricing parity across the five row loaders
         run: python3 tests/test_pricing_parity.py
       - name: One staleness threshold (freshness.py)
