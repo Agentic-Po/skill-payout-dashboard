@@ -108,7 +108,24 @@ def _hist_stamps(rel):
     return [h["ts"] for h in json.load(open(os.path.join(HERE, rel)))]
 
 
+def _price_stamps():
+    p=os.path.join(HERE,'price_observations.json')
+    if not os.path.exists(p):return []
+    return [r['fetched_at'] for r in json.load(open(p)).get('observations',[]) if r.get('fetched_at')]
+
+
+def _price_generated():
+    p=os.path.join(HERE,'price_observations.json')
+    return json.load(open(p)).get('exported_at') if os.path.exists(p) else None
+
+
 PUBLIC = [
+    dict(name="price_observations",path=["price_observations.json"],kind="oracle",live=False,
+         measure=_price_stamps,source_generated=_price_generated,
+         row_schema="schema_version, collector, origin, chain_id, exported_at, observations[], selections[]",
+         update_cadence="existing refresh (Worker :07/:37; hourly backup :22)",expected_cadence_minutes=30,
+         provenance="existing Blockscout/DexScreener acquisition attempts and legacy selection; original receipt clocks",
+         not_included="no bank-derived price, balance, wallet identities, provider bodies, private labels or trade-time inference"),
     dict(name="transfers", path=["transfers/"], kind="ledger", live=True,
          measure=lambda: _shard_stamps("transfers"),
          row_schema="timestamp, transaction_hash, log_index, block_number, from.hash, to.hash, token.address_hash, total.value, total.decimals",

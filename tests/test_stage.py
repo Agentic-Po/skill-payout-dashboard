@@ -68,7 +68,7 @@ def main():
         # The coupon page's own artifacts must be staged too — a new file that
         # is never committed is the failure mode PUBLISH_EXTRA exists to stop.
         for f in ("coupon.html", "template_coupon.html", "coupon_data.json",
-                  "index.html", "full.html", "template_public.html", "_config.yml"):
+                  "index.html", "full.html", "template_public.html", "_config.yml", "price_observations.json"):
             assert f in files, f"{f} is not in the stage list — add it to PUBLISH_EXTRA"
         print("ok coupon + public summary + full render + Pages config staged")
     finally:

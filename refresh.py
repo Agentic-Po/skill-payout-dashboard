@@ -16,6 +16,7 @@ import csv, json, math, os, statistics, subprocess, sys, time, urllib.request
 import posthog_source
 import shards
 import freshness
+import price_observations
 from util import public_summary   # index.html payload (public summary)
 import state as _state   # alert_state.json single writer (no import side effects)
 from privlog import private_print   # quiet public Actions logs (2026-09-27)
@@ -201,7 +202,7 @@ def _network_sleep(seconds, market=False):
     time.sleep(_network_timeout(seconds,market=market))
 
 
-def get(url, tries=4):
+def get(url, tries=4, price_observation=None):
     # Scoped to Blockscout v2 ONLY. get() is also the GeckoTerminal and
     # DexScreener client, and those are unrelated services — a v2 outage must
     # not shorten their retries, nor their failures trip v2's breaker.
@@ -213,7 +214,12 @@ def get(url, tries=4):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "curl/8.4.0", "Accept": "application/json"})
             with urllib.request.urlopen(req, timeout=_network_timeout(5 if v2 else 10 if market else 60,market=market)) as r:
-                out = json.load(r)
+                if price_observation is None:
+                    out = json.load(r)
+                else:
+                    body = r.read()
+                    price_observation.received(body)
+                    out = json.loads(body)  # legacy decode/decisions unchanged
             if v2:
                 _V2_FAILS[0] = 0   # v2 answered — re-arm the full ladder
             return out
@@ -821,6 +827,12 @@ RATE, RATE_SRC, BALANCE, DECIMALS = {}, {}, {}, {}
 _RATE_OBSERVED, _BALANCE_OBSERVED = {}, {}
 _OBSERVATIONS_STARTED = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 _BALANCE_OBSERVATIONS = None
+try:
+    with open(os.path.join(HERE,'data.json')) as _price_prior_file:
+        _price_prior = json.load(_price_prior_file)
+except (OSError,ValueError):
+    _price_prior = {}
+_PRICE_CAPTURE = price_observations.Capture(TOKENS, _price_prior.get('scope',{}).get('price_observations'))
 if OFFLINE:
     # the run that published data.json already validated these — reuse them
     for sym in TOKENS:
@@ -833,8 +845,9 @@ for sym, t in ([] if OFFLINE else list(TOKENS.items())):
     anchor = STATE["last_accepted_rate"].get(sym) or t["fallback_rate"]
     RATE[sym], RATE_SRC[sym] = anchor, "last-accepted" if sym in STATE["last_accepted_rate"] else "fallback"
     DECIMALS[sym] = 18
+    _bs_price = _PRICE_CAPTURE.begin(sym, 'blockscout')
     try:
-        tok = get(f"https://base.blockscout.com/api/v2/tokens/{t['addr']}")
+        tok = get(f"https://base.blockscout.com/api/v2/tokens/{t['addr']}", price_observation=_bs_price)
         DECIMALS[sym] = int(tok.get("decimals") or 18)
         r = float(tok.get("exchange_rate") or 0)
         # Blockscout's exchange_rate goes STALE and sits on one frozen constant
@@ -854,10 +867,12 @@ for sym, t in ([] if OFFLINE else list(TOKENS.items())):
         elif _mrs:
             _mkt = _mrs[max(_mrs)]
         if _mkt and not (_mkt * (1 - MARKET_AGREE) < r < _mkt * (1 + MARKET_AGREE)):
+            _bs_price.finish('rejected', 'market_reference_disagreement')
             print(f"{sym} rate rejected as stale: blockscout {r} vs market close {_mkt}")
             r = 0
         if 0 < r and anchor / 5 < r < anchor * 5:
             RATE[sym], RATE_SRC[sym] = r, "blockscout"
+            _bs_price.finish('acquired')
             # re-anchor only after two consecutive in-band quotes, so one bad
             # quote inside the band can't permanently drag the anchor
             pend = STATE.setdefault("pending_rate", {}).get(sym)
@@ -865,14 +880,18 @@ for sym, t in ([] if OFFLINE else list(TOKENS.items())):
                 STATE["last_accepted_rate"][sym] = r
             STATE["pending_rate"][sym] = r
         else:
+            if _bs_price.row['outcome'] != 'rejected':
+                _bs_price.finish('rejected', 'nonpositive_or_anchor_band')
             print(sym, "rate rejected:", r)
             STATE.setdefault("pending_rate", {}).pop(sym, None)
     except Exception as e:
+        _bs_price.finish('failed', 'provider_unavailable_or_invalid')
         print(sym, "rate fetch failed, using", RATE_SRC[sym], ":", e)
     if RATE_SRC[sym] not in ("blockscout",):
         # secondary source: DexScreener pair price (same source the internal dashboard uses)
+        _dx_price = _PRICE_CAPTURE.begin(sym, 'dexscreener')
         try:
-            dx = get(f"https://api.dexscreener.com/latest/dex/tokens/{t['addr']}")
+            dx = get(f"https://api.dexscreener.com/latest/dex/tokens/{t['addr']}", price_observation=_dx_price)
             # only pairs where OUR token is the base and the price is sane — DexScreener
             # can list fake/mispriced pools with higher liquidity than the real one
             pairs = [p for p in (dx.get("pairs") or [])
@@ -880,14 +899,26 @@ for sym, t in ([] if OFFLINE else list(TOKENS.items())):
                      and (p.get("baseToken", {}).get("address", "").lower() == t["addr"])
                      and anchor / 5 < float(p["priceUsd"]) < anchor * 5]
             if pairs:
-                r2 = float(sorted(pairs, key=lambda p: -float(p.get("liquidity", {}).get("usd", 0)))[0]["priceUsd"])
+                _chosen_pair = sorted(pairs, key=lambda p: -float(p.get("liquidity", {}).get("usd", 0)))[0]
+                r2 = float(_chosen_pair["priceUsd"])
+                _dx_price.select_pair(next(i for i,p in enumerate(dx.get('pairs') or []) if p is _chosen_pair))
                 RATE[sym], RATE_SRC[sym] = r2, "dexscreener"
+                _dx_price.finish('acquired')
                 STATE["last_accepted_rate"][sym] = r2
+            else:
+                _dx_price.finish('rejected', 'no_eligible_pair')
         except Exception as e:
+            _dx_price.finish('failed', 'provider_unavailable_or_invalid')
             print(sym, "dexscreener fallback failed:", e)
+    else:
+        _PRICE_CAPTURE.not_queried(sym, 'dexscreener')
     if RATE_SRC[sym] in ("blockscout", "dexscreener"):
         _RATE_OBSERVED[sym] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 phase("rates")
+# Capture the actual acquisition selection before a financial last-good
+# snapshot may replace RATE below. Evidence is independent of chain coverage.
+_PRICE_OBSERVATIONS = (price_observations.offline_envelope(PREV,TOKENS) if OFFLINE
+                       else _PRICE_CAPTURE.envelope(RATE,RATE_SRC))
 BALANCE = {}
 def balance_at(addr, sym, block="latest", holder=WALLET):
     """holder defaults to the treasury; the coupon page passes its own wallet
@@ -2662,6 +2693,9 @@ data = {"schema_version": 5,
         "scope": scope, "facts": facts, "infer": infer, "server": server, "stripe_snap": stripe_snap,
         "insights": insights, "open_items": open_items, "gaps": gaps, "registry": registry, "sink": sink,
         "exec_summary": exec_summary}
+data['scope']['price_observations'] = _PRICE_OBSERVATIONS
+with open(os.path.join(HERE,'price_observations.json'),'w') as _price_file:
+    json.dump(_PRICE_OBSERVATIONS,_price_file,separators=(',',':'),allow_nan=False)
 
 # machine-readable copy of exactly what the page embeds — alerts.py/notify.py
 # read this instead of regex-scraping index.html (council item 3, 2026-08-28).
