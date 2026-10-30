@@ -18,7 +18,9 @@ permissions:
 jobs:
   gates:
     runs-on: ubuntu-latest
-    timeout-minutes: 15   # ~4 min typical
+    # The retained-archive gates reached 15 minutes after 39 successful steps
+    # on 2026-10-30. Keep every gate unchanged within a bounded 25-minute job.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
