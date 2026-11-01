@@ -1,0 +1,3 @@
+timestamp_utc,direction,token,amount,rate_usd,rate_source,usd,size_band,counterparty,tx_hash,log_index,class_coarse,class_fine
+2026-11-01T00:01:01,OUT,MOCA,1221.178687,0.00800852,day-market (open),9.7798,≈ $10,0x9487954fb86cf1552c2b78f6505f48e1936e8388,0xb37613a78b5447b27c9bee631c4e5dbd32e90f242b882e2ac1c48eaaa45ff857,843,growth,stripe $10
+2026-11-01T00:02:31,OUT,MOCA,1221.178687,0.00800852,day-market (open),9.7798,≈ $10,0x7181be3fc7b399398095d3d2be51881eda74ace7,0xb462373c28f1a30473283edd80ae245ea2cf09e2aca02e49f46c5efe126b86fa,345,growth,stripe $10
