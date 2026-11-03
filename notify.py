@@ -297,10 +297,7 @@ if mode != "hourly":
             health.append("<b>Repeat grants (private):</b> <i>not banked yet (sanity.py has not run on this cache)</i>")
         # loop 2, item 3: the slow-bleed measurement (fences.grant_bleed, banked
         # by sanity.py) — ONE private line, never a page, never a public field
-        try:
-            _gb = (json.load(open(_gp)).get("grant_bleed") or {}) if os.path.exists(_gp) else {}
-        except ValueError:
-            _gb = {}
+        _gb = _guard.get("grant_bleed") or {}
         if _gb:
             import fences as _fences
             health.append(_fences.bleed_line(_gb))
