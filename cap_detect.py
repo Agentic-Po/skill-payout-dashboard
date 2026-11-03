@@ -54,6 +54,8 @@ from datetime import datetime, timedelta
 # (assigned, not from-imported: `c["clock"][_iso(h)] = ...` would trip test_shadow)
 # (alerts.py calls cap_detect.hkt)
 import util
+import freshness
+import price_observations
 HKT, hkt, _iso, _dt, _cooled = util.HKT, util.hkt, util.iso_min, util.parse_dt, util.cooled
 
 from classify import (UNITS, CAP_UNITS, CAP_USD_PER_CREATOR_HOUR, CAP_ON_UTC,
@@ -320,12 +322,138 @@ RUNWAY_THRESHOLDS = ((7, "lt7"), (3, "lt3"))
 RUNWAY_COOLDOWN_H = 24
 
 
+def _fresh_runway_input(stamp, now):
+    try:
+        observed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        if observed.utcoffset() != timedelta(0):
+            return False
+        age = (now - observed.replace(tzinfo=None)).total_seconds() / 60
+        return age >= 0 and not freshness.is_stale(age)
+    except (TypeError, ValueError, AttributeError, OverflowError):
+        return False
+
+
+def _acquired_runway_rate(scope, facts, symbol, now):
+    evidence = scope.get("price_observations") or {}
+    source = facts.get("rate_src", {}).get(symbol)
+    address = scope.get("tokens", {}).get(symbol)
+    if source not in ("blockscout", "dexscreener") or not address:
+        return False
+    choices = [r for r in evidence.get("selections", []) if isinstance(r, dict) and r.get("symbol") == symbol]
+    if len(choices) != 1:
+        return False
+    choice = choices[0]
+    if (choice.get("kind") != "acquired" or choice.get("token_address") != address
+            or choice.get("source") != source
+            or not price_observations.same_price(choice.get("price_usd"), facts.get("rate", {}).get(symbol))
+            or not _fresh_runway_input(choice.get("original_observed_at"), now)):
+        return False
+    oid = choice.get("original_observation_id")
+    matches = [r for r in evidence.get("observations", []) if isinstance(r, dict) and r.get("observation_id") == oid]
+    if not oid or len(matches) != 1:
+        return False
+    row = matches[0]
+    return (row.get("accepted_by_collector") is True and row.get("outcome") == "acquired"
+            and row.get("symbol") == symbol and row.get("token_address") == address
+            and row.get("source") == source and row.get("fetched_at") == choice["original_observed_at"]
+            and price_observations.same_price(row.get("price_usd"), choice["price_usd"]))
+
+
+def current_wallet_marks(data, now, private=None):
+    """Verify each saved wallet mark before it is used in a current notice."""
+    marks = {"MOCA": None, "MENTE": None}
+    scope, facts = data["scope"], data["facts"]
+    complete = (scope.get("source_coverage") or {}).get("treasury_complete", scope.get("complete"))
+    if complete is not True or not _fresh_runway_input(scope.get("generated_iso"), now):
+        return marks
+    values = facts.get("balance_usd") or {}
+    # Published token amounts are rounded: only the same build's actual
+    # zero observation exempts a token from needing its own current rate.
+    private = private or {}
+    zeroes = private.get("observed_zero", {}) if private.get("generated") == scope["generated_iso"] else {}
+    for symbol in ("MOCA", "MENTE"):
+        native = facts.get("balance", {}).get(symbol)
+        if not util.known_amount(native) or not util.known_amount(values.get(symbol)):
+            continue
+        verified_zero = native == 0 and values[symbol] == 0 and _fresh_runway_input(zeroes.get(symbol), now)
+        if verified_zero or _acquired_runway_rate(scope, facts, symbol, now):
+            marks[symbol] = values[symbol]
+    return marks
+
+
+def snapshot_runway(data, marks):
+    fl = data["facts"].get("float") or {}
+    total = util.treasury_total(marks)
+    if (total is None or not util.known_amount(fl.get("bal_usd"))
+            or not util.known_amount(fl.get("days_7d_pace"))):
+        return None
+    # Individual marks and their independently calculated subtotal each
+    # round to whole dollars in the producer.
+    if abs(total - fl["bal_usd"]) > 1:
+        return None
+    return fl
+
+
+def runway_from_snapshot(data, state, now, private=None):
+    fl = snapshot_runway(data, current_wallet_marks(data, now, private))
+    if fl is None:
+        return [], state
+    return runway_check(fl["days_7d_pace"], fl["bal_usd"], fl.get("driver_24h"), state, now)
+
+
+def funding_monitor_notice(available, state, now, raw_policy):
+    """An invalid optional policy must never interrupt other detectors."""
+    import json
+    try:
+        policy = json.loads(raw_policy or "null")
+        if not isinstance(policy, dict):
+            raise ValueError("invalid policy")
+        notices = runway_health(available, state, now, policy)
+    except (TypeError, ValueError):
+        if state.get("funding_policy_invalid"):
+            return []
+        state["funding_policy_invalid"] = True
+        return [["", "🟠 <b>Funding monitor needs attention:</b> the availability notice configuration could not be read."]]
+    if state.get("funding_policy_invalid"):
+        state["funding_policy_invalid"] = False
+        notices.append(["", "🟢 <b>Funding monitor configuration restored.</b>"])
+    return notices
+
+
+def runway_health(available, state, now, policy):
+    """Private episode, persisted by alerts.py only after a successful page."""
+    wait = policy.get("delay_minutes")
+    urgent_edges = policy.get("urgent_edges")
+    if (not util.known_amount(wait) or not isinstance(urgent_edges, list)
+            or any(not isinstance(key, str) for key in urgent_edges)):
+        raise ValueError("invalid funding monitor notification policy")
+    episode = state.get("runway_health") or {}
+    if available:
+        if not episode:
+            return []
+        state["runway_health"] = {}
+        if episode.get("reported"):
+            return [["", "🟢 <b>Funding monitor recovered:</b> a current wallet valuation and spending pace are available again."]]
+        return []
+    if not episode:
+        episode = {"since": now.isoformat(timespec="seconds"), "reported": False}
+        state["runway_health"] = episode
+    if episode["reported"]:
+        return []
+    edges = state.get("runway") or {}
+    urgent = any((edges.get(key) or {}).get("below") is True for key in urgent_edges)
+    if not urgent and (now - datetime.fromisoformat(episode["since"])).total_seconds() < wait * 60:
+        return []
+    episode["reported"] = True
+    return [["", "🟠 <b>Funding monitor unavailable:</b> current wallet value or spending pace could not be verified. Check the wallet before relying on low-balance alerts."]]
+
+
 def runway_check(days_7d, bal_usd, driver, state, now):
     """-> (sections, state). `driver` is facts.float.driver_24h (may be None)."""
     secs = []
-    rw = state.setdefault("runway", {})
-    if days_7d is None:
+    if not util.known_amount(days_7d) or not util.known_amount(bal_usd):
         return secs, state
+    rw = state.setdefault("runway", {})
     for thr, key in RUNWAY_THRESHOLDS:
         st = rw.get(key, {})
         below = days_7d < thr
@@ -377,10 +505,10 @@ def cap_table(sw):
             for addr, c in sorted(sw["creators"].items(), key=lambda kv: -kv[1]["max_h60_units"])}
 
 
-def compose(header, sections, max_sections=8, limit=4000):
+def compose(header, sections, max_sections=8, limit=4000, priority=()):
     """One Telegram message: header + up to `max_sections` sections; a 🔴
     section is never dropped. Hard-capped below `limit` chars."""
-    keep = [s for s in sections if s and any("🔴" in ln for ln in s)]
+    keep = list(priority) + [s for s in sections if s and s not in priority and any("🔴" in ln for ln in s)]
     rest = [s for s in sections if s not in keep]
     room = max(0, max_sections - len(keep))
     dropped = len(rest) - room

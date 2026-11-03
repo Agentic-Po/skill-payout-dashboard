@@ -92,8 +92,8 @@ section("summary",function(){
 });
 section("balance",function(){
   const b=D.balance_usd||{},t=D.balance||{};
-  set("tBal",usd(num(b.MOCA||0)+num(b.MENTE||0)));
-  set("tBalD",int(num(t.MOCA||0))+" MOCA"+(t.MENTE?" · "+int(t.MENTE)+" MENTE":""));
+  set("tBal",b.MOCA!=null&&b.MENTE!=null?usd(num(b.MOCA)+num(b.MENTE)):"Unavailable");
+  set("tBalD",(t.MOCA==null?"Unavailable":int(num(t.MOCA)))+" MOCA"+(t.MENTE==null?" · MENTE unavailable":t.MENTE?" · "+int(t.MENTE)+" MENTE":""));
 });
 section("windows",function(){
   const by={};(D.windows||[]).forEach(w=>by[w.label]=w);
