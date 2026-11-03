@@ -209,11 +209,13 @@ _PM = _ST.get("pattern_monitor") or {}
 # driver named. Emoji is the severity; the line is always present.
 def float_line():
     d7, d24 = FL.get("days_7d_pace"), FL.get("days_24h_pace")
-    worst = min(x for x in (d7, d24) if x is not None) if (d7 or d24) else None
-    icon = "🔴" if worst is not None and worst < 7 else ("🟠" if worst is not None and worst < 14 else "🟢")
+    worst = min((x for x in (d7, d24) if x is not None), default=None)
+    icon = "🔴" if worst is not None and worst < 7 else ("🟠" if worst is not None and worst < 14 else ("🟢" if worst is not None else "⚪"))
     drv = FL.get("driver_24h") or {}
+    observed = FL.get("bal_usd", G.get("bal_usd"))
+    total = f"${observed:,.0f}" if observed is not None else "Balance unavailable"
     return (f"{icon} <b>Float</b> ~{d24 if d24 is not None else '?'}d (24h pace) · {d7 if d7 is not None else '?'}d (7d pace) · "
-            f"${FL.get('bal_usd', G.get('bal_usd', 0)):,.0f} · out ${FL.get('out_24h_usd', 0):,.0f}/24h"
+            f"{total} · out ${FL.get('out_24h_usd', 0):,.0f}/24h"
             + (f", {drv['share_pct']:g}% {drv['label'].lower()}" if drv else ""))
 
 health = []
@@ -225,22 +227,31 @@ bal_m, bal_e = F["balance"].get("MOCA"), F["balance"].get("MENTE")
 stale_ts = None
 if bal_m is None or bal_e is None:
     for snap in reversed(hist):
-        if snap.get("balance") is not None:
-            bal_m = bal_m if bal_m is not None else snap["balance"]
-            bal_e = bal_e if bal_e is not None else snap.get("mente_balance")
+        if snap.get("balance") is not None and snap.get("mente_balance") is not None:
+            bal_m, bal_e = snap["balance"], snap["mente_balance"]
             stale_ts = snap["ts"]
             break
-r_m, r_e = F["rate"].get("MOCA") or RATE, F["rate"].get("MENTE") or 0
-usd_m = (bal_m or 0) * r_m
-usd_e = (bal_e or 0) * r_e
+r_m, r_e = F["rate"].get("MOCA") or RATE, F["rate"].get("MENTE")
+def token_mark(balance, rate):
+    if balance is None or (balance and not rate):
+        return None
+    return balance * rate if balance else 0
+
+def token_line(symbol, balance, usd):
+    native = f"{balance:,.0f}" if balance is not None else "unavailable"
+    mark = f"${usd:,.2f}" if usd is not None else "unavailable"
+    return f"  · {symbol}: {native} ≈ <b>{mark}</b>"
+
+usd_m, usd_e = token_mark(bal_m, r_m), token_mark(bal_e, r_e)
+wallet_mark = f"${usd_m + usd_e:,.0f}" if usd_m is not None and usd_e is not None else "Unavailable"
 stale = f" ⚠️ <i>(live fetch failed — last known {hkt(stale_ts)})</i>" if stale_ts else ""
 out_1h = sum(r[5] for r in rows if r[0] > now - timedelta(hours=1))
 if mode != "hourly":
     health.append("")
     health.append("🔧 <b>Ops health</b>")
-    health.append(f"<b>Wallet balance:</b> <b>${usd_m + usd_e:,.0f}</b> total{stale}")
-    health.append(f"  · MOCA: {bal_m or 0:,.0f} ≈ <b>${usd_m:,.2f}</b>")
-    health.append(f"  · MENTE: {bal_e or 0:,.0f} ≈ <b>${usd_e:,.2f}</b>")
+    health.append(f"<b>Wallet balance:</b> <b>{wallet_mark}</b> total{stale}")
+    health.append(token_line("MOCA", bal_m, usd_m))
+    health.append(token_line("MENTE", bal_e, usd_e))
     # Economy vs ops split: economy = every group but ops (closes on the
     # message itself); ops = the residual, never printed negative.
     # both terms from data.json's OWN 24h window (facts_window.groups) so the

@@ -207,6 +207,19 @@ def main():
     assert not secs, "runway <7 re-fired inside its 24 h cooldown"
     secs, st = cd.runway_check(6.0, 18000.0, drv, st, n + timedelta(hours=26))
     assert len(secs) == 1, "runway <7 did not re-fire after recovery + cooldown"
+    snapshot = {"scope": {"complete": False, "source_coverage": {"treasury_complete": True}},
+                "facts": {"balance_usd": {"MOCA": 0, "MENTE": 0}, "float": {"days_7d_pace": 0, "bal_usd": 0}}}
+    assert cd.runway_from_snapshot(snapshot, {}, n)[0], "verified empty wallet must still alert"
+    import copy
+    saved = copy.deepcopy(st)
+    for asset in ("MOCA", "MENTE"):
+        partial = copy.deepcopy(snapshot)
+        partial["facts"]["balance_usd"][asset] = None
+        assert cd.runway_from_snapshot(partial, st, n) == ([], saved)
+    snapshot["scope"]["source_coverage"]["treasury_complete"] = False
+    snapshot["facts"]["float"]["days_7d_pace"] = 99
+    assert cd.runway_from_snapshot(snapshot, st, n) == ([], saved), "retained data rearmed an edge"
+    assert cd.runway_check(0, None, None, st, n) == ([], saved)
     print("ok (f) runway alert: silent at 9.7 d, fires <7 and <3, re-arms on recovery, 24 h cooldown")
 
     # (g) private-only anomaly pass; denied on every public surface

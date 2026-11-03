@@ -397,7 +397,7 @@ function chk(n){if(typeof n!=="number"||!isFinite(n))throw new TypeError("non-fi
 const num=n=>String(chk(n));
 const fmt=n=>chk(n).toLocaleString("en-US",{maximumFractionDigits:1});
 const fmt0=n=>chk(n).toLocaleString("en-US",{maximumFractionDigits:0});
-const usd=n=>"$"+chk(n).toLocaleString("en-US",{maximumFractionDigits:0});
+const usd=n=>n==null?"Unavailable":"$"+chk(n).toLocaleString("en-US",{maximumFractionDigits:0});
 const usd2=n=>"$"+chk(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 // safe prelude: a missing block degrades the sections that read it, never
 // the script (a missing `infer` used to throw here and blank the page)
@@ -546,7 +546,7 @@ if(bigIn.length){
 // they close on the tile total to the cent (test_parity).
 renderSection("Headline tiles","ftiles",()=>{
 const w24=F.windows[0], wall=F.windows[3], p24=F.prev24;
-const balUsd=(F.balance_usd.MENTE||0)+(F.balance_usd.MOCA||0);
+const balUsd=F.balance_usd.MENTE==null||F.balance_usd.MOCA==null?null:F.balance_usd.MENTE+F.balance_usd.MOCA;
 function delta(cur,prev){if(!prev)return"";const d=(cur-prev)/prev*100;const cls=d>0?"delta-up":"delta-dn";return ` <span class="${cls}">${d>0?"+":""}${d.toFixed(0)}% vs prev 24h</span>`;}
 const gsub=w=>w.groups?GK.filter(g=>w.groups[g]&&w.groups[g].usd).map(g=>`${GSHORT[g]} ${usd(w.groups[g].usd)}`).join(" · "):`${w.out_tx} tx · ${w.out_wallets} wallets`;
 const floatV=FL&&FL.days_7d_pace?`<span style="${FL.days_7d_pace<5?"color:var(--bad);font-weight:800":(FL.days_7d_pace<14?"color:var(--warn)":"")}">~${FL.days_7d_pace} days</span>`:"n/a";
@@ -558,6 +558,10 @@ const ftiles=[
  ["Outflow — all history", usd(wall.out_usd), chk(wall.out_tx).toLocaleString()+" tx since "+F.range.from+(wall.economy_out_usd!=null?` · payouts ${usd(wall.economy_out_usd)} + swaps/ops ${usd(wall.ops_out_usd)}`:"")],
  ["Recipient wallets", fmt0(F.wallets_all), fmt0(F.wallets_repeat)+" received on 2+ days"],
 ];
+if(ftiles[0][0]==="Wallet balance" && (F.balance.MOCA==null||F.balance.MENTE==null)){
+ const native=t=>F.balance[t]==null?"Unavailable":fmt0(F.balance[t]);
+ ftiles[0][2]=native("MENTE")+" MENTE · "+native("MOCA")+" MOCA · saved as of "+savedAt;
+}
 const stale=TREASURY_CURRENT?"":`<div style="font-size:11px;color:var(--warn);margin-top:4px">⚠ as of last complete fetch</div>`;
 // one plain-English line per tile: a definition only, never a new number
 const MEAN={"Wallet balance":"Saved on-chain balance, valued at the saved financial snapshot’s token prices.",

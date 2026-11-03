@@ -320,12 +320,22 @@ RUNWAY_THRESHOLDS = ((7, "lt7"), (3, "lt3"))
 RUNWAY_COOLDOWN_H = 24
 
 
+def runway_from_snapshot(data, state, now):
+    """Only a current, complete Treasury snapshot can move a funding edge."""
+    scope, facts = data["scope"], data["facts"]
+    complete = (scope.get("source_coverage") or {}).get("treasury_complete", scope.get("complete"))
+    if complete is not True or util.treasury_total(facts.get("balance_usd") or {}) is None:
+        return [], state
+    fl = facts.get("float") or {}
+    return runway_check(fl.get("days_7d_pace"), fl.get("bal_usd"), fl.get("driver_24h"), state, now)
+
+
 def runway_check(days_7d, bal_usd, driver, state, now):
     """-> (sections, state). `driver` is facts.float.driver_24h (may be None)."""
     secs = []
-    rw = state.setdefault("runway", {})
-    if days_7d is None:
+    if days_7d is None or bal_usd is None:
         return secs, state
+    rw = state.setdefault("runway", {})
     for thr, key in RUNWAY_THRESHOLDS:
         st = rw.get(key, {})
         below = days_7d < thr
