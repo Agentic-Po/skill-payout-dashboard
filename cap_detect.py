@@ -54,6 +54,7 @@ from datetime import datetime, timedelta
 # (assigned, not from-imported: `c["clock"][_iso(h)] = ...` would trip test_shadow)
 # (alerts.py calls cap_detect.hkt)
 import util
+import freshness
 HKT, hkt, _iso, _dt, _cooled = util.HKT, util.hkt, util.iso_min, util.parse_dt, util.cooled
 
 from classify import (UNITS, CAP_UNITS, CAP_USD_PER_CREATOR_HOUR, CAP_ON_UTC,
@@ -325,6 +326,13 @@ def runway_from_snapshot(data, state, now):
     scope, facts = data["scope"], data["facts"]
     complete = (scope.get("source_coverage") or {}).get("treasury_complete", scope.get("complete"))
     if complete is not True or util.treasury_total(facts.get("balance_usd") or {}) is None:
+        return [], state
+    try:
+        observed = datetime.strptime(scope["generated_iso"], "%Y-%m-%dT%H:%M:%SZ")
+    except (KeyError, TypeError, ValueError):
+        return [], state
+    age_minutes = (now - observed).total_seconds() / 60
+    if age_minutes < 0 or freshness.is_stale(age_minutes):
         return [], state
     fl = facts.get("float") or {}
     return runway_check(fl.get("days_7d_pace"), fl.get("bal_usd"), fl.get("driver_24h"), state, now)
