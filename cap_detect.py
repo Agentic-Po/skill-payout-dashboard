@@ -359,29 +359,68 @@ def _acquired_runway_rate(scope, facts, symbol, now):
             and price_observations.same_price(row.get("price_usd"), choice["price_usd"]))
 
 
-def runway_from_snapshot(data, state, now, private=None):
-    """Only a current, complete Treasury snapshot can move a funding edge."""
+def current_wallet_marks(data, now, private=None):
+    """Verify each saved wallet mark before it is used in a current notice."""
+    marks = {"MOCA": None, "MENTE": None}
     scope, facts = data["scope"], data["facts"]
     complete = (scope.get("source_coverage") or {}).get("treasury_complete", scope.get("complete"))
     if complete is not True or not _fresh_runway_input(scope.get("generated_iso"), now):
-        return [], state
+        return marks
     values = facts.get("balance_usd") or {}
-    if util.treasury_total(values) is None:
-        return [], state
     # Published token amounts are rounded: only the same build's actual
     # zero observation exempts a token from needing its own current rate.
     private = private or {}
     zeroes = private.get("observed_zero", {}) if private.get("generated") == scope["generated_iso"] else {}
     for symbol in ("MOCA", "MENTE"):
         native = facts.get("balance", {}).get(symbol)
-        if not util.known_amount(native):
-            return [], state
-        if native == 0 and values[symbol] == 0 and _fresh_runway_input(zeroes.get(symbol), now):
+        if not util.known_amount(native) or not util.known_amount(values.get(symbol)):
             continue
-        if not _acquired_runway_rate(scope, facts, symbol, now):
-            return [], state
-    fl = facts.get("float") or {}
-    return runway_check(fl.get("days_7d_pace"), fl.get("bal_usd"), fl.get("driver_24h"), state, now)
+        verified_zero = native == 0 and values[symbol] == 0 and _fresh_runway_input(zeroes.get(symbol), now)
+        if verified_zero or _acquired_runway_rate(scope, facts, symbol, now):
+            marks[symbol] = values[symbol]
+    return marks
+
+
+def snapshot_runway(data, marks):
+    fl = data["facts"].get("float") or {}
+    total = util.treasury_total(marks)
+    if (total is None or not util.known_amount(fl.get("bal_usd"))
+            or not util.known_amount(fl.get("days_7d_pace"))):
+        return None
+    # Individual marks and their independently calculated subtotal each
+    # round to whole dollars in the producer.
+    if abs(total - fl["bal_usd"]) > 1:
+        return None
+    return fl
+
+
+def runway_from_snapshot(data, state, now, private=None):
+    fl = snapshot_runway(data, current_wallet_marks(data, now, private))
+    if fl is None:
+        return [], state
+    return runway_check(fl["days_7d_pace"], fl["bal_usd"], fl.get("driver_24h"), state, now)
+
+
+def runway_health(available, state, now):
+    """Private episode, persisted by alerts.py only after a successful page."""
+    episode = state.get("runway_health") or {}
+    if available:
+        if not episode:
+            return []
+        state["runway_health"] = {}
+        if episode.get("reported"):
+            return [["", "🟢 <b>Funding monitor recovered:</b> a current wallet valuation and spending pace are available again."]]
+        return []
+    if not episode:
+        episode = {"since": now.isoformat(timespec="seconds"), "reported": False}
+        state["runway_health"] = episode
+    if episode["reported"]:
+        return []
+    critical = ((state.get("runway") or {}).get("lt3") or {}).get("below") is True
+    if not critical and now - datetime.fromisoformat(episode["since"]) < timedelta(minutes=30):
+        return []
+    episode["reported"] = True
+    return [["", "🟠 <b>Funding monitor unavailable:</b> current wallet value or spending pace could not be verified. Check the wallet before relying on low-balance alerts."]]
 
 
 def runway_check(days_7d, bal_usd, driver, state, now):
@@ -441,10 +480,10 @@ def cap_table(sw):
             for addr, c in sorted(sw["creators"].items(), key=lambda kv: -kv[1]["max_h60_units"])}
 
 
-def compose(header, sections, max_sections=8, limit=4000):
+def compose(header, sections, max_sections=8, limit=4000, priority=()):
     """One Telegram message: header + up to `max_sections` sections; a 🔴
     section is never dropped. Hard-capped below `limit` chars."""
-    keep = [s for s in sections if s and any("🔴" in ln for ln in s)]
+    keep = list(priority) + [s for s in sections if s and s not in priority and any("🔴" in ln for ln in s)]
     rest = [s for s in sections if s not in keep]
     room = max(0, max_sections - len(keep))
     dropped = len(rest) - room

@@ -923,6 +923,7 @@ BALANCE = {}
 def balance_at(addr, sym, block="latest", holder=WALLET):
     """holder defaults to the treasury; the coupon page passes its own wallet
     so there is ONE balance helper, not a second eth_call path."""
+    import re
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [
         {"to": addr, "data": "0x70a08231" + "0" * 24 + holder[2:].lower()}, block]}).encode()
     last_err = None
@@ -931,10 +932,13 @@ def balance_at(addr, sym, block="latest", holder=WALLET):
             req = urllib.request.Request(url, data=payload,
                 headers={"Content-Type": "application/json", "User-Agent": "curl/8.4.0"})
             with urllib.request.urlopen(req, timeout=_network_timeout(30)) as r:
-                res = json.load(r).get("result")
-            if res:
-                return int(res, 16) / 10 ** DECIMALS[sym]
-            last_err = Exception(f"{url}: empty result (rate-limited?)")
+                reply = json.load(r)
+            if (isinstance(reply, dict) and reply.get("jsonrpc") == "2.0"
+                    and type(reply.get("id")) is int and reply["id"] == 1
+                    and "error" not in reply and isinstance(reply.get("result"), str)
+                    and re.fullmatch(r"0x[0-9a-fA-F]{64}", reply["result"])):
+                return int(reply["result"], 16) / 10 ** DECIMALS[sym]
+            last_err = ValueError("invalid token balance response")
         except Exception as e:
             last_err = e
         _network_sleep(1)
@@ -2267,7 +2271,7 @@ insights = {
     "recipients": "10,000+ wallets hold verifiable on-chain earnings history — the property layer. (This table counts only transfers FROM this treasury wallet.)",
     "sources": "All inflow is deliberate ops — treasury refills, reserve returns of parked treasury funds and (until it stopped) collector recycling. Every source wallet should carry a label; unlabeled = ask treasury ops.",
     "server": "Stripe payments as PostHog records them — PostHog is the source of truth for payments; where it disagrees with the chain is where a data gap lives.",
-    "aizone": f"Best-guess triage, never fact: every payout type below is inferred from transfer size on the row's own era grid (±8% v1 · ±12% v2); pattern signals are reviewed privately and never published. Float: ~{float_facts['days_7d_pace'] or '?'} days at the 7-day pace on total outflow.",
+    "aizone": f"Best-guess triage, never fact: every payout type below is inferred from transfer size on the row's own era grid (±8% v1 · ±12% v2); pattern signals are reviewed privately and never published. Float: ~{float_facts['days_7d_pace'] if float_facts['days_7d_pace'] is not None else '?'} days at the 7-day pace on total outflow.",
 }
 # All five items open since July were answered by the owner on 2026-09-27
 # (council follow-up): no MENTE burn exists (MENTE is collected after use);

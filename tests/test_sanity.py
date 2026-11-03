@@ -207,6 +207,20 @@ def main():
     assert not secs, "runway <7 re-fired inside its 24 h cooldown"
     secs, st = cd.runway_check(6.0, 18000.0, drv, st, n + timedelta(hours=26))
     assert len(secs) == 1, "runway <7 did not re-fire after recovery + cooldown"
+    episode = {}
+    assert cd.runway_health(False, episode, n) == []
+    assert cd.runway_health(False, episode, n + timedelta(minutes=29)) == []
+    candidate = __import__("copy").deepcopy(episode)
+    notice = cd.runway_health(False, candidate, n + timedelta(minutes=30))
+    assert len(notice) == 1 and "unavailable" in notice[0][1]
+    assert cd.runway_health(False, episode, n + timedelta(minutes=31)) == notice, "failed delivery retries"
+    assert cd.runway_health(False, candidate, n + timedelta(hours=6)) == []
+    restored = cd.runway_health(True, candidate, n + timedelta(hours=6))
+    assert len(restored) == 1 and "recovered" in restored[0][1]
+    assert cd.runway_health(True, candidate, n + timedelta(hours=7)) == []
+    assert cd.runway_health(False, {"runway":{"lt3":{"below":True}}}, n) == notice
+    reds = [["", f"🔴 event {i}"] for i in range(10)]
+    assert notice[0][1] in cd.compose("alert", reds + notice, priority=notice)
     snapshot = {"scope": {"generated_iso": n.strftime("%Y-%m-%dT%H:%M:%SZ"), "complete": False, "source_coverage": {"treasury_complete": True}},
                 "facts": {"balance": {"MOCA": 0, "MENTE": 0}, "balance_usd": {"MOCA": 0, "MENTE": 0}, "float": {"days_7d_pace": 0, "bal_usd": 0}}}
     stamp = snapshot["scope"]["generated_iso"]
@@ -221,6 +235,7 @@ def main():
     held = copy.deepcopy(snapshot)
     held["facts"]["balance"]["MOCA"] = 100
     held["facts"]["balance_usd"]["MOCA"] = 1
+    held["facts"]["float"]["bal_usd"] = 1
     held["facts"]["rate"] = {"MOCA": 0.01}
     held["facts"]["rate_src"] = {"MOCA": "dexscreener"}
     addr = "0x" + "1" * 40

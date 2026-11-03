@@ -10,6 +10,7 @@ touching alert_state.json.
 Env vars: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID.
 """
 import json, os, sys, urllib.request, urllib.parse
+import cap_detect
 import shards
 from telegram_digest import digest_parts
 from privlog import private_print
@@ -74,7 +75,13 @@ F = _D["facts"]
 G = _D["infer"]["guard"]
 FL = F.get("float") or {}
 TOKENS = {a.lower(): s for s, a in _D["scope"]["tokens"].items()}   # addr -> sym
-RATE = F["rate"].get("MOCA") or hist[-1]["rate"]
+try:
+    with open(os.path.join(HERE, "guard_private.json")) as guard_file:
+        _guard = json.load(guard_file)
+except (FileNotFoundError, ValueError):
+    _guard = {}
+_wallet_marks = cap_detect.current_wallet_marks(_D, now, _guard)
+_verified_runway = cap_detect.snapshot_runway(_D, _wallet_marks)
 
 # Payout taxonomy lives in classify.py — the ONE classifier shared with the
 # page (refresh.py) and alerts.py. Rows are priced at the DAY-PINNED rate per
@@ -208,6 +215,8 @@ _PM = _ST.get("pattern_monitor") or {}
 # ---- float line (X5/X8): ONE runway on TOTAL outflow (facts.float), the
 # driver named. Emoji is the severity; the line is always present.
 def float_line():
+    if _verified_runway is None:
+        return "⚪ <b>Float unavailable</b> · current wallet value or spending pace could not be verified"
     d7, d24 = FL.get("days_7d_pace"), FL.get("days_24h_pace")
     worst = min((x for x in (d7, d24) if x is not None), default=None)
     icon = "🔴" if worst is not None and worst < 7 else ("🟠" if worst is not None and worst < 14 else ("🟢" if worst is not None else "⚪"))
@@ -231,18 +240,12 @@ if bal_m is None or bal_e is None:
             bal_m, bal_e = snap["balance"], snap["mente_balance"]
             stale_ts = snap["ts"]
             break
-r_m, r_e = F["rate"].get("MOCA") or RATE, F["rate"].get("MENTE")
-def token_mark(balance, rate):
-    if balance is None or (balance and not rate):
-        return None
-    return balance * rate if balance else 0
-
 def token_line(symbol, balance, usd):
     native = f"{balance:,.0f}" if balance is not None else "unavailable"
     mark = f"${usd:,.2f}" if usd is not None else "unavailable"
     return f"  · {symbol}: {native} ≈ <b>{mark}</b>"
 
-usd_m, usd_e = token_mark(bal_m, r_m), token_mark(bal_e, r_e)
+usd_m, usd_e = (None, None) if stale_ts else (_wallet_marks["MOCA"], _wallet_marks["MENTE"])
 wallet_mark = f"${usd_m + usd_e:,.0f}" if usd_m is not None and usd_e is not None else "Unavailable"
 stale = f" ⚠️ <i>(live fetch failed — last known {hkt(stale_ts)})</i>" if stale_ts else ""
 out_1h = sum(r[5] for r in rows if r[0] > now - timedelta(hours=1))
@@ -285,11 +288,7 @@ if mode != "hourly":
     # (guard_private.json, Actions cache) — per-wallet grant counts never
     # reach a public artifact; the chain shows wallets, not accounts.
     if mode == "daily":
-        _gp = os.path.join(HERE, "guard_private.json")
-        try:
-            _rg = (json.load(open(_gp)).get("repeat_grants") or {}) if os.path.exists(_gp) else {}
-        except ValueError:
-            _rg = {}
+        _rg = _guard.get("repeat_grants") or {}
         if _rg:
             health.append(f"<b>Repeat grants (private):</b> {_rg.get('repeat_wallets', 0):,} wallets took >1 "
                           f"(${_rg.get('repeat_usd', 0):,.0f}, {_rg.get('repeat_share_pct', 0):g}% of grant spend); "

@@ -498,7 +498,8 @@ const GK=Array.isArray(F.group_keys)?F.group_keys:["skill_rewards","credit_grant
 const GL=OBJ(F.group_labels);
 const GCOL={skill_rewards:"var(--band1)",credit_grants:"var(--band3)",system_topups:"var(--band4)",topups_delivered:"var(--band5)",ops:"var(--band8)",micro:"var(--band9)"};
 const GSHORT={skill_rewards:"rewards",credit_grants:"credits",system_topups:"system top-ups",topups_delivered:"top-ups",ops:"ops",micro:"dust"};
-const FL=F.float||null;
+// Display a verified zero-day pace; unavailable paces keep their empty label.
+const FL=F.float?{...F.float,days_24h_pace:F.float.days_24h_pace?.toString()}:null;
 // plain-English summary strip — outflow-first (the outflow IS the ecosystem's activity)
 renderSection("Headline strip","plainStrip",()=>{const wA=F.windows[3];
  const openN=(DATA.open_items||[]).length;
@@ -547,7 +548,7 @@ const w24=F.windows[0], wall=F.windows[3], p24=F.prev24;
 const balUsd=F.balance_usd.MENTE==null||F.balance_usd.MOCA==null?null:F.balance_usd.MENTE+F.balance_usd.MOCA;
 function delta(cur,prev){if(!prev)return"";const d=(cur-prev)/prev*100;const cls=d>0?"delta-up":"delta-dn";return ` <span class="${cls}">${d>0?"+":""}${d.toFixed(0)}% vs prev 24h</span>`;}
 const gsub=w=>w.groups?GK.filter(g=>w.groups[g]&&w.groups[g].usd).map(g=>`${GSHORT[g]} ${usd(w.groups[g].usd)}`).join(" · "):`${w.out_tx} tx · ${w.out_wallets} wallets`;
-const floatV=FL&&FL.days_7d_pace?`<span style="${FL.days_7d_pace<5?"color:var(--bad);font-weight:800":(FL.days_7d_pace<14?"color:var(--warn)":"")}">~${FL.days_7d_pace} days</span>`:"n/a";
+const floatV=FL&&FL.days_7d_pace!=null?`<span style="${FL.days_7d_pace<5?"color:var(--bad);font-weight:800":(FL.days_7d_pace<14?"color:var(--warn)":"")}">~${FL.days_7d_pace} days</span>`:"n/a";
 const ftiles=[
  ["Wallet balance", usd(balUsd), fmt0(F.balance.MENTE||0)+" MENTE · "+fmt0(F.balance.MOCA||0)+" MOCA · saved as of "+savedAt],
  ["Outflow — 24h", TREASURY_CURRENT?usd(w24.out_usd):"Unavailable", TREASURY_CURRENT?gsub(w24)+delta(w24.out_usd,p24.out_usd):"Coverage incomplete — this is not a verified zero."],
