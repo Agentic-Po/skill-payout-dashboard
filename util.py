@@ -36,6 +36,19 @@ def cooled(last_iso, now, hours):
     return last is None or now - last >= timedelta(hours=hours)
 
 
+def known_amount(value):
+    return type(value) in (int, float) and 0 <= value < float("inf")
+
+
+def treasury_total(values):
+    """MOCA + MENTE subtotal, or None if either included amount is unknown."""
+    parts = [values.get(token) for token in ("MOCA", "MENTE")]
+    if not all(known_amount(part) for part in parts):
+        return None
+    total = sum(parts)
+    return total if known_amount(total) else None
+
+
 PUBLIC_WINDOWS = ("24h", "7d", "30d")
 PUBLIC_WINDOW_KEYS = ("label", "out_usd", "out_tx", "out_wallets", "in_usd")
 

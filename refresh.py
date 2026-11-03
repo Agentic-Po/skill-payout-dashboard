@@ -17,7 +17,7 @@ import posthog_source
 import shards
 import freshness
 import price_observations
-from util import public_summary   # index.html payload (public summary)
+from util import public_summary, treasury_total   # index.html payload (public summary)
 import state as _state   # alert_state.json single writer (no import side effects)
 from privlog import private_print   # quiet public Actions logs (2026-09-27)
 # taxonomy lives in classify.py — the ONE classifier shared with notify/alerts
@@ -923,6 +923,7 @@ BALANCE = {}
 def balance_at(addr, sym, block="latest", holder=WALLET):
     """holder defaults to the treasury; the coupon page passes its own wallet
     so there is ONE balance helper, not a second eth_call path."""
+    import re
     payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_call", "params": [
         {"to": addr, "data": "0x70a08231" + "0" * 24 + holder[2:].lower()}, block]}).encode()
     last_err = None
@@ -931,10 +932,13 @@ def balance_at(addr, sym, block="latest", holder=WALLET):
             req = urllib.request.Request(url, data=payload,
                 headers={"Content-Type": "application/json", "User-Agent": "curl/8.4.0"})
             with urllib.request.urlopen(req, timeout=_network_timeout(30)) as r:
-                res = json.load(r).get("result")
-            if res:
-                return int(res, 16) / 10 ** DECIMALS[sym]
-            last_err = Exception(f"{url}: empty result (rate-limited?)")
+                reply = json.load(r)
+            if (isinstance(reply, dict) and reply.get("jsonrpc") == "2.0"
+                    and type(reply.get("id")) is int and reply["id"] == 1
+                    and "error" not in reply and isinstance(reply.get("result"), str)
+                    and re.fullmatch(r"0x[0-9a-fA-F]{64}", reply["result"])):
+                return int(reply["result"], 16) / 10 ** DECIMALS[sym]
+            last_err = ValueError("invalid token balance response")
         except Exception as e:
             last_err = e
         _network_sleep(1)
@@ -2037,10 +2041,9 @@ at_risk = round(sum(g["usd"] for g in flagged), 2)
 def out_di(cut, hi=None):
     """Total factual outflow (every category incl. nonstandard/micro)."""
     return sum(r["usd"] for r in rows if r["ts"] > cut and (hi is None or r["ts"] <= hi))
-# when every balance fetch failed, bal_usd of 0 would fake a 0-day runway
-# (and fire the low-float alarm) — keep runway unknown instead
-bal_known = any(BALANCE[s] is not None for s in TOKENS)
-bal_usd = sum((BALANCE[s] or 0) * RATE[s] for s in TOKENS)
+# A missing component leaves the wallet subtotal and runway unknown.
+bal_usd = treasury_total({s: BALANCE[s] * RATE[s] if BALANCE[s] is not None else None for s in TOKENS})
+bal_known = bal_usd is not None
 span_days = max(min(7.0, (now - datetime.fromisoformat(rows[-1]["ts"]).replace(tzinfo=timezone.utc)).total_seconds() / 86400), 1.0) if rows else 7.0
 out24 = out_di(cut24)
 out_prev = out_di(cut48, cut24)
@@ -2049,7 +2052,7 @@ _g24 = windows[0]["groups"]
 _drv = max(_g24.items(), key=lambda kv: kv[1]["usd"]) if out24 > 0 else None
 float_facts = {
     "basis": "total outflow, day-pinned USD; balance at the live rate",
-    "bal_usd": round(bal_usd, 0),
+    "bal_usd": round(bal_usd, 0) if bal_known else None,
     "out_24h_usd": round(out24, 2), "out_prev24_usd": round(out_prev, 2),
     "out_7d_avg_usd": round(out7avg, 2),
     "days_24h_pace": round(bal_usd / out24, 1) if bal_known and out24 > 0 else None,
@@ -2077,7 +2080,7 @@ _state.update({"pattern_monitor": {"flagged_n": len(flagged), "monitored_n": len
 guard = {"loop_n": len(loop_wallets), "loop_usd": loop_usd,
          "loop_gt10": loop_gt10, "loop_gt50": loop_gt50,
          "credit_recip_n": len(credit_recip),
-         "ce_total_usd": ce_total, "bal_usd": round(bal_usd, 0)}
+         "ce_total_usd": ce_total, "bal_usd": round(bal_usd, 0) if bal_known else None}
 # Per-wallet detector rows (addresses + ent/acf/burst signal values) are a
 # calibration oracle — the Q3 flagged-wallets lesson. They now go ONLY to a
 # git-ignored private file (rides the Actions cache for reviewer access),
@@ -2139,6 +2142,8 @@ for _s, _days in grid_agreement.items():
                   f"day rate {_g['rate']} may be wrong")
 json.dump({"generated": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "rows": grows,
            "retired_ledger": retired_ledger, "system_topup_ledger": system_topup_ledger,
+           "observed_zero": {sym: _BALANCE_OBSERVED[sym] for sym in TOKENS
+                             if sym in _BALANCE_OBSERVED and BALANCE[sym] == 0 and data_complete},
            "grid_agreement": grid_agreement},
           open(os.path.join(HERE, "guard_private.json"), "w"))
 
@@ -2266,7 +2271,7 @@ insights = {
     "recipients": "10,000+ wallets hold verifiable on-chain earnings history — the property layer. (This table counts only transfers FROM this treasury wallet.)",
     "sources": "All inflow is deliberate ops — treasury refills, reserve returns of parked treasury funds and (until it stopped) collector recycling. Every source wallet should carry a label; unlabeled = ask treasury ops.",
     "server": "Stripe payments as PostHog records them — PostHog is the source of truth for payments; where it disagrees with the chain is where a data gap lives.",
-    "aizone": f"Best-guess triage, never fact: every payout type below is inferred from transfer size on the row's own era grid (±8% v1 · ±12% v2); pattern signals are reviewed privately and never published. Float: ~{float_facts['days_7d_pace'] or '?'} days at the 7-day pace on total outflow.",
+    "aizone": f"Best-guess triage, never fact: every payout type below is inferred from transfer size on the row's own era grid (±8% v1 · ±12% v2); pattern signals are reviewed privately and never published. Float: ~{float_facts['days_7d_pace'] if float_facts['days_7d_pace'] is not None else '?'} days at the 7-day pace on total outflow.",
 }
 # All five items open since July were answered by the owner on 2026-09-27
 # (council follow-up): no MENTE burn exists (MENTE is collected after use);
@@ -2647,7 +2652,7 @@ for _r in registry:
 # (verdict 12a) — and none is included at all.
 _w7 = facts["windows"][1]
 _require(_w7["label"] == "7d", "facts.windows[1] is no longer the 7d window")
-_bal_pub = sum(v for v in facts["balance_usd"].values() if v)
+_bal_pub = treasury_total(facts["balance_usd"])
 _g7 = _w7["groups"]
 # X2 (2026-09-15): the sentence names the groups, never a hand-typed figure —
 # every $ below is a facts_window group sum (test_parity holds them to the
@@ -2663,7 +2668,9 @@ if _g7["micro"]["usd"]:
 _exec_sent = [f"In the last 7 days ${_w7['out_usd']:,.2f} left the treasury across "
               f"{_w7['out_tx']:,} transfers — " + " · ".join(_parts) + "."]
 _ff = facts["float"]
-if _bal_pub > 0 and _ff["days_7d_pace"]:
+if _bal_pub is None:
+    _exec_sent.append("The wallet balance is unavailable.")
+elif _bal_pub > 0 and _ff["days_7d_pace"]:
     _drv = _ff.get("driver_24h")
     _exec_sent.append(f"The wallet holds ${_bal_pub:,.2f} — about {_ff['days_7d_pace']:,.1f} days at the 7-day pace"
                       + (f" ({_ff['days_24h_pace']:,.1f} at yesterday's)" if _ff.get("days_24h_pace") else "")

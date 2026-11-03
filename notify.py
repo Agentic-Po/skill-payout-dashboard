@@ -10,6 +10,7 @@ touching alert_state.json.
 Env vars: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID.
 """
 import json, os, sys, urllib.request, urllib.parse
+import cap_detect
 import shards
 from telegram_digest import digest_parts
 from privlog import private_print
@@ -74,7 +75,13 @@ F = _D["facts"]
 G = _D["infer"]["guard"]
 FL = F.get("float") or {}
 TOKENS = {a.lower(): s for s, a in _D["scope"]["tokens"].items()}   # addr -> sym
-RATE = F["rate"].get("MOCA") or hist[-1]["rate"]
+try:
+    with open(os.path.join(HERE, "guard_private.json")) as guard_file:
+        _guard = json.load(guard_file)
+except (FileNotFoundError, ValueError):
+    _guard = {}
+_wallet_marks = cap_detect.current_wallet_marks(_D, now, _guard)
+_verified_runway = cap_detect.snapshot_runway(_D, _wallet_marks)
 
 # Payout taxonomy lives in classify.py — the ONE classifier shared with the
 # page (refresh.py) and alerts.py. Rows are priced at the DAY-PINNED rate per
@@ -208,12 +215,16 @@ _PM = _ST.get("pattern_monitor") or {}
 # ---- float line (X5/X8): ONE runway on TOTAL outflow (facts.float), the
 # driver named. Emoji is the severity; the line is always present.
 def float_line():
+    if _verified_runway is None:
+        return "⚪ <b>Float unavailable</b> · current wallet value or spending pace could not be verified"
     d7, d24 = FL.get("days_7d_pace"), FL.get("days_24h_pace")
-    worst = min(x for x in (d7, d24) if x is not None) if (d7 or d24) else None
-    icon = "🔴" if worst is not None and worst < 7 else ("🟠" if worst is not None and worst < 14 else "🟢")
+    worst = min((x for x in (d7, d24) if x is not None), default=None)
+    icon = "🔴" if worst is not None and worst < 7 else ("🟠" if worst is not None and worst < 14 else ("🟢" if worst is not None else "⚪"))
     drv = FL.get("driver_24h") or {}
+    observed = FL.get("bal_usd", G.get("bal_usd"))
+    total = f"${observed:,.0f}" if observed is not None else "Balance unavailable"
     return (f"{icon} <b>Float</b> ~{d24 if d24 is not None else '?'}d (24h pace) · {d7 if d7 is not None else '?'}d (7d pace) · "
-            f"${FL.get('bal_usd', G.get('bal_usd', 0)):,.0f} · out ${FL.get('out_24h_usd', 0):,.0f}/24h"
+            f"{total} · out ${FL.get('out_24h_usd', 0):,.0f}/24h"
             + (f", {drv['share_pct']:g}% {drv['label'].lower()}" if drv else ""))
 
 health = []
@@ -225,22 +236,25 @@ bal_m, bal_e = F["balance"].get("MOCA"), F["balance"].get("MENTE")
 stale_ts = None
 if bal_m is None or bal_e is None:
     for snap in reversed(hist):
-        if snap.get("balance") is not None:
-            bal_m = bal_m if bal_m is not None else snap["balance"]
-            bal_e = bal_e if bal_e is not None else snap.get("mente_balance")
+        if snap.get("balance") is not None and snap.get("mente_balance") is not None:
+            bal_m, bal_e = snap["balance"], snap["mente_balance"]
             stale_ts = snap["ts"]
             break
-r_m, r_e = F["rate"].get("MOCA") or RATE, F["rate"].get("MENTE") or 0
-usd_m = (bal_m or 0) * r_m
-usd_e = (bal_e or 0) * r_e
+def token_line(symbol, balance, usd):
+    native = f"{balance:,.0f}" if balance is not None else "unavailable"
+    mark = f"${usd:,.2f}" if usd is not None else "unavailable"
+    return f"  · {symbol}: {native} ≈ <b>{mark}</b>"
+
+usd_m, usd_e = (None, None) if stale_ts else (_wallet_marks["MOCA"], _wallet_marks["MENTE"])
+wallet_mark = f"${usd_m + usd_e:,.0f}" if usd_m is not None and usd_e is not None else "Unavailable"
 stale = f" ⚠️ <i>(live fetch failed — last known {hkt(stale_ts)})</i>" if stale_ts else ""
 out_1h = sum(r[5] for r in rows if r[0] > now - timedelta(hours=1))
 if mode != "hourly":
     health.append("")
     health.append("🔧 <b>Ops health</b>")
-    health.append(f"<b>Wallet balance:</b> <b>${usd_m + usd_e:,.0f}</b> total{stale}")
-    health.append(f"  · MOCA: {bal_m or 0:,.0f} ≈ <b>${usd_m:,.2f}</b>")
-    health.append(f"  · MENTE: {bal_e or 0:,.0f} ≈ <b>${usd_e:,.2f}</b>")
+    health.append(f"<b>Wallet balance:</b> <b>{wallet_mark}</b> total{stale}")
+    health.append(token_line("MOCA", bal_m, usd_m))
+    health.append(token_line("MENTE", bal_e, usd_e))
     # Economy vs ops split: economy = every group but ops (closes on the
     # message itself); ops = the residual, never printed negative.
     # both terms from data.json's OWN 24h window (facts_window.groups) so the
@@ -274,11 +288,7 @@ if mode != "hourly":
     # (guard_private.json, Actions cache) — per-wallet grant counts never
     # reach a public artifact; the chain shows wallets, not accounts.
     if mode == "daily":
-        _gp = os.path.join(HERE, "guard_private.json")
-        try:
-            _rg = (json.load(open(_gp)).get("repeat_grants") or {}) if os.path.exists(_gp) else {}
-        except ValueError:
-            _rg = {}
+        _rg = _guard.get("repeat_grants") or {}
         if _rg:
             health.append(f"<b>Repeat grants (private):</b> {_rg.get('repeat_wallets', 0):,} wallets took >1 "
                           f"(${_rg.get('repeat_usd', 0):,.0f}, {_rg.get('repeat_share_pct', 0):g}% of grant spend); "
@@ -287,10 +297,7 @@ if mode != "hourly":
             health.append("<b>Repeat grants (private):</b> <i>not banked yet (sanity.py has not run on this cache)</i>")
         # loop 2, item 3: the slow-bleed measurement (fences.grant_bleed, banked
         # by sanity.py) — ONE private line, never a page, never a public field
-        try:
-            _gb = (json.load(open(_gp)).get("grant_bleed") or {}) if os.path.exists(_gp) else {}
-        except ValueError:
-            _gb = {}
+        _gb = _guard.get("grant_bleed") or {}
         if _gb:
             import fences as _fences
             health.append(_fences.bleed_line(_gb))

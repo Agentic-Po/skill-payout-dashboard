@@ -334,8 +334,13 @@ state["source_ok"] = _src_ok
 # per-threshold edge, 24 h cooldown, re-armed on recovery. ~9.7 d on the
 # day this shipped -> silent today. PAGE tier: to the funding owner at once.
 _FL = DATA["facts"].get("float") or {}
-_rw_secs, state = cap_detect.runway_check(_FL.get("days_7d_pace"), _FL.get("bal_usd") or 0,
-                                          _FL.get("driver_24h"), state, now)
+_verified = cap_detect.snapshot_runway(DATA, cap_detect.current_wallet_marks(DATA, now, _guard))
+_rw_config = os.environ.get("FUNDING_NOTICE_POLICY")
+_rw_health = cap_detect.funding_monitor_notice(_verified is not None, state, now, _rw_config)
+_rw_secs = []
+if _verified is not None:
+    _rw_secs, state = cap_detect.runway_check(_verified["days_7d_pace"], _verified["bal_usd"],
+                                              _verified.get("driver_24h"), state, now)
 private_print(f"runway: {_FL.get('days_7d_pace')} d at the 7d pace · thresholds {[t for t, _ in cap_detect.RUNWAY_THRESHOLDS]}"
               + (" · FIRED" if _rw_secs else ""), src="alerts")
 
@@ -451,10 +456,10 @@ for tier, key, sec in tiered:
     else:
         private_print(f"WARN [{key}] inside its 6 h cooldown — not re-queued", src="alerts")
 
-all_sections = cap_sections + page_sections + _sections(lines)
+all_sections = _rw_health + cap_sections + page_sections + _sections(lines)
 if all_sections:
     msg = cap_detect.compose("🚨 <b>Flow alert</b> — <i>Skill Payout Dashboard</i> · " + cap_detect.hkt(now),
-                             all_sections)
+                             all_sections, priority=_rw_health)
 if all_sections and DRY_RUN:
     private_print(msg + "\n--- dry run: page alert composed, nothing sent ---", src="alerts")
 elif all_sections:
@@ -471,6 +476,11 @@ elif all_sections:
     # (redline) — record-then-reraise preserves that behaviour exactly.
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
+            receipt = json.load(r)
+            result = receipt.get("result") if isinstance(receipt, dict) else None
+            if not (receipt and receipt.get("ok") is True and isinstance(result, dict)
+                    and type(result.get("message_id")) is int and result["message_id"] > 0):
+                raise ValueError("message delivery was not confirmed")
             private_print(f"alert sent: {r.status}", src="alerts")
     except Exception:
         _statemod.record_send("alerts", False, now)
