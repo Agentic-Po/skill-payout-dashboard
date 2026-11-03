@@ -89,6 +89,11 @@ try:
 except TypeError:
     pass
 
+assert util.treasury_total({"MOCA": 0, "MENTE": 0}) == 0
+assert util.treasury_total({"MOCA": 5, "MENTE": 0}) == 5
+assert util.treasury_total({"MOCA": None, "MENTE": 5}) is None
+assert util.treasury_total({"MOCA": 5}) is None
+
 for f in fails:
     print("FAIL", f)
 if fails:

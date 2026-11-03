@@ -123,6 +123,7 @@ jobs:
           CONSOLE_URL: ${{ secrets.CONSOLE_URL }}   # Telegram "Open dashboard" -> private edition
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FUNDING_NOTICE_POLICY: ${{ secrets.FUNDING_NOTICE_POLICY }}
         run: python3 alerts.py
       # Monitor-of-the-monitor (council 2026-09-21): recompute the headline
       # facts from the raw shards by a path that does not import refresh.py

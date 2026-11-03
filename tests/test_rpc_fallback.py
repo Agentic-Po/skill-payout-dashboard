@@ -14,7 +14,7 @@ ROOT = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0,ROOT)
 SOURCE = open(os.path.join(ROOT, 'refresh.py')).read()
 TREE = ast.parse(SOURCE)
-NAMES = {'RpcRangeError', '_rpc_range_error', 'rpc', 'rpc_transfer_fallback','_public_leg','_scan_rpc','_bounded_scan_rpc','_valid_log_subrange'}
+NAMES = {'balance_at','RpcRangeError', '_rpc_range_error', 'rpc', 'rpc_transfer_fallback','_public_leg','_scan_rpc','_bounded_scan_rpc','_valid_log_subrange'}
 CODE = '\n'.join(ast.get_source_segment(SOURCE,n) for n in TREE.body if isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name in NAMES)
 
 class RpcFallback(unittest.TestCase):
@@ -24,13 +24,27 @@ class RpcFallback(unittest.TestCase):
             if callable(result):result=result()
             if isinstance(result,Exception):raise result
             return io.BytesIO(json.dumps(result).encode())
-        ns={'json':json,'urllib':types.SimpleNamespace(request=types.SimpleNamespace(Request=urllib.request.Request,urlopen=call),error=urllib.error),
+        ns={'WALLET':'0x'+'1'*40,'DECIMALS':{'MOCA':18},'json':json,'urllib':types.SimpleNamespace(request=types.SimpleNamespace(Request=urllib.request.Request,urlopen=call),error=urllib.error),
             'time':types.SimpleNamespace(sleep=lambda *_:None,time=lambda:0),'RPC_ENDPOINTS':list(responses),'_RPC_CALLS':[0],
             'TRANSFER_TOPIC':'topic','LOGS_CHUNK':[2000],'XCHECK_WARN_S':60,'block_ts_prefetch':lambda _:None,'block_ts':lambda _:0}
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         ns.update({'rpc_batch':lambda *a,**k:{},'_PUBLIC_SCANNER':None,'_RPC_LAST_THROUGH':None,'_shape_rpc_transfers':lambda logs:[],'HERE':temp.name,'os':os,'_network_timeout':lambda cap:cap,'_network_sleep':lambda _:None})
         exec(CODE,ns)
         return ns
+
+    def test_token_balance_requires_matching_envelope_and_uint256_word(self):
+        zero = {'jsonrpc':'2.0','id':1,'result':'0x'+'0'*64}
+        some = dict(zero, result='0x'+format(10**18, '064x'))
+        for bad in (dict(zero,result='0x0'), dict(zero,result='0x1'),
+                    dict(zero,result='0x'+'g'*64), dict(zero,id=True),
+                    dict(zero,id=2), dict(zero,error=None), dict(zero,jsonrpc='1.0')):
+            ns = self.ns({'https://bad.invalid':bad, 'https://ok.invalid':some})
+            self.assertEqual(ns['balance_at']('0x'+'2'*40,'MOCA'), 1)
+            ns = self.ns({'https://bad.invalid':bad})
+            with self.assertRaises(ValueError):
+                ns['balance_at']('0x'+'2'*40, 'MOCA')
+        ns = self.ns({'https://ok.invalid':zero})
+        self.assertEqual(ns['balance_at']('0x'+'2'*40,'MOCA'), 0)
 
     def test_malformed_log_elements_fail_over_before_preference(self):
         good={'blockNumber':'0xa','transactionHash':'0x'+'1'*64,'logIndex':'0x0','topics':['0x'+'2'*64]*3,'address':'0x'+'3'*40,'data':'0x1'}

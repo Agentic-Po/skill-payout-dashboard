@@ -6,7 +6,7 @@ import pagehost as P
 ROOT=Path(__file__).resolve().parents[1]
 PROBE="""(()=>{const e=globalThis.__domshim.elements;return {tiles:e.get('ftiles').innerHTML,note:e.get('dailyCoverage').textContent,hidden:e.get('dailyCoverage').hidden,daily:e.get('dailyT').innerHTML};})()"""
 class Freshness(unittest.TestCase):
- def render(self,own,overall=False):
+ def render(self,own,overall=False,missing_balance=False):
   d=json.loads((ROOT/'data.json').read_text());original=copy.deepcopy(d)
   d['scope']['complete']=overall;d['scope']['source_coverage']['treasury_complete']=own
   d['scope']['generated_iso']='2027-02-03T01:02:03Z'
@@ -14,6 +14,8 @@ class Freshness(unittest.TestCase):
   d['facts']['daily']=[dict(d['facts']['daily'][-1],d='2027-02-01')]
   w=d['facts']['windows'][0];w['out_usd']=0;w['in_usd']=0
   for g in w['groups'].values():g['usd']=0
+  if missing_balance:
+   d["facts"]["balance_usd"]["MOCA"]=None;d["facts"]["balance"]["MOCA"]=None
   before=copy.deepcopy(d)
   page=P.build_from_template((ROOT/'template.html').read_text())
   r=P.run(page,json.dumps(d),[{'now':int(datetime(2027,2,3,12,tzinfo=timezone.utc).timestamp()*1000),'probe':PROBE}])[0]
@@ -31,6 +33,10 @@ class Freshness(unittest.TestCase):
   p,_=self.render(True,False)
   self.assertNotIn('<div class="v">Unavailable</div>',p['tiles'])
   self.assertIn('<div class="v">$0</div>',p['tiles']);self.assertTrue(p['hidden'])
+ def test_partial_balance_keeps_known_native_only(self):
+  p,_=self.render(True,True,missing_balance=True)
+  self.assertIn('<div class="k">Wallet balance</div><div class="v">Unavailable</div>',p["tiles"])
+  self.assertIn("Unavailable MOCA",p["tiles"])
  def test_all_complete_keeps_figures(self):
   p,_=self.render(True,True)
   self.assertIn('<div class="v">$0</div>',p['tiles']);self.assertTrue(p['hidden'])
