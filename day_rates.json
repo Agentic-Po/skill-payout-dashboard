@@ -215,7 +215,7 @@
 "open_day_rate": {
 "MOCA": {
 "d": "2026-11-03",
-"rate": 0.00808343
+"rate": 0.00810307
 }
 },
 "market_rates": {
@@ -867,13 +867,13 @@
 }
 },
 "xcheck": {
-"transfers": 53463639,
-"transfers_in": 53463652,
-"cognition_in": 53463655,
-"coupon_out": 53463842,
-"coupon_in": 53463842,
-"sink_to": 53463835,
-"sink_from": 53463838,
+"transfers": 53464540,
+"transfers_in": 53464554,
+"cognition_in": 53464560,
+"coupon_out": 53464777,
+"coupon_in": 53464777,
+"sink_to": 53464769,
+"sink_from": 53464772,
 "sink_xc_to": 52239699,
 "sink_xc_from": 52239701
 },
@@ -2821,12 +2821,12 @@
 "MENTE": {
 "d": "2026-11-03",
 "close": 0.01796011,
-"fetched": "2026-11-03T14:08:40Z"
+"fetched": "2026-11-03T15:08:44Z"
 },
 "MOCA": {
 "d": "2026-11-03",
-"close": 0.00808343,
-"fetched": "2026-11-03T14:08:41Z"
+"close": 0.00810307,
+"fetched": "2026-11-03T15:08:45Z"
 }
 },
 "market_rates_note": {
