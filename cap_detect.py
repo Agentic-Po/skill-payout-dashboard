@@ -55,6 +55,7 @@ from datetime import datetime, timedelta
 # (alerts.py calls cap_detect.hkt)
 import util
 import freshness
+import price_observations
 HKT, hkt, _iso, _dt, _cooled = util.HKT, util.hkt, util.iso_min, util.parse_dt, util.cooled
 
 from classify import (UNITS, CAP_UNITS, CAP_USD_PER_CREATOR_HOUR, CAP_ON_UTC,
@@ -321,19 +322,64 @@ RUNWAY_THRESHOLDS = ((7, "lt7"), (3, "lt3"))
 RUNWAY_COOLDOWN_H = 24
 
 
-def runway_from_snapshot(data, state, now):
+def _fresh_runway_input(stamp, now):
+    try:
+        observed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        if observed.utcoffset() != timedelta(0):
+            return False
+        age = (now - observed.replace(tzinfo=None)).total_seconds() / 60
+        return age >= 0 and not freshness.is_stale(age)
+    except (TypeError, ValueError, AttributeError, OverflowError):
+        return False
+
+
+def _acquired_runway_rate(scope, facts, symbol, now):
+    evidence = scope.get("price_observations") or {}
+    source = facts.get("rate_src", {}).get(symbol)
+    address = scope.get("tokens", {}).get(symbol)
+    if source not in ("blockscout", "dexscreener") or not address:
+        return False
+    choices = [r for r in evidence.get("selections", []) if isinstance(r, dict) and r.get("symbol") == symbol]
+    if len(choices) != 1:
+        return False
+    choice = choices[0]
+    if (choice.get("kind") != "acquired" or choice.get("token_address") != address
+            or choice.get("source") != source
+            or not price_observations.same_price(choice.get("price_usd"), facts.get("rate", {}).get(symbol))
+            or not _fresh_runway_input(choice.get("original_observed_at"), now)):
+        return False
+    oid = choice.get("original_observation_id")
+    matches = [r for r in evidence.get("observations", []) if isinstance(r, dict) and r.get("observation_id") == oid]
+    if not oid or len(matches) != 1:
+        return False
+    row = matches[0]
+    return (row.get("accepted_by_collector") is True and row.get("outcome") == "acquired"
+            and row.get("symbol") == symbol and row.get("token_address") == address
+            and row.get("source") == source and row.get("fetched_at") == choice["original_observed_at"]
+            and price_observations.same_price(row.get("price_usd"), choice["price_usd"]))
+
+
+def runway_from_snapshot(data, state, now, private=None):
     """Only a current, complete Treasury snapshot can move a funding edge."""
     scope, facts = data["scope"], data["facts"]
     complete = (scope.get("source_coverage") or {}).get("treasury_complete", scope.get("complete"))
-    if complete is not True or util.treasury_total(facts.get("balance_usd") or {}) is None:
+    if complete is not True or not _fresh_runway_input(scope.get("generated_iso"), now):
         return [], state
-    try:
-        observed = datetime.strptime(scope["generated_iso"], "%Y-%m-%dT%H:%M:%SZ")
-    except (KeyError, TypeError, ValueError):
+    values = facts.get("balance_usd") or {}
+    if util.treasury_total(values) is None:
         return [], state
-    age_minutes = (now - observed).total_seconds() / 60
-    if age_minutes < 0 or freshness.is_stale(age_minutes):
-        return [], state
+    # Published token amounts are rounded: only the same build's actual
+    # zero observation exempts a token from needing its own current rate.
+    private = private or {}
+    zeroes = private.get("observed_zero", {}) if private.get("generated") == scope["generated_iso"] else {}
+    for symbol in ("MOCA", "MENTE"):
+        native = facts.get("balance", {}).get(symbol)
+        if not util.known_amount(native):
+            return [], state
+        if native == 0 and values[symbol] == 0 and _fresh_runway_input(zeroes.get(symbol), now):
+            continue
+        if not _acquired_runway_rate(scope, facts, symbol, now):
+            return [], state
     fl = facts.get("float") or {}
     return runway_check(fl.get("days_7d_pace"), fl.get("bal_usd"), fl.get("driver_24h"), state, now)
 
@@ -341,7 +387,7 @@ def runway_from_snapshot(data, state, now):
 def runway_check(days_7d, bal_usd, driver, state, now):
     """-> (sections, state). `driver` is facts.float.driver_24h (may be None)."""
     secs = []
-    if days_7d is None or bal_usd is None:
+    if not util.known_amount(days_7d) or not util.known_amount(bal_usd):
         return secs, state
     rw = state.setdefault("runway", {})
     for thr, key in RUNWAY_THRESHOLDS:

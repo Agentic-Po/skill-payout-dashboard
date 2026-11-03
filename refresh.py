@@ -2138,6 +2138,8 @@ for _s, _days in grid_agreement.items():
                   f"day rate {_g['rate']} may be wrong")
 json.dump({"generated": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "rows": grows,
            "retired_ledger": retired_ledger, "system_topup_ledger": system_topup_ledger,
+           "observed_zero": {sym: _BALANCE_OBSERVED[sym] for sym in TOKENS
+                             if sym in _BALANCE_OBSERVED and BALANCE[sym] == 0 and data_complete},
            "grid_agreement": grid_agreement},
           open(os.path.join(HERE, "guard_private.json"), "w"))
 

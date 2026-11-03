@@ -334,7 +334,7 @@ state["source_ok"] = _src_ok
 # per-threshold edge, 24 h cooldown, re-armed on recovery. ~9.7 d on the
 # day this shipped -> silent today. PAGE tier: to the funding owner at once.
 _FL = DATA["facts"].get("float") or {}
-_rw_secs, state = cap_detect.runway_from_snapshot(DATA, state, now)
+_rw_secs, state = cap_detect.runway_from_snapshot(DATA, state, now, _guard)
 private_print(f"runway: {_FL.get('days_7d_pace')} d at the 7d pace · thresholds {[t for t, _ in cap_detect.RUNWAY_THRESHOLDS]}"
               + (" · FIRED" if _rw_secs else ""), src="alerts")
 

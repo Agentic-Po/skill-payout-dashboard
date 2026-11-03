@@ -208,10 +208,34 @@ def main():
     secs, st = cd.runway_check(6.0, 18000.0, drv, st, n + timedelta(hours=26))
     assert len(secs) == 1, "runway <7 did not re-fire after recovery + cooldown"
     snapshot = {"scope": {"generated_iso": n.strftime("%Y-%m-%dT%H:%M:%SZ"), "complete": False, "source_coverage": {"treasury_complete": True}},
-                "facts": {"balance_usd": {"MOCA": 0, "MENTE": 0}, "float": {"days_7d_pace": 0, "bal_usd": 0}}}
-    assert cd.runway_from_snapshot(snapshot, {}, n)[0], "verified empty wallet must still alert"
+                "facts": {"balance": {"MOCA": 0, "MENTE": 0}, "balance_usd": {"MOCA": 0, "MENTE": 0}, "float": {"days_7d_pace": 0, "bal_usd": 0}}}
+    stamp = snapshot["scope"]["generated_iso"]
+    verified = {"generated": stamp, "observed_zero": {"MOCA": stamp, "MENTE": stamp}}
+    assert cd.runway_from_snapshot(snapshot, {}, n, verified)[0], "verified empty wallet must still alert"
     import copy
     saved = copy.deepcopy(st)
+    assert cd.runway_from_snapshot(snapshot, st, n)[0] == [], "rounded zeros are not proof of zero"
+    for value in (float("nan"), float("inf"), -1, True, "0"):
+        assert cd.runway_check(value, 10, None, st, n) == ([], saved)
+        assert cd.runway_check(1, value, None, st, n) == ([], saved)
+    held = copy.deepcopy(snapshot)
+    held["facts"]["balance"]["MOCA"] = 100
+    held["facts"]["balance_usd"]["MOCA"] = 1
+    held["facts"]["rate"] = {"MOCA": 0.01}
+    held["facts"]["rate_src"] = {"MOCA": "dexscreener"}
+    addr = "0x" + "1" * 40
+    held["scope"]["tokens"] = {"MOCA": addr}
+    acquisition = {"symbol":"MOCA", "token_address":addr, "source":"dexscreener", "price_usd":"0.01"}
+    choice = dict(acquisition, kind="acquired", original_observation_id="receipt", original_observed_at=stamp)
+    row = dict(acquisition, outcome="acquired", accepted_by_collector=True, observation_id="receipt", fetched_at=stamp)
+    held["scope"]["price_observations"] = {"selections":[choice], "observations":[row]}
+    assert cd.runway_from_snapshot(held, {}, n, verified)[0]
+    for bad in ({"kind":"retained"}, {"source":"last-accepted"}, {"original_observed_at":"2000-01-01T00:00:00Z"},
+                {"price_usd":"0.02"}, {"original_observation_id":"different"}):
+        q = copy.deepcopy(held)
+        q["scope"]["price_observations"]["selections"][0].update(bad)
+        q["facts"]["float"]["days_7d_pace"] = 99
+        assert cd.runway_from_snapshot(q, st, n, verified) == ([], saved)
     for asset in ("MOCA", "MENTE"):
         partial = copy.deepcopy(snapshot)
         partial["facts"]["balance_usd"][asset] = None
