@@ -204,8 +204,8 @@
 }
 },
 "last_accepted_rate": {
-"MOCA": 0.007414,
-"MENTE": 0.01745
+"MOCA": 0.00747,
+"MENTE": 0.01746
 },
 "recon": {
 "MOCA": -16161.7,
