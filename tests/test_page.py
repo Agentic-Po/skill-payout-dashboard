@@ -79,6 +79,15 @@ def main():
     assert pos == sorted(pos), "first-screen order drifted: " + " -> ".join(o for _, o in sorted(zip(pos, order)))
     print("ok first-screen order: summary -> sentence -> tiles -> month-by-month -> daily; creator wallets in Understand")
 
+    # The reported policy is visible in both public and private templates and
+    # never presented as an exact deployment timestamp or verified row tag.
+    for rel in ("template.html", "template_public.html", "full.html", "index.html"):
+        page = open(os.path.join(ROOT, rel)).read()
+        assert 'id="starterCreditPolicy"' in page and "$5 for a new user's first Mind" in page
+        assert "$2 for each of Minds 2–5" in page and "no initial credit from the sixth" in page
+        assert "The time is approximate" in page and "do not verify grant purpose or Mind order" in page
+    print("ok reported initial-credit configuration and uncertainty on both dashboards")
+
     # 3. wording lint (+ self-test)
     assert lint("we received $5 of new funding") and lint("Top-ups in"), "wording lint self-test failed"
     assert not lint("refills in · returns in · top-ups delivered · system free top-ups"), "lint over-matches"
