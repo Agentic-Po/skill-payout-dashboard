@@ -109,11 +109,11 @@ def _checks_index(p):
     assert p["exec_text"].strip(), "executive summary block (#execSummary) rendered empty"
     assert "$" in p["exec_text"], \
         f"executive summary has no $ figure: {p['exec_text'][:200]!r}"
-    # Creator Rewards v2 (2026-09-15): 13 legend chips (b0005 + b005 added,
+    # Initial-credit policy (2026-11-13): 14 legend chips (b2 added,
     # b010/b1 kept), the v2 tile row (TWO tiles since the iteration — no
     # implied user spend) with a $ figure and the HKT footer, the system
     # free top-up line rendered — and no cap figure or cap sentence anywhere.
-    assert p["legend_chips"] == 13, f"legend rendered {p['legend_chips']} chips, want 13"
+    assert p["legend_chips"] == 14, f"legend rendered {p['legend_chips']} chips, want 14"
     assert p["v2_tiles"] == 2, f"rewards_v2 rendered {p['v2_tiles']} tiles, want 2"
     assert "HKT" in p["v2_foot"] and "cap" not in p["v2_foot"].lower(), p["v2_foot"]
     assert "$4" not in p["v2_foot"] and "4.00" not in p["v2_foot"], f"cap figure leaked: {p['v2_foot']!r}"
@@ -148,7 +148,7 @@ def _checks_index(p):
     assert any("b005" in d["bands"] and "b0005" in d["bands"] for d in new), "no day since 2026-09-14 renders b005 + b0005"
     assert not any("b005" in d["bands"] or "b0005" in d["bands"] for d in old), "a pre-v2 day carries a v2 band"
     return (f"{p['daily_rows']} daily rows · {p['band_divs']} band divs · hero strip "
-            f"carries a $ figure · exec block rendered non-empty · 13 legend chips · "
+            f"carries a $ figure · exec block rendered non-empty · 14 legend chips · "
             f"2 rewards_v2 tiles · system top-up line · creator card {p['creator_tabs']} tabs / "
             f"{p['creator_rows']} rows · header {p['gen_text']!r} · hourly stacked by group · "
             f"monitor prose status-free · v2 bands only on days ≥ 2026-09-14")

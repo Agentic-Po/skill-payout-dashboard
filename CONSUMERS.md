@@ -155,6 +155,23 @@ nor `server.stripe_out_usd` is revenue. Classification keys, amounts, CSV schema
 and historical group allocations are unchanged; no unconfirmed grant-change
 date is applied retroactively. A purpose split requires recorded payment types.
 
+### Initial-credit configuration report — 2026-11-14 (schema 5 unchanged)
+
+The reported schedule is $5 for a new user's first Mind, $2 for each of Minds
+2–5, and no initial credit from the sixth. The user reported it at approximately
+2026-11-13T20:07Z as live about two hours earlier; `18:07Z` is an **approximate
+classification boundary**, not a verified deployment timestamp. Earlier row
+labels remain unchanged. At and after that boundary, `classify_usd` treats
+≈$2 as a credit-sized transfer instead of ops and uses purpose-unverified
+fine labels for ≈$2, ≈$3 and ≈$5. The new `b2` size band applies only after
+the same boundary. `credit_grants` remains the machine group key, with the
+display text `Credit-sized transfers`; the group is an amount inference, not
+verified issuance. A $5 amount cannot distinguish a first-Mind grant from a
+referral. No on-chain absence proves that a sixth Mind got zero credit.
+`stripe $10` retains its machine key and historical rows; its display label
+now makes the historical overlap explicit. A confirmed purpose/Mind-order tag
+requires an authoritative private grant record.
+
 
 ## Pending public scans (candidate)
 

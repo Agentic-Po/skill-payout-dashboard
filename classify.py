@@ -43,7 +43,9 @@ the chain cannot see the source of a user's credit, so no figure claims to.
 """
 
 PACKS = (10, 20, 25, 50, 100)
-INCENT = ((1, "$1 system free top-up"), (3, "$3 credit"), (5, "referral $5"))
+INCENT = ((1, "$1 system free top-up"), (2, "$2 amount (purpose unverified)"),
+          (3, "$3 credit"), (5, "referral $5"))
+STARTER_POLICY_REPORTED_UTC = "2026-11-13T18:07"
 NET_OF_FEES = 0.94
 PACK_TOL = 0.15
 GRID_TOL = 0.08
@@ -56,7 +58,7 @@ STRIPE_FINE = tuple(f"stripe ${p}" for p in PACKS)
 def fine_label(fine):
     """Public display text; legacy machine keys stay compatible with CSV consumers."""
     if fine == "stripe $10":
-        return "$10 credits (new-user grant or purchased pack)"
+        return "$10 pack-sized credits (historically also new-user grants)"
     return fine
 
 
@@ -116,7 +118,7 @@ def cap_usd_for(ts):
 # until 14 Sep 2026 and is $0.003 from then on; pre-v2 dust stays micro.
 BAND_LABEL = {"micro": "< $0.003 (< $0.06 before 14 Sep)", "b0005": "≈ $0.005",
               "b005": "≈ $0.05", "b010": "≈ $0.10", "b1": "≈ $1", "b3": "≈ $3",
-              "b5": "≈ $5", "b10": "≈ $10", "b20": "≈ $20", "b25": "≈ $25",
+              "b2": "≈ $2", "b5": "≈ $5", "b10": "≈ $10", "b20": "≈ $20", "b25": "≈ $25",
               "b50": "≈ $50", "b100": "≈ $100", "other": "other size"}
 BAND_KEYS = list(BAND_LABEL)
 
@@ -140,9 +142,10 @@ def band(usd, ts):
     g = _snap(usd, (0.005, 0.05), V2_TOL)
     if g is not None:
         return {0.005: "b0005", 0.05: "b005"}[g]
-    g = _snap(usd, (0.10, 1, 3, 5), GRID_TOL)
+    points = (0.10, 1, 2, 3, 5) if ts[:16] >= STARTER_POLICY_REPORTED_UTC else (0.10, 1, 3, 5)
+    g = _snap(usd, points, GRID_TOL)
     if g is not None:
-        return {0.10: "b010", 1: "b1", 3: "b3", 5: "b5"}[g]
+        return {0.10: "b010", 1: "b1", 2: "b2", 3: "b3", 5: "b5"}[g]
     p = _snap(usd / NET_OF_FEES, PACKS, PACK_TOL)
     if p is not None:
         return f"b{p}"
@@ -168,7 +171,14 @@ def classify_usd(usd, ts):
     for amt, fine in INCENT:
         if amt == 1:
             continue            # assigned only by the system-top-up step above
+        if amt == 2 and ts[:16] < STARTER_POLICY_REPORTED_UTC:
+            continue
         if _snap(usd, (amt,), GRID_TOL) is not None:
+            if ts[:16] >= STARTER_POLICY_REPORTED_UTC:
+                if amt == 3:
+                    fine = "$3 amount (purpose unverified)"
+                elif amt == 5:
+                    fine = "$5 amount (first-Mind grant or referral unverified)"
             return "growth", fine, amt
     pack = _snap(usd / NET_OF_FEES, PACKS, PACK_TOL)
     if pack is not None:
@@ -192,7 +202,7 @@ SYSTEM_TOPUP = {"topup1": {"since": PAUSED_UTC, "point": 1.0, "tol": 0.15,
                            "fine": INCENT[0][1], "max_per_wallet": 1}}
 
 # ---- the one grouping layer (see docstring) ----
-GROUP_LABEL = {"skill_rewards": "Skill rewards", "credit_grants": "Credit grants",
+GROUP_LABEL = {"skill_rewards": "Skill rewards", "credit_grants": "Credit-sized transfers",
                "system_topups": "System free top-ups", "topups_delivered": "Top-ups delivered",
                "ops": "Ops", "micro": "Dust"}
 GROUP_KEYS = list(GROUP_LABEL)

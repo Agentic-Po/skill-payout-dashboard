@@ -71,7 +71,7 @@ REWARDS_V2_KEYS = {"resumed_utc", "grid", "usd_24h", "usd_since_resume", "n_equi
                    "n_invoke_24h", "creator_wallets_24h", "creator_wallets_since_resume"}
 PROVENANCE_KEYS = {"by_token", "implied", "market", "refused", "carry_forward", "market_open",
                    "restatement_usd", "restatement_date"}
-BAND_KEYS = ["micro", "b0005", "b005", "b010", "b1", "b3", "b5", "b10", "b20", "b25",
+BAND_KEYS = ["micro", "b0005", "b005", "b010", "b1", "b3", "b2", "b5", "b10", "b20", "b25",
              "b50", "b100", "other"]
 
 
@@ -133,7 +133,7 @@ def main():
     assert D.get("stripe_snap") is None or not [k for k in D["stripe_snap"] if "subsidy" in k or "unbacked" in k]
     assert D.get("server") is None or not [k for k in D["server"] if k in ("subsidy_ratio", "ratio_weeks", "unbacked_7d")]
     print("ok data.json: infer keys exact, rewards_v2 / system_topup_public / retired_public / "
-          "pricing_provenance shapes, hourly per-group counts, 13 band keys incl. b0005/b005")
+          "pricing_provenance shapes, hourly per-group counts, 14 band keys incl. b0005/b005/b2")
 
     # 2. transfers_export.csv
     with open(os.path.join(ROOT, "transfers_export.csv"), newline="") as fh:

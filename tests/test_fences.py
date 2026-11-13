@@ -79,7 +79,7 @@ def main():
     _ok, recent, _st = F.fence_check("credit_grants", series["credit_grants"], now)
     st = {}
     secs, st = F.group_fences(series, st, now)
-    assert len(secs) == 1 and "Credit grants fence" in secs[0][1] and f"${recent:,.0f}" in secs[0][1] \
+    assert len(secs) == 1 and "Credit-sized transfers fence" in secs[0][1] and f"${recent:,.0f}" in secs[0][1] \
         and "HKT" in secs[0][1] and "check" in secs[0][1], secs
     secs2, st = F.group_fences(series, st, now + timedelta(minutes=30))
     assert not secs2, "fence re-fired while still above"

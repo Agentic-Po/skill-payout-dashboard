@@ -47,6 +47,7 @@ DISPLAY_EQUIVALENTS = {
         "The $3 bucket mixes new-user credits and internal top-ups — the internal top-ups sheet is the authoritative split.",
     "may include $10 new-user grants and coupon-delivered credits": "may include coupon-delivered credits",
     "Pack-sized on-chain credit deliveries (including possible $10 grants)": "Stripe-sized on-chain outflow",
+    "Pack-sized on-chain credit deliveries (historically including possible $10 grants)": "Stripe-sized on-chain outflow",
     "includes credit deliveries (“top-ups delivered”), which mix purchased packs and grants. New-user top-ups are now $10; a $10-sized transfer alone cannot distinguish a grant from a purchase.": "",
 }
 
@@ -139,6 +140,17 @@ def main():
         print("SKIP:", msg)
         sys.exit(0)
     work = open(os.path.join(P.ROOT, "template.html")).read()
+    # The dated policy notice and its method wording intentionally add numbers,
+    # but neither changes a financial figure. Review the exact new policy text,
+    # then compare all rendered figures against the prior template.
+    policy = '<div class="card" id="starterCreditPolicy"><b>Initial credits · configuration change</b> — reported effective around 14 Nov 2026 02:07 Singapore (13 Nov 18:07 UTC): $5 for a new user\'s first Mind, $2 for each of Minds 2–5, and no initial credit from the sixth. The time is approximate. Amount-based tags do not verify grant purpose or Mind order.</div>'
+    assert work.count(policy) == 1, 'starter-credit policy text changed without figure-parity review'
+    work = work.replace(policy, '')
+    method = re.compile(r'<p class="method"><b>Method:</b>.*?</p>', re.S)
+    old_method = method.search(base)
+    new_method = method.search(work)
+    assert old_method and new_method and 'After that approximate boundary, $2, $3 and $5 are tagged by amount with purpose unverified' in new_method.group(), 'starter-credit method changed without figure-parity review'
+    work = work[:new_method.start()] + old_method.group() + work[new_method.end():]
     data = open(os.path.join(P.ROOT, "data.json")).read()
     now = P.generated_ms(data) + 5 * 60000
     pages = [P.build_from_template(base), P.build_from_template(work)]

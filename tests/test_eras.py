@@ -132,8 +132,14 @@ def main():
     assert RETIRED == {"invoke_v1": {"cutoff": PAUSED_UTC, "point": 0.10, "tol": 0.15}}
     assert SYSTEM_TOPUP["topup1"]["since"] == PAUSED_UTC and SYSTEM_TOPUP["topup1"]["max_per_wallet"] == 1
     assert SYSTEM_TOPUP["topup1"]["fine"] == TOPUP_FINE
-    assert BAND_KEYS[:5] == ["micro", "b0005", "b005", "b010", "b1"] and len(BAND_KEYS) == 13
-    print("ok era table: v1 | pause 2026-08-21T13:55 | v2 2026-09-14T14:19 · cap 19:12 · 13 band keys")
+    assert BAND_KEYS[:5] == ["micro", "b0005", "b005", "b010", "b1"] and len(BAND_KEYS) == 14
+    print("ok era table: v1 | pause 2026-08-21T13:55 | v2 2026-09-14T14:19 · cap 19:12 · 14 band keys")
+    assert classify_usd(2.0, "2026-11-13T18:06:59")[0] == "nonstandard"
+    assert classify_usd(2.0, "2026-11-13T18:07:00") == ("growth", "$2 amount (purpose unverified)", 2)
+    assert classify_usd(3.0, "2026-11-13T18:07:00") == ("growth", "$3 amount (purpose unverified)", 3)
+    assert classify_usd(5.0, "2026-11-13T18:07:00") == ("growth", "$5 amount (first-Mind grant or referral unverified)", 5)
+    assert classify_usd(5.0, "2026-11-13T18:06:59") == ("growth", "referral $5", 5)
+    assert band(2.0, "2026-11-13T18:06:59") == "other" and band(2.0, "2026-11-13T18:07:00") == "b2"
 
     # 1 + 2. fixtures
     for usd, ts, c, f, t, b in FIXTURES:

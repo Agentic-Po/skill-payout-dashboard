@@ -181,7 +181,7 @@ def mix(tiers, labels=None):
     top = sorted(tiers.items(), key=lambda kv: -kv[1])
     return " · ".join(f"{n:,} × {labels[p] if labels else '$%d' % p}" for p, n in top)
 
-INCENT_LABEL = dict(INCENT)
+INCENT_LABEL = {1: "$1 system free top-up", 2: "$2 amount", 3: "$3 amount", 5: "$5 amount"}
 
 w1, w24, w7d, cum = win(1), win(24), win(24 * 7), win()
 # the window the body reports on: 24h hourly/daily, 7d weekly
@@ -307,7 +307,7 @@ if mode == "weekly":
     _ver = (f" Verified Stripe net: ${_ss.get('net_usd', 0):,.0f} ({_ss['period'][0]}→{_ss['period'][1]}, one-time snapshot)."
             if _ss.get("net_usd") and _ss.get("period") else "")
     _flag_s = f"{_PM['flagged_n']} wallet(s) flagged for private review" if _PM else "pattern monitor state not banked"
-    health.append(f"<i>Paste-ready:</i> This week: {w7d['invoke']:,} invokes and {w7d['equip']:,} equips across {w7d['creators']:,} creator wallets, ${w7d['g_usd']['skill_rewards']:,.2f} of skill rewards paid — {_flag_s}. ${w7d['g_usd']['topups_delivered']:,.2f} of flows were Pack-sized credit deliveries (size-inferred; may include $10 new-user grants and coupon-delivered credits — not verified revenue).{_ver}")
+    health.append(f"<i>Paste-ready:</i> This week: {w7d['invoke']:,} invokes and {w7d['equip']:,} equips across {w7d['creators']:,} creator wallets, ${w7d['g_usd']['skill_rewards']:,.2f} of skill rewards paid — {_flag_s}. ${w7d['g_usd']['topups_delivered']:,.2f} of flows were Pack-sized credit deliveries (size-inferred; may historically include $10 new-user grants and include coupon-delivered credits — not verified revenue).{_ver}")
     # --- ops footer (Cycle-3 Loop 3, item 3) ---
     # DIGEST-ONLY, no new public fields. Cadence comes from data already
     # public (stats_history.json timestamps — one snapshot per successful
@@ -453,11 +453,11 @@ else:
                       f"{GROUP_LABEL[g].lower()} ${W['g_usd'][g]:,.2f}" for g in GROUP_KEYS if W["g_n"][g]),
                   f"  · skill rewards: {W['invoke']:,} invokes{_sz('invoke')} · {W['equip']:,} equips{_sz('equip')} → {W['creators']:,} creator wallets ({W['new_creators']:,} first-ever)",
                   "  · " + usd_line("paid to creator wallets", "qty_ce", W),
-                  "  · " + usd_line("credit grants", "qty_credit", W,
+                  "  · " + usd_line("credit-sized transfers (purpose inferred)", "qty_credit", W,
                                     f" <i>({mix(W['tiers_credit'], INCENT_LABEL)})</i>" if W["tiers_credit"] else ""),
                   "  · " + usd_line("top-ups delivered", "qty_topup", W,
                                     f" <i>({W['g_n']['topups_delivered']:,} paid: {mix(W['tiers_topup'])})</i>" if W["tiers_topup"]
-                                    else " <i>(pack-sized; $10 grants overlap purchases, size-inferred)</i>")]
+                                    else " <i>(pack-sized; historical $10 grants overlap purchases, size-inferred)</i>")]
     if W["g_n"]["ops"]:
         body_lines.append(f"  · <i>excluded {W['g_n']['ops']:,} non-standard transfer(s) ≈ ${W['g_usd']['ops']:,.0f} "
                           f"— swaps/treasury moves, not user top-ups</i>")
