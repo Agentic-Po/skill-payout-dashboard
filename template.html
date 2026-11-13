@@ -124,7 +124,7 @@ details.aiwrap>.inner{padding:0 16px 16px;display:flex;flex-direction:column;gap
   <div class="banner" id="loadBanner" role="status">This page is still loading or failed to load — if this message stays, the figures below are not reliable.</div>
   <div class="banner" id="renderBanner" role="alert" hidden>Part of this page could not be displayed — do not rely on it for decisions until it recovers.</div>
   <div class="banner" id="staleBanner" role="alert" hidden></div>
-  <div class="banner" id="incompleteBanner" hidden>⚠ Data incomplete: this refresh rendered from a cached/partial chain fetch — recent transfers may be missing.</div>
+  <div class="banner" id="incompleteBanner" hidden>⚠ Transfer coverage incomplete: current finance figures are withheld; retained historical figures may miss recent transfers.</div>
   <div class="banner muted" id="serverBanner" hidden>PostHog tier degraded this run — server-recorded figures are from cache.</div>
 </div>
 <main class="wrap">
@@ -462,7 +462,7 @@ function checkStale(){
  const ageM=(Date.now()-t)/6e4;
  if(!(ageM>STALE_MIN)){el.hidden=true;return;}
  const ageH=ageM/60;
- el.textContent="⚠ Data is "+(ageH<2?Math.round(ageM)+" minutes":ageH<48?Math.round(ageH)+" hours":Math.round(ageH/24)+" days")+" old — the refresh pipeline has not published since "+(SC.generated||stamp)+" UTC. Treat all figures as stale.";
+ el.textContent="⚠ On-chain finance snapshot is "+(ageH<2?Math.round(ageM)+" minutes":ageH<48?Math.round(ageH)+" hours":Math.round(ageH/24)+" days")+" old — retained snapshot dated "+(SC.generated||stamp)+" UTC. Recent transfers may be missing; treat its figures as stale.";
  el.hidden=false;
 }
 renderSection("Freshness banners",null,()=>{
@@ -531,7 +531,7 @@ document.getElementById("scope").innerHTML=
 renderSection("Large inflows","bigin",()=>{
 const bigIn=F.large_inflows||[];
 if(bigIn.length){
- const fresh7=bigIn.some(l=>(GEN_T-Date.parse(l.ts+":00Z"))<7*864e5);
+ const fresh7=bigIn.some(l=>{const age=Date.now()-Date.parse(l.ts+":00Z");return age>=0&&age<7*864e5;});
  const rows=bigIn.slice(0,5).map(l=>`<tr><td class="mono">${l.ts.replace("T"," ")}</td><td class="r mono">${chk(l.val).toLocaleString()} ${l.tok}</td><td class="r mono"><b>$${chk(l.usd).toLocaleString()}</b></td><td class="mono"><a href="https://basescan.org/tx/${l.tx}" target="_blank">${l.addr.slice(0,8)}…${l.addr.slice(-4)}</a>${l.label?` <span class="pill">${l.label}</span>`:` <span class="pill" style="opacity:.5">unlabeled</span>`}</td></tr>`).join("");
  const notes=[...new Set(bigIn.slice(0,5).filter(l=>l.note).map(l=>`<b>${l.label}:</b> ${l.note}`))].join("<br>");
  document.getElementById("bigin").innerHTML=
@@ -561,7 +561,7 @@ if(ftiles[0][0]==="Wallet balance" && (F.balance.MOCA==null||F.balance.MENTE==nu
  const native=t=>F.balance[t]==null?"Unavailable":fmt0(F.balance[t]);
  ftiles[0][2]=native("MENTE")+" MENTE · "+native("MOCA")+" MOCA · saved as of "+savedAt;
 }
-const stale=TREASURY_CURRENT?"":`<div style="font-size:11px;color:var(--warn);margin-top:4px">⚠ as of last complete fetch</div>`;
+const stale=TREASURY_CURRENT?"":`<div style="font-size:11px;color:var(--warn);margin-top:4px">⚠ retained snapshot</div>`;
 // one plain-English line per tile: a definition only, never a new number
 const MEAN={"Wallet balance":"Saved on-chain balance, valued at the saved financial snapshot’s token prices.",
  "Outflow — 24h":"Everything this wallet sent out in the last 24 hours.",

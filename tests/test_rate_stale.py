@@ -39,13 +39,24 @@ assert 0.02 <= band <= 0.10, f"MARKET_AGREE {band} outside a sane 2-10% window"
 # running candle (market_open) when it is today's, else the last close
 D = json.load(open(os.path.join(ROOT, "data.json")))
 S = json.load(open(os.path.join(ROOT, "day_rates.json")))
-today = D["scope"]["generated_iso"][:10]
+snapshot_day = D["scope"]["generated_iso"][:10]
+build_day = D["scope"].get("build_generated_iso", D["scope"]["generated_iso"])[:10]
+retained = snapshot_day < build_day
+if retained:
+    assert D["scope"].get("complete") is False, "old finance snapshot published as complete"
+    assert D["scope"].get("source_coverage", {}).get("coverage_ok") is False, "old finance snapshot lacks coverage warning"
 for sym, live in D["facts"]["rate"].items():
     mrs = (S.get("market_rates") or {}).get(sym) or {}
     mo = (S.get("market_open") or {}).get(sym) or {}
     if not live:
         continue
-    if mo.get("d") == today and mo.get("close"):
+    if retained:
+        # A retained valuation must stay visibly stale; comparing its historical
+        # quote with today's market close would reject an ordinary price move.
+        assert D["facts"]["rate_src"].get(sym), f"retained {sym} rate lacks source"
+        print(f"ok {sym} retained {snapshot_day} rate {live} with incomplete coverage")
+        continue
+    if mo.get("d") == build_day and mo.get("close"):
         mkt, lab = mo["close"], f"market_open {mo['d']}"
     elif mrs:
         mkt, lab = mrs[max(mrs)], f"market close {max(mrs)}"
@@ -58,9 +69,9 @@ for sym, live in D["facts"]["rate"].items():
 FROM = re.search(r'^IMPLIED_NEEDS_MARKET_FROM\s*=\s*"([\d-]+)"', src, re.M).group(1)
 # (a) closed candles only
 for sym, mrs in (S.get("market_rates") or {}).items():
-    late = [d for d in mrs if d >= today]
-    assert not late, f"{sym} market_rates carries non-closed day(s) {late} (today {today})"
-print(f"ok (a) market_rates holds closed days only (max {max((max(m) for m in S['market_rates'].values() if m), default='-')} < {today})")
+    late = [d for d in mrs if d >= build_day]
+    assert not late, f"{sym} market_rates carries non-closed day(s) {late} (today {build_day})"
+print(f"ok (a) market_rates holds closed days only (max {max((max(m) for m in S['market_rates'].values() if m), default='-')} < {build_day})")
 
 # (b) the pricing decision, extracted from refresh.py by ast and executed on a
 # synthetic day: 5 rows that back-solve to exactly 2x the market close must

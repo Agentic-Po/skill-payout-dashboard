@@ -165,7 +165,7 @@ def _checks_headline(p, data):
     if not own:
         assert out[1] == "Unavailable", "incomplete 24h value must be unknown"
         assert "not a verified zero" in out[2], "incomplete 24h explanation missing"
-        assert "as of last complete fetch" in p["ftiles"], "saved coverage warning missing"
+        assert "retained snapshot" in p["ftiles"], "saved coverage warning missing"
         return
     assert "$" in out[1], "24h outflow value missing"
     window = data["facts"]["windows"][0]
@@ -182,7 +182,7 @@ def _checks_headline(p, data):
             assert shown == present, "24h group subtitle does not match its window"
     else:
         assert f"{window['out_tx']} tx" in out[2] and f"{window['out_wallets']} wallets" in out[2]
-    warning = "as of last complete fetch"
+    warning = "retained snapshot"
     assert (warning in p["ftiles"]) == (not own), "headline coverage warning incorrect"
 
 
@@ -303,7 +303,11 @@ def check_stale_and_fail_closed():
     for i in (0, 1, 2):
         assert not r[i]["uncaught"] and r[i]["renderErrors"] == [], (i, r[i]["uncaught"], r[i]["renderErrors"])
     txt = r[1]["dump"]["ids"]["staleBanner"]["text"] or ""
-    assert "old" in txt and "stale" in txt, txt
+    assert "On-chain finance snapshot" in txt and "retained snapshot dated" in txt and "stale" in txt, txt
+    assert "refresh pipeline has not published" not in txt, txt
+    stale = P.run(page, data, [{"now": gen + 8 * 864e5}])[0]
+    assert "NEW WITHIN 7 DAYS" not in str(stale["dump"]["ids"].get("bigin", {})), \
+        "a dated inflow was presented as new against the old snapshot clock"
     # invalid inlined JSON: the script never parses -> loading banner stays
     assert r[4]["uncaught"], "invalid JSON did not fail the script?"
     assert not _banner(r[4], "loadBanner").get("removed"), "invalid JSON removed the loading banner"

@@ -70,8 +70,10 @@ def reviewed_freshness(base_result,work_result,data,now):
     stamp=scope.get('generated_iso') or ((scope.get('generated','').replace(' ','T')+':00Z') if scope.get('generated') else '')
     saved=stamp.replace('T',' ').removesuffix('Z')+' UTC' if stamp else 'time unavailable'
     expected=old
+    if not own:
+        expected=expected.replace('⚠ as of last complete fetch</div>','⚠ retained snapshot</div>')
     if 'saved as of ' not in old:
-        cards=old.split('<div class="tile"')
+        cards=expected.split('<div class="tile"')
         assert len(cards)==7,'headline shape changed'
         for i,card in enumerate(cards[1:],1):
             if '<div class="k">Wallet balance</div>' in card:
@@ -81,7 +83,7 @@ def reviewed_freshness(base_result,work_result,data,now):
                 card=re.sub(r'(<div class="v">).*?(</div>)',r'\1Unavailable\2',card,count=1)
                 card=re.sub(r'(<div class="d">).*?(</div>)',r'\1Coverage incomplete — this is not a verified zero.\2',card,count=1)
             if own:
-                card=card.replace('<div style="font-size:11px;color:var(--warn);margin-top:4px">⚠ as of last complete fetch</div>','')
+                card=card.replace('<div style="font-size:11px;color:var(--warn);margin-top:4px">⚠ retained snapshot</div>','')
             cards[i]=card
         expected='<div class="tile"'.join(cards)
     assert new==expected,'unreviewed headline write differs from exact expected freshness change'
