@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validated batch recovery preserves exact timestamps and single fallback."""
 import ast,io,json,os,sys,time,unittest
+from unittest.mock import patch
 from urllib.error import HTTPError,URLError
 from collections import Counter
 from contextlib import redirect_stdout
@@ -301,6 +302,28 @@ class MethodHealthTests(unittest.TestCase):
   self.assertEqual(ns['block_ts'](2),102);self.assertEqual(singles,[('eth_getBlockByNumber',['0x2',False])])
   self.assertEqual(ns['block_ts'](2),102);self.assertEqual(len(singles),1)
 class ScopedLogTests(unittest.TestCase):
+ def test_fast_provider_requires_finalized_head_and_valid_envelope(self):
+  import urllib.request
+  node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_fast_publicnode_logs')
+  ns={'json':json,'urllib':urllib,'_network_timeout':lambda cap:cap,'_PUBLIC_FAST_HEAD':[None],'_RPC_CALLS':[0],'OFFLINE':False}
+  exec(ast.get_source_segment(src,node),ns)
+  calls=[]
+  class Response:
+   def __init__(self,value):self.value=value
+   def __enter__(self):return self
+   def __exit__(self,*args):return False
+   def read(self,*args):return json.dumps(self.value).encode()
+  def urlopen(req,timeout):
+   body=json.loads(req.data);calls.append(body)
+   result='0x3e8' if body['method']=='eth_blockNumber' else []
+   return Response({'jsonrpc':'2.0','id':1,'result':result})
+  fn=ns['_fast_publicnode_logs']
+  with patch.object(urllib.request,'urlopen',urlopen):
+   self.assertEqual(fn('eth_getLogs',[{'toBlock':hex(970)}]),[])
+   self.assertEqual([c['method'] for c in calls],['eth_blockNumber','eth_getLogs'])
+   self.assertEqual(ns['_RPC_CALLS'][0],2)
+   with self.assertRaisesRegex(RuntimeError,'not finalized'):fn('eth_getLogs',[{'toBlock':hex(971)}])
+   self.assertEqual(len(calls),2)
  def ns(self):
   ns={}
   for name in ('_valid_log_subrange','_bounded_scan_rpc'):
@@ -311,6 +334,25 @@ class ScopedLogTests(unittest.TestCase):
  def log(self,query,identity=None):
   block=int(query['fromBlock'],16)
   return {'topics':query['topics']+['0x'+'b'*64],'address':query['address'][0],'transactionHash':'0x'+format(identity if identity is not None else block,'064x'),'blockNumber':hex(block),'logIndex':'0x0','data':'0x1','removed':False}
+ def test_qualified_fast_range_avoids_subrange_calls(self):
+  ns=self.ns();f=self.filt();seen=[]
+  ns['_PUBLIC_FAST_SCAN']=lambda method,params:(seen.append((method,params)) or [self.log(params[0])])
+  ns['rpc_batch']=lambda *a,**k:self.fail('fast range should not batch')
+  ns['rpc']=lambda *a,**k:self.fail('fast range should not fall back')
+  rows=ns['_bounded_scan_rpc']('eth_getLogs',[f])
+  self.assertEqual(len(rows),1);self.assertEqual(seen,[('eth_getLogs',[f])])
+ def test_invalid_fast_response_falls_back_without_banking_it(self):
+  ns=self.ns();f=self.filt(250);groups=[]
+  ns['_PUBLIC_FAST_SCAN']=lambda *a:[self.log(dict(f,fromBlock='0x1'))]
+  ns['rpc_batch']=lambda group,**k:(groups.append(group) or {i:[self.log(call[1][0])]for i,call in enumerate(group)})
+  ns['rpc']=lambda *a,**k:self.fail('complete fallback batches should need no single call')
+  rows=ns['_bounded_scan_rpc']('eth_getLogs',[f])
+  self.assertEqual(len(rows),3);self.assertEqual(len(groups),2)
+ def test_fast_budget_expiry_cannot_fall_back(self):
+  import public_scan as S
+  ns=self.ns();ns['_PUBLIC_FAST_SCAN']=lambda *a:(_ for _ in ()).throw(S.BudgetExpired('deadline'))
+  ns['rpc_batch']=lambda *a,**k:self.fail('expired range must make no fallback calls')
+  with self.assertRaises(S.BudgetExpired):ns['_bounded_scan_rpc']('eth_getLogs',[self.filt()])
  def test_twenty_contiguous_subranges_in_ten_two_call_groups_exact_filter(self):
   ns=self.ns();groups=[];f=self.filt()
   def batch(group,validate_result):

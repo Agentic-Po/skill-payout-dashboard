@@ -599,6 +599,37 @@ def _valid_log_subrange(call, logs):
         return False
 
 
+_PUBLIC_FAST_HEAD = [None]
+
+def _fast_publicnode_logs(method, params):
+    """A finalized, scoped direct range; the existing 100-block path is fallback."""
+    if OFFLINE:
+        raise RuntimeError("network access is disabled in offline mode")
+    url = "https://base-rpc.publicnode.com"
+    def request(rpc_method, rpc_params):
+        _RPC_CALLS[0] += 1
+        payload = json.dumps({"jsonrpc":"2.0","id":1,"method":rpc_method,"params":rpc_params}).encode()
+        req = urllib.request.Request(url, data=payload,
+            headers={"Content-Type":"application/json","User-Agent":"Mozilla/5.0 (skill-payout-dashboard/1.0; polite crawler)"})
+        with urllib.request.urlopen(req, timeout=_network_timeout(15)) as response:
+            envelope = json.load(response)
+        if (not isinstance(envelope,dict) or envelope.get("jsonrpc")!="2.0"
+                or type(envelope.get("id")) is not int or envelope["id"]!=1
+                or ("result" in envelope)==("error" in envelope)
+                or envelope.get("error") or envelope.get("result") is None):
+            raise RuntimeError("invalid fast RPC response")
+        return envelope["result"]
+    if _PUBLIC_FAST_HEAD[0] is None:
+        _PUBLIC_FAST_HEAD[0] = int(request("eth_blockNumber", []),16)
+    hi = int(params[0]["toBlock"],16)
+    if hi > _PUBLIC_FAST_HEAD[0]-30:
+        raise RuntimeError("fast RPC has not finalized requested range")
+    return request(method, params)
+
+
+_PUBLIC_FAST_SCAN = _fast_publicnode_logs
+
+
 def _bounded_scan_rpc(method, params):
     """Keep the original range atomic; public providers get bounded subranges."""
     if method!='eth_getLogs':return rpc(method,params)
@@ -608,6 +639,16 @@ def _bounded_scan_rpc(method, params):
         raise ScanInvalid('invalid bounded public log range')
     if hi-lo+1<=100:
         return rpc(method,params,validate_result=_valid_log_subrange)
+    fast = globals().get("_PUBLIC_FAST_SCAN")
+    if fast is not None:
+        try:
+            logs = fast(method,params)
+            if _valid_log_subrange((method,params),logs):
+                return logs
+        except Exception as error:
+            from public_scan import BudgetExpired
+            if isinstance(error,BudgetExpired):
+                raise
     calls=[('eth_getLogs',[dict(filt,fromBlock=hex(start),toBlock=hex(min(start+99,hi)))])
            for start in range(lo,hi+1,100)]
     combined=[]
