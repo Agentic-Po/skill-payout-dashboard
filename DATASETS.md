@@ -70,7 +70,7 @@ Rows, bytes and coverage are measured off the files, never asserted.
 | `coupon_data` | `coupon_data.json` | 1 | 33.1 KB | 2026-07-08 → 2026-11-13 | every refresh (~4x/hour) |
 | `transfers_export` | `transfers_export.csv` | 3,460 | 736.5 KB | 2026-11-06 → 2026-11-13 | trailing 7 days, rewritten every refresh (full history: transfers_monthly) |
 | `transfers_monthly` | `exports/` | 390,381 | 81.0 MB | 2026-04-24 → 2026-11-13 | open month rewritten every refresh; closed months byte-stable |
-| `data` | `data.json` | 1 | 262.4 KB | 2026-04-24 → 2026-11-13 | every refresh (~4x/hour) |
+| `data` | `data.json` | 1 | 231.7 KB | 2026-04-24 → 2026-11-13 | every refresh (~4x/hour) |
 | `stats_history` | `stats_history.json` | 4,550 | 1.4 MB | 2026-07-13 → 2026-11-13 | one append per refresh (~4x/hour) |
 
 **`coupon_data`** — schema_version, scope, summary, totals, buckets, daily, inflows, top, concentration, range
@@ -122,11 +122,5 @@ they feed.
 
 ## peer repo — Agentic-Po/moca-ledger
 
-Fetched from `catalog.json` at build time: **890,730 rows · 224.1 MB across 3 datasets**.
-
-| Dataset | Rows | Size | Coverage |
-|---|---:|---:|---|
-| `ledger` | 890,663 | 224.1 MB | 2026-07-06 → 2026-11-13 |
-| `labels` | 66 | 4.4 KB | 2026-08-22 → 2026-10-04 |
-| `heartbeat` | 1 | 196 B | 2026-11-13 → 2026-11-13 |
+_peer catalog unavailable this run_ (degraded: peer catalog not fetched this run).
 
