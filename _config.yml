@@ -8,3 +8,9 @@ exclude:
   - coupon.html
   - tests/
   - tools/
+  # Historical archives remain in the public repo and data catalog. The live
+  # pages use the compact data files and link to GitHub for full history.
+  - pending_scans/
+  - transfers/
+  - exports/
+  - cognition_in/
