@@ -808,5 +808,9 @@
  "2026-11-11": {
   "first_written_iso": "2026-11-13T11:24:39Z",
   "sha": "a063ac1154d91cee898e2bbeb213512de15cc9eaaed248f055186a9e21e49403"
+ },
+ "2026-11-12": {
+  "first_written_iso": "2026-11-14T00:09:00Z",
+  "sha": "a96dc146614824e41296b3897d90619717ea5fa723cd775ac57e79cd62e8ef73"
  }
 }
