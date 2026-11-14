@@ -619,9 +619,12 @@ def _fast_publicnode_logs(method, params):
                 or envelope.get("error") or envelope.get("result") is None):
             raise RuntimeError("invalid fast RPC response")
         return envelope["result"]
-    if _PUBLIC_FAST_HEAD[0] is None:
-        _PUBLIC_FAST_HEAD[0] = int(request("eth_blockNumber", []),16)
     hi = int(params[0]["toBlock"],16)
+    # Later legs can run minutes after the first one. Requalify this provider's
+    # head once when the requested range outgrows the cached finalized head;
+    # otherwise a healthy provider is bypassed for every new tail range.
+    if _PUBLIC_FAST_HEAD[0] is None or hi > _PUBLIC_FAST_HEAD[0]-30:
+        _PUBLIC_FAST_HEAD[0] = int(request("eth_blockNumber", []),16)
     if hi > _PUBLIC_FAST_HEAD[0]-30:
         raise RuntimeError("fast RPC has not finalized requested range")
     return request(method, params)

@@ -323,7 +323,26 @@ class ScopedLogTests(unittest.TestCase):
    self.assertEqual([c['method'] for c in calls],['eth_blockNumber','eth_getLogs'])
    self.assertEqual(ns['_RPC_CALLS'][0],2)
    with self.assertRaisesRegex(RuntimeError,'not finalized'):fn('eth_getLogs',[{'toBlock':hex(971)}])
-   self.assertEqual(len(calls),2)
+   self.assertEqual(len(calls),3)
+ def test_fast_provider_refreshes_head_for_later_scan_legs(self):
+  import urllib.request
+  node=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_fast_publicnode_logs')
+  ns={'json':json,'urllib':urllib,'_network_timeout':lambda cap:cap,'_PUBLIC_FAST_HEAD':[1000],'_RPC_CALLS':[0],'OFFLINE':False}
+  exec(ast.get_source_segment(src,node),ns)
+  calls=[]
+  class Response:
+   def __enter__(self):return self
+   def __exit__(self,*args):return False
+   def read(self,*args):
+    return json.dumps({'jsonrpc':'2.0','id':1,'result':hex(1300) if calls[-1]['method']=='eth_blockNumber' else []}).encode()
+  def urlopen(req,timeout):
+   calls.append(json.loads(req.data));return Response()
+  with patch.object(urllib.request,'urlopen',urlopen):
+   self.assertEqual(ns['_fast_publicnode_logs']('eth_getLogs',[{'toBlock':hex(1270)}]),[])
+   self.assertEqual([c['method'] for c in calls],['eth_blockNumber','eth_getLogs'])
+   self.assertEqual(ns['_PUBLIC_FAST_HEAD'][0],1300)
+   self.assertEqual(ns['_fast_publicnode_logs']('eth_getLogs',[{'toBlock':hex(1260)}]),[])
+   self.assertEqual([c['method'] for c in calls],['eth_blockNumber','eth_getLogs','eth_getLogs'])
  def ns(self):
   ns={}
   for name in ('_valid_log_subrange','_bounded_scan_rpc'):
