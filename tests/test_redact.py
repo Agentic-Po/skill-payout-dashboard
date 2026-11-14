@@ -134,11 +134,17 @@ def main():
         json.dump(seeded, open(os.path.join(td, "data.json"), "w"))
         old = cp.HERE
         cp.HERE = td
+        import contextlib, io
+        captured = io.StringIO()
         try:
-            rc = cp.scan()
+            # This deliberately seeded failure must not become a real Actions
+            # warning annotation on an otherwise passing test run.
+            with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+                rc = cp.scan()
         finally:
             cp.HERE = old
         assert rc == 1, "seeded identity label did NOT trip --scan"
+        assert "unreviewed" in captured.getvalue(), "seeded label warning was not emitted"
     print("ok seeded leak turns --scan red (exit 1)")
 
     test_reviewed_registry_promotions()
