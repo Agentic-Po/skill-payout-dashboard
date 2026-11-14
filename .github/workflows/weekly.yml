@@ -8,12 +8,13 @@ permissions:
   actions: read
 jobs:
   heartbeat:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          ref: main
       # Detector state lives in the Actions cache, NOT the public repo, and
       # the cache holds it ENCRYPTED with the STATE_KEY secret (2026-09-27):
       # any workflow in the repo can restore this cache, so plaintext there
@@ -25,7 +26,7 @@ jobs:
       # stamp, hourly-digest gate, WARN queue) resets to {} in every digest.
       - name: Restore alert state (encrypted)
         id: restore
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             alert_state.json.enc
@@ -40,7 +41,7 @@ jobs:
       # Removable once no plaintext `alert-state-<run_id>` entry remains.
       - name: Restore legacy plaintext state (one-time migration)
         if: steps.restore.outputs.cache-matched-key == ''
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             alert_state.json
@@ -125,7 +126,7 @@ jobs:
         run: python3 tools/state_crypt.py encrypt
       - name: Save alert state (encrypted only)
         if: always() && steps.encrypt.outcome == 'success'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             alert_state.json.enc

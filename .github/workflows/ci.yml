@@ -17,15 +17,15 @@ permissions:
 
 jobs:
   gates:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # The retained-archive gates reached 15 minutes after 39 successful steps
     # on 2026-10-30. Keep every gate unchanged within a bounded 25-minute job.
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Catalog drift gate (committed vs recomputed)
