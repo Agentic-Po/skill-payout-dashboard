@@ -7125,3 +7125,4 @@ timestamp_utc,direction,token,amount,rate_usd,rate_source,usd,size_band,counterp
 2026-11-15T17:15:49,OUT,MOCA,163.482852,0.00612113,day-market (open),1.0007,≈ $1,0xa194f59cef38879262051c2de870e7f926a09489,0x209ac1e07947b7740cc66665b7bf379aed970dad7d211eb08ee770b571c2d7e6,42,growth,$1 system free top-up
 2026-11-15T17:23:28,OUT,MOCA,1635.092566,0.00612113,day-market (open),10.0086,≈ $10,0x3d0d6ed4f2dab44b6f27f2fab27f2f5f9f4bb0a8,0xd29353af91d7ba99db7f9093652af234a87641b3ab7d61b9cffb7ac0ea7e90f4,138,growth,stripe $10
 2026-11-15T17:48:49,OUT,MOCA,164.011590,0.00612113,day-market (open),1.0039,≈ $1,0x713e5c7dac3de03dd13844c303e5f2c7268ccd6f,0x8c8a4bba83939909ddb14457aa843ebc3d31583992ab9151285b88da1551e73c,29,growth,$1 system free top-up
+2026-11-15T18:17:29,OUT,MOCA,1642.492603,0.00612113,day-market (open),10.0539,≈ $10,0xb7f9233b334053a9a3db2646ab9102ae7cfb2b5c,0x8f39c707af6d827528aab276b22f5add4da47cd557ab53ce24ae289e792cfaf0,45,growth,stripe $10
