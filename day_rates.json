@@ -221,8 +221,8 @@
 }
 },
 "last_accepted_rate": {
-"MOCA": 0.005493,
-"MENTE": 0.01665
+"MOCA": 0.005486,
+"MENTE": 0.01666
 },
 "recon": {
 "MOCA": -16161.7,
@@ -234,7 +234,7 @@
 "open_day_rate": {
 "MOCA": {
 "d": "2026-11-22",
-"rate": 0.0057856
+"rate": 0.00578103
 }
 },
 "market_rates": {
@@ -955,19 +955,40 @@
 }
 },
 "xcheck": {
-"transfers": 60578537,
-"transfers_in": 60578653,
-"cognition_in": 60578696,
-"coupon_out": 60580024,
-"coupon_in": 60580024,
-"sink_to": 60579968,
-"sink_from": 60579989,
+"transfers": 60596541,
+"transfers_in": 60596661,
+"cognition_in": 60596706,
+"coupon_out": 60598072,
+"coupon_in": 60598072,
+"sink_to": 60598011,
+"sink_from": 60598035,
 "sink_xc_to": 52239699,
 "sink_xc_from": 52239701
 },
 "sink": {
 "rows": {
 "to": [
+{
+"ts": "2026-11-22T01:00:37",
+"val": 105348.8,
+"col": true,
+"blk": 60594307,
+"k": "0xf4a38ee20edcba75a6b8a2b46665eed4d2550cc10ef8c8ef3cb0d6df8b00cdfa:21"
+},
+{
+"ts": "2026-11-22T01:00:27",
+"val": 7642.0,
+"col": true,
+"blk": 60594257,
+"k": "0xf7c5b7d5423bdb5f1f3398091f1b33c0d3ff2c213ed00fd9fa74a182098dfb29:62"
+},
+{
+"ts": "2026-11-22T01:00:17",
+"val": 322.8,
+"col": true,
+"blk": 60594207,
+"k": "0x4ef48bad46583e605cafec4edd2906b5b69cb891c8426281c8b7ac67929eff39:23"
+},
 {
 "ts": "2026-11-21T01:00:31",
 "val": 142475.6,
@@ -3391,13 +3412,13 @@
 "market_open": {
 "MENTE": {
 "d": "2026-11-22",
-"close": 0.01669445,
-"fetched": "2026-11-22T00:08:38Z"
+"close": 0.01667838,
+"fetched": "2026-11-22T01:08:40Z"
 },
 "MOCA": {
 "d": "2026-11-22",
-"close": 0.0057856,
-"fetched": "2026-11-22T00:08:39Z"
+"close": 0.00578103,
+"fetched": "2026-11-22T01:08:41Z"
 }
 },
 "market_rates_note": {
