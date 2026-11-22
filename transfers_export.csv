@@ -1,5 +1,4 @@
 timestamp_utc,direction,token,amount,rate_usd,rate_source,usd,size_band,counterparty,tx_hash,log_index,class_coarse,class_fine
-2026-11-15T18:17:29,OUT,MOCA,1642.492603,0.00610192,day-market,10.0224,≈ $10,0xb7f9233b334053a9a3db2646ab9102ae7cfb2b5c,0x8f39c707af6d827528aab276b22f5add4da47cd557ab53ce24ae289e792cfaf0,45,growth,stripe $10
 2026-11-15T18:44:39,OUT,MOCA,1649.186797,0.00610192,day-market,10.0632,≈ $10,0xaCCF3A35326b308Dcc13D2C60131a019E46Fae39,0x1022dc831c024ca2655cd08003cd339aa16a1a0fe3880e67aa30b76a2ef57bc8,25,growth,stripe $10
 2026-11-15T19:10:20,OUT,MOCA,1634.622416,0.00610192,day-market,9.9743,≈ $10,0x189b06720e44bbf3376931f1b1aaeaf635d1f5e9,0x4a051c3a8213a91c53cc355d5972613d80c00f495007baab5b2cfbf5ad5b2c02,113,growth,stripe $10
 2026-11-15T19:48:30,OUT,MOCA,1632.208582,0.00610192,day-market,9.9596,≈ $10,0xf18e69f545f6e51c9bd1b133450b1b06e59afbfa,0x9422c2938b301052df567c5ec1ac4c03d7ede8171cf3d1d0b406c105cdfe8bd0,9,growth,stripe $10
@@ -3873,3 +3872,7 @@ timestamp_utc,direction,token,amount,rate_usd,rate_source,usd,size_band,counterp
 2026-11-22T18:02:21,OUT,MOCA,1836.563194,0.00589125,day-market (open),10.8197,other size,0x300eec7e5dc9c64040a29bb3810ac8b9ac8fd7c0,0x5df03aa9f7a0eb1826865763425b448143b8eb6185ed042e2353177fdc507728,28,nonstandard,nonstandard (large)
 2026-11-22T18:02:31,OUT,MOCA,1836.563194,0.00589125,day-market (open),10.8197,other size,0x804d6a516d0c6b81cb3c81c0aaa55288a63cc09e,0xf38a8594f0f7a9f4cca9867b6728bf4b95c9894b59d27db921b9291e1ad41221,36,nonstandard,nonstandard (large)
 2026-11-22T18:07:52,OUT,MOCA,1836.841382,0.00589125,day-market (open),10.8213,other size,0x2aaba84ad5f4f1980892de9da5115fb07e6c55ef,0xf1c031cf60c3a395203f4f821698074b65d7888334b95f9391f4d6ca828249f7,35,nonstandard,nonstandard (large)
+2026-11-22T18:09:21,OUT,MOCA,1836.841382,0.00589125,day-market (open),10.8213,other size,0x9d7f776c1a51cb0ee75227a7cd4e2a33c38b02c0,0x7708cbe7dbfb83de52f9789fa540a0bfe5e71ce06a62ded4bc9a7b7eb5ae5b2e,209,nonstandard,nonstandard (large)
+2026-11-22T18:20:12,OUT,MOCA,1843.382168,0.00589125,day-market (open),10.8598,other size,0x5e0cb399c5be0838d71e8d7adcc40fab6cba29bb,0xd7b7deaf9f333e9ed39983873b998f34506f0d6aa117a2b5076d32c398560860,118,nonstandard,nonstandard (large)
+2026-11-22T18:21:01,OUT,MOCA,1842.801860,0.00589125,day-market (open),10.8564,other size,0x290e157fff2064eca89269a14cf449c327398d38,0x5b41a811f073d678e3fb77ffa23db887a5e360fc077f31a7dd567372417cd110,145,nonstandard,nonstandard (large)
+2026-11-22T18:24:11,OUT,MOCA,1842.801860,0.00589125,day-market (open),10.8564,other size,0x66ed3fad91af76fb01a08ce7fa72f8dd9066c90e,0x3c6abfd89166bbc63eb170a6050de337bd1950ea8782227f3abfe15e4def3ced,33,nonstandard,nonstandard (large)
