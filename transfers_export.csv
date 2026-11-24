@@ -1,6 +1,4 @@
 timestamp_utc,direction,token,amount,rate_usd,rate_source,usd,size_band,counterparty,tx_hash,log_index,class_coarse,class_fine
-2026-11-17T02:28:25,OUT,MOCA,1665.682580,0.00612526,day-market,10.2027,≈ $10,0x3506669fe929ba1f25245cb206f8ffa7ee7bd4ce,0xe38051331722f6c4915e6c9d0a68a9af7be8fdb2d44585687da371c041ea7c20,21,growth,stripe $10
-2026-11-17T02:30:55,OUT,MOCA,1669.669722,0.00612526,day-market,10.2272,≈ $10,0xc65fc1be013f0f4b1531af9f1ae1ac318fe9c9b1,0xbfb7ace6e1cea44b224290903b1ddc1afb372eed90adeed1b03ede3c6ac5b765,146,growth,stripe $10
 2026-11-17T02:39:56,OUT,MOCA,1665.533255,0.00612526,day-market,10.2018,≈ $10,0x014f8f13dd559bebfce1c8b41926ee5a9c01cb74,0x629443ee2ed975d70d55992b7e79c004556719d390ccb4cf448a38a0c608a380,103,growth,stripe $10
 2026-11-17T02:40:05,OUT,MOCA,1665.533255,0.00612526,day-market,10.2018,≈ $10,0xdf260470e971eeb97b5b5a809c1d85a6c5548ced,0x9047c1a7bae0eef3de4f23f0799bcffb8eb1e3c9ad512dccad6d594d3c9a2edc,76,growth,stripe $10
 2026-11-17T02:40:55,OUT,MOCA,1664.526150,0.00612526,day-market,10.1957,≈ $10,0x6685c6a61ac52ffaa997800ed486f33718a03b1e,0xb4af219120ea892312d0f25fa6de8123b0d573b30acf41cd18e732834fd2534e,55,growth,stripe $10
@@ -4935,3 +4933,5 @@ timestamp_utc,direction,token,amount,rate_usd,rate_source,usd,size_band,counterp
 2026-11-24T02:15:20,OUT,MOCA,896.188048,0.00585005,day-market (open),5.2427,≈ $5,0x8fd864fd6c96cee321eb1029d2957e83ff8ea0c3,0x0c5c4fcc4513c744decf034d8f0d5b2426f64d74b4d8cc18d92867719daba358,149,growth,$5 amount (first-Mind grant or referral unverified)
 2026-11-24T02:21:40,OUT,MOCA,894.529167,0.00585005,day-market (open),5.2330,≈ $5,0xbdc6cfc9471484ce7c521c166ca55b95ef6f0027,0x9a0b70db12759c59241a28105d23e97a0a25428c67d8545f2786a79cc53b4e81,24,growth,$5 amount (first-Mind grant or referral unverified)
 2026-11-24T02:22:20,OUT,MOCA,894.529167,0.00585005,day-market (open),5.2330,≈ $5,0x2825e348e834b470f7cfd04d07d773b6ab0c9167,0x10473f14529a31a7a5832a0852b68d772935e56be62bc9c33ad4cb381c9ca4f1,83,growth,$5 amount (first-Mind grant or referral unverified)
+2026-11-24T02:29:10,OUT,MOCA,897.433717,0.00585005,day-market (open),5.2500,≈ $5,0x483e2a80fd3fadbb435217654a018c33d85b50ea,0xffe4f262e2b49715e096bed5e32b7bf6799669d0a42e50cc45f28a42d09f3897,105,growth,$5 amount (first-Mind grant or referral unverified)
+2026-11-24T02:32:30,OUT,MOCA,897.002157,0.00585005,day-market (open),5.2475,≈ $5,0xc5ff16606388e3c9300b0806ca89ee1ceaa453dd,0xd6b9be8ebcd75f3fe4fb53553ba60a79eaef98dc97e4d2f958a77d99cb8764ac,47,growth,$5 amount (first-Mind grant or referral unverified)
