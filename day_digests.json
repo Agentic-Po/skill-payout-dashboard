@@ -860,5 +860,9 @@
  "2026-11-24": {
   "first_written_iso": "2026-11-26T00:08:55Z",
   "sha": "b20ac4d281af74d355606959cee00c96f476b1b744098afc170bc48d430336d6"
+ },
+ "2026-11-25": {
+  "first_written_iso": "2026-11-27T00:08:54Z",
+  "sha": "1e04ceb82cbb62546187ce2a4c5ce88079067dcd88f1d2fd267a3eae0ac69344"
  }
 }
